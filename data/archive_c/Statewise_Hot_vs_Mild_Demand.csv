@@ -1,0 +1,35 @@
+State,Hot_Days,Mild_Days,Mean_Demand_Hot,Mean_Demand_Mild,Difference_(Hot-Mild)
+Uttar Pradesh,45,872,28435.44,22532.46,5902.98
+Punjab,20,897,14895.8,10433.41,4462.39
+Gujarat,18,899,23397.83,20317.39,3080.45
+Haryana,46,871,11876.91,9226.95,2649.96
+Delhi,54,863,7445.09,5227.57,2217.53
+Rajasthan,48,869,16800.46,14674.16,2126.3
+Andhra Pradesh,15,902,12404.33,10912.85,1491.48
+Odisha,6,911,6625.83,5686.43,939.4
+Bihar,30,887,6962.2,6204.08,758.12
+Madhya Pradesh,18,899,13673.22,13212.47,460.75
+Jharkhand,9,908,2122.56,1899.78,222.78
+Chandigarh,16,901,428.81,278.35,150.47
+Chhattisgarh,16,900,5268.25,5205.46,62.79
+Arunachal Pradesh,0,917,,167.76,0.0
+Goa,0,917,,681.95,0.0
+Dadra And Nagar Haveli And Daman And Diu,0,917,,1285.54,0.0
+Assam,0,917,,1941.15,0.0
+Himachal Pradesh,0,917,,1774.21,0.0
+Maharashtra,0,917,,25884.24,0.0
+Kerala,0,917,,4250.93,0.0
+Karnataka,0,917,,13491.65,0.0
+Jammu And Kashmir,0,917,,2653.26,0.0
+Nagaland,0,917,,157.9,0.0
+Mizoram,0,917,,124.4,0.0
+Manipur,0,917,,204.39,0.0
+Meghalaya,0,917,,326.25,0.0
+Puducherry,0,917,,443.65,0.0
+Other,0,917,,4354.6,0.0
+Tamil Nadu,0,917,,16802.46,0.0
+Sikkim,0,917,,90.76,0.0
+Telangana,0,917,,12063.77,0.0
+Tripura,0,917,,288.22,0.0
+Uttarakhand,0,917,,2237.14,0.0
+West Bengal,0,917,,9347.18,0.0

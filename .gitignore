@@ -1,0 +1,24 @@
+# Environment / secrets - never commit
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node (reserved for the future frontend)
+node_modules/
+dist/
+build/
+
+# Logs and local databases
+*.log
+*.db
+*.sqlite3
+
+# OS artifacts
+.DS_Store
+Thumbs.db

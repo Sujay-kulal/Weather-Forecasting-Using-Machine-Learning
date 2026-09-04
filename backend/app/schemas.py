@@ -1,0 +1,77 @@
+"""
+Pydantic schemas - API request/response contracts.
+
+These drive the automatic Swagger documentation at /docs.
+"""
+from datetime import date as date_type
+from datetime import datetime
+from typing import List, Optional
+
+from pydantic import BaseModel, Field
+
+
+# ----------------------------- requests -----------------------------
+class PredictionRequest(BaseModel):
+    state: str = Field(..., min_length=1, description="Indian state name, e.g. 'Karnataka'")
+    forecast_date: date_type = Field(..., description="Day to forecast (YYYY-MM-DD). "
+                                                      "Must have 7 days of history before it.")
+
+
+# ----------------------------- responses -----------------------------
+class PredictionResponse(BaseModel):
+    state: str
+    forecast_date: date_type
+    predicted_temp_avg: float = Field(..., description="Predicted Temp_Avg in deg C")
+    unit: str = "deg C"
+    model: str = Field(..., description="Model name that produced the prediction")
+    typical_error_mae: Optional[float] = Field(None, description="Test-set MAE of the model")
+    last_known: Optional[dict] = Field(None, description="Most recent measurement used "
+                                                         "(date + temp_avg)")
+
+
+class WeatherRecord(BaseModel):
+    date: date_type
+    state: str
+    temp_max: float
+    temp_min: float
+    temp_avg: float
+    humidity: float
+    rainfall: float
+
+
+class WeatherResponse(BaseModel):
+    state: str
+    count: int
+    records: List[WeatherRecord]
+
+
+class StatesResponse(BaseModel):
+    states: List[str]
+
+
+class HealthResponse(BaseModel):
+    status: str
+    database: str
+    model_loaded: bool
+
+
+class PredictionRecord(BaseModel):
+    id: int
+    state: str
+    forecast_date: date_type
+    predicted_temp_avg: float
+    created_at: datetime
+
+
+class PredictionsResponse(BaseModel):
+    count: int
+    predictions: List[PredictionRecord]
+
+
+class ModelInfoResponse(BaseModel):
+    model_name: str
+    target: str
+    features: List[str]
+    metrics: dict
+    train_period: List[str]
+    test_period: List[str]

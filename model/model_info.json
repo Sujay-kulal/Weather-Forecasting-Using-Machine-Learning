@@ -1,0 +1,91 @@
+{
+  "best_model": "Gradient Boosting",
+  "target": "next-day Temp_Avg (deg C)",
+  "features": [
+    "lag1_temp_avg",
+    "lag2_temp_avg",
+    "lag3_temp_avg",
+    "lag1_temp_max",
+    "lag1_temp_min",
+    "lag1_humidity",
+    "lag1_rainfall",
+    "roll3_temp_avg",
+    "roll7_temp_avg",
+    "month_sin",
+    "month_cos",
+    "Season",
+    "State"
+  ],
+  "train_period": [
+    "2023-04-08",
+    "2025-04-06"
+  ],
+  "test_period": [
+    "2025-04-07",
+    "2025-10-05"
+  ],
+  "metrics": {
+    "Linear Regression": {
+      "MAE": 0.9129,
+      "RMSE": 1.2196,
+      "R2": 0.9676
+    },
+    "Decision Tree": {
+      "MAE": 0.9144,
+      "RMSE": 1.2521,
+      "R2": 0.9659
+    },
+    "Random Forest": {
+      "MAE": 0.8731,
+      "RMSE": 1.1928,
+      "R2": 0.9691
+    },
+    "Gradient Boosting": {
+      "MAE": 0.876,
+      "RMSE": 1.1854,
+      "R2": 0.9694
+    },
+    "Naive (tomorrow=today)": {
+      "MAE": 0.9148,
+      "RMSE": 1.2551,
+      "R2": 0.9657
+    }
+  },
+  "states": [
+    "Andhra Pradesh",
+    "Arunachal Pradesh",
+    "Assam",
+    "Bihar",
+    "Chandigarh",
+    "Chhattisgarh",
+    "Dadra And Nagar Haveli And Daman And Diu",
+    "Delhi",
+    "Goa",
+    "Gujarat",
+    "Haryana",
+    "Himachal Pradesh",
+    "Jammu And Kashmir",
+    "Jharkhand",
+    "Karnataka",
+    "Kerala",
+    "Madhya Pradesh",
+    "Maharashtra",
+    "Manipur",
+    "Meghalaya",
+    "Mizoram",
+    "Nagaland",
+    "Odisha",
+    "Other",
+    "Puducherry",
+    "Punjab",
+    "Rajasthan",
+    "Sikkim",
+    "Tamil Nadu",
+    "Telangana",
+    "Tripura",
+    "Uttar Pradesh",
+    "Uttarakhand",
+    "West Bengal"
+  ],
+  "random_state": 42
+}
