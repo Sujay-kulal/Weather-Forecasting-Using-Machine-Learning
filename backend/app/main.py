@@ -29,6 +29,16 @@ async def lifespan(app: FastAPI):
         logger.error("Cannot connect to PostgreSQL - check DATABASE_URL in backend/.env")
     else:
         logger.info("PostgreSQL connection OK, tables ready")
+        
+        logger.info("Auto-populating database...")
+        import subprocess
+        try:
+            subprocess.run(["python", "import_data.py"], check=True)
+            subprocess.run(["python", "update_weather.py"], check=True)
+            logger.info("Database auto-population successful.")
+        except Exception as e:
+            logger.error(f"Auto-population failed: {e}")
+            
     logger.info("Trained model loaded: %s", prediction.model_service.MODEL_NAME)
     yield
 
