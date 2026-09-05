@@ -41,15 +41,6 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-@app.delete("/cleanup_predictions")
-def cleanup_predictions():
-    from app.database import SessionLocal
-    from sqlalchemy import text
-    session = SessionLocal()
-    session.execute(text("DELETE FROM predictions WHERE id = 1"))
-    session.commit()
-    return {"status": "ok"}
-
 # CORS - allow local frontend dev servers (React/Next.js). Override via env:
 #   CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 origins_env = os.environ.get("CORS_ORIGINS",
