@@ -118,8 +118,10 @@ export function ForecastPage() {
                 required
               />
               <small className="hint">
-                Default: day after the latest measurement for this state. The backend validates
-                the date and rejects dates without sufficient history.
+                {recentRecords.length > 0
+                  ? `Latest available measurement: ${recentRecords[recentRecords.length - 1].date}. Default forecast: day after latest measurement.`
+                  : "Select a state to see available history."}{" "}
+                The backend validates the date and rejects dates without sufficient history.
               </small>
             </label>
 
