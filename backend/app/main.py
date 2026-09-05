@@ -51,7 +51,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS - allow local frontend dev servers (React/Next.js). Override via env:
+@app.get("/populate_debug")
+def populate_debug():
+    import subprocess
+    try:
+        out1 = subprocess.check_output(["python", "import_data.py"], stderr=subprocess.STDOUT)
+        out2 = subprocess.check_output(["python", "update_weather.py"], stderr=subprocess.STDOUT)
+        return {"import": out1.decode(), "update": out2.decode()}
+    except subprocess.CalledProcessError as e:
+        return {"error": str(e), "output": e.output.decode()}
+
 #   CORS_ORIGINS=http://localhost:3000,http://localhost:5173
 origins_env = os.environ.get("CORS_ORIGINS",
                              "http://localhost:3000,http://localhost:5173,"
