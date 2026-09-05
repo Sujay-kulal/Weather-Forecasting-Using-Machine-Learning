@@ -64,6 +64,17 @@ Loads all 31,177 real rows from `data/archive_c/PSP_Weather_Merged_EDA_Cleaned.c
 into `weather_data` (weather columns only — power-demand columns are excluded).
 Existing rows are skipped, so re-running never duplicates.
 
+### Keep Data Current (Open-Meteo Ingestion)
+
+Because the CSV ends at 2025-10-06, predictions for current/future dates will fail.
+Use the built-in ingestion script to pull the latest real observations from the Open-Meteo Archive API:
+
+```bash
+python update_weather.py
+```
+
+This polls missing days up to the current date and inserts them safely. The script checks the latest measurement date for each state and pulls exact missing daily variables (`temperature_2m_max/min/mean`, `relative_humidity_2m_mean`, `precipitation_sum`).
+
 ## 5. Start the API
 
 ```bash
