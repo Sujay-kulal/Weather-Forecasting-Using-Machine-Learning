@@ -1,0 +1,299 @@
+{"kind":"deck","id":"pr/xnnhyi","name":"Deck"}
+{"kind":"layout","layoutId":"f52c6951-a277-4c6b-96fc-bdda713aa6b6","name":"Master","type":"master"}
+{"kind":"layout","layoutId":"93e6f8c7-2503-46a9-b119-f3456dbbf14d","name":"Title Slide","type":"title"}
+{"kind":"slide","id":"sl/3ai6lc","slide":1,"title":"Weather Forecasting","textShapes":5}
+{"kind":"textbox","id":"sh/cb69kjux","slide":1,"text":"Weather Forecasting\nUsing Machine Learning","textPreview":"Weather Forecasting | Using Machine Learning","textChars":42,"textLines":2,"bbox":[72,92,780,130]}
+{"kind":"textbox","id":"sh/bqx8beds","slide":1,"text":"Final-Year College Project Presentation","textPreview":"Final-Year College Project Presentation","textChars":39,"textLines":1,"bbox":[76,240,480,36]}
+{"kind":"shape","id":"sh/apo7i9c7","slide":1,"bbox":[76,296,110,7]}
+{"kind":"textbox","id":"sh/lgzqhobu","slide":1,"text":"Student Name: [Name]\nUSN: [USN]\nDepartment: [Department]\nCollege: [College]\nGuide: [Guide]\nAcademic Year: [Year]","textPreview":"Student Name: [Name] | USN: [USN] | Department: [Department] | College: [College] | Guide: [Guide] | Academic Year: [Year]","textChars":112,"textLines":6,"bbox":[78,365,600,215]}
+{"kind":"textbox","id":"sh/kfq9oju9","slide":1,"text":"Next-day average temperature forecasting\nfor Indian states","textPreview":"Next-day average temperature forecasting | for Indian states","textChars":58,"textLines":2,"bbox":[860,125,300,120]}
+{"kind":"textbox","id":"sh/zex8fedo","slide":1,"text":"Repository-verified presentation","textPreview":"Repository-verified presentation","textChars":32,"textLines":1,"bbox":[860,290,300,32]}
+{"kind":"notes","id":"nt/3ai6lc","slide":1,"text":"Good morning. This project is called Weather Forecasting Using Machine Learning. It forecasts the next-day average temperature for Indian states. I will explain the dataset, model, full-stack implementation, results, and the parts that still need deployment verification. Source: repository project files and verification report."}
+{"kind":"slide","id":"sl/blmnx1","slide":2,"title":"Introduction","textShapes":11}
+{"kind":"textbox","id":"sh/wr2dw3u5","slide":2,"text":"Introduction","textPreview":"Introduction","textChars":12,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/bq9c3ydk","slide":2,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/ap0vutcz","slide":2,"text":"A local full-stack application for next-day average-temperature forecasting","textPreview":"A local full-stack application for next-day average-temperature forecasting","textChars":75,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/9oru1ove","slide":2,"text":"Weather forecasting estimates future atmospheric conditions from observations collected over time.","textPreview":"Weather forecasting estimates future atmospheric conditions from observations collected over time.","textChars":98,"textLines":1,"bbox":[80,185,500,112]}
+{"kind":"textbox","id":"sh/onid8ju9","slide":2,"text":"Machine learning learns relationships between historical weather patterns and the next day's average temperature.","textPreview":"Machine learning learns relationships between historical weather patterns and the next day's average temperature.","textChars":113,"textLines":1,"bbox":[80,323,500,96]}
+{"kind":"textbox","id":"sh/nm9czydo","slide":2,"text":"The application provides","textPreview":"The application provides","textChars":24,"textLines":1,"bbox":[680,178,370,34]}
+{"kind":"textbox","id":"sh/ml0v6tc3","slide":2,"text":"State and date forecast request","textPreview":"State and date forecast request","textChars":31,"textLines":1,"bbox":[680,236,420,48]}
+{"kind":"textbox","id":"sh/tkvedsvy","slide":2,"text":"Historical weather visualisation","textPreview":"Historical weather visualisation","textChars":32,"textLines":1,"bbox":[680,308,420,48]}
+{"kind":"textbox","id":"sh/sjmd4nud","slide":2,"text":"Model metrics and input features","textPreview":"Model metrics and input features","textChars":32,"textLines":1,"bbox":[680,380,420,48]}
+{"kind":"textbox","id":"sh/qxs76d07","slide":2,"text":"Stored prediction history","textPreview":"Stored prediction history","textChars":25,"textLines":1,"bbox":[680,452,420,48]}
+{"kind":"shape","id":"sh/by18zihs","slide":2,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/czap8nid","slide":2,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/dkjq1szy","slide":2,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"notes","id":"nt/blmnx1","slide":2,"text":"Weather forecasting estimates future atmospheric conditions using earlier observations. In this project, machine learning learns temperature patterns from historical state-level weather data. The application lets a user choose a state and date, then returns a next-day average temperature forecast with supporting weather context. Source: frontend README, ForecastPage.tsx, train_model.py."}
+{"kind":"slide","id":"sl/2qkfuq","slide":3,"title":"Problem Statement","textShapes":13}
+{"kind":"textbox","id":"sh/wjm5oj2h","slide":3,"text":"Problem Statement","textPreview":"Problem Statement","textChars":17,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/bidofe1w","slide":3,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/ahknm9kb","slide":3,"text":"Repository-defined problem scope","textPreview":"Repository-defined problem scope","textChars":32,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/l8v6lojy","slide":3,"text":"How can stored state-level weather observations be converted into a validated next-day average-temperature forecast that a user can request through a web application?","textPreview":"How can stored state-level weather observations be converted into a validated next-day average-temperature forecast that a user can reque...","textChars":166,"textLines":1,"bbox":[90,190,1010,105]}
+{"kind":"textbox","id":"sh/k7mpsj2d","slide":3,"text":"Training-serving consistency","textPreview":"Training-serving consistency","textChars":28,"textLines":1,"bbox":[90,355,480,30]}
+{"kind":"textbox","id":"sh/j6dojy1s","slide":3,"text":"The API must construct the same 13 features used by the saved model.","textPreview":"The API must construct the same 13 features used by the saved model.","textChars":68,"textLines":1,"bbox":[90,393,470,56]}
+{"kind":"textbox","id":"sh/y54nqtk7","slide":3,"text":"No future-data leakage","textPreview":"No future-data leakage","textChars":22,"textLines":1,"bbox":[630,355,480,30]}
+{"kind":"textbox","id":"sh/1cb6p4ju","slide":3,"text":"Prediction features must use only historical records before the forecast as-of date.","textPreview":"Prediction features must use only historical records before the forecast as-of date.","textChars":84,"textLines":1,"bbox":[630,393,470,56]}
+{"kind":"textbox","id":"sh/0b25gz29","slide":3,"text":"Usable application workflow","textPreview":"Usable application workflow","textChars":27,"textLines":1,"bbox":[90,477,480,30]}
+{"kind":"textbox","id":"sh/mtkjapkv","slide":3,"text":"Users need forecast, history, model-information and prediction-history views.","textPreview":"Users need forecast, history, model-information and prediction-history views.","textChars":77,"textLines":1,"bbox":[90,515,470,56]}
+{"kind":"textbox","id":"sh/nutk3a1g","slide":3,"text":"Auditable outputs","textPreview":"Auditable outputs","textChars":17,"textLines":1,"bbox":[630,477,480,30]}
+{"kind":"textbox","id":"sh/ov21cf21","slide":3,"text":"Each successful forecast is stored in the predictions table.","textPreview":"Each successful forecast is stored in the predictions table.","textChars":60,"textLines":1,"bbox":[630,515,470,56]}
+{"kind":"shape","id":"sh/9wv25kjm","slide":3,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/ax43epk7","slide":3,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/vydk7u1s","slide":3,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"notes","id":"nt/2qkfuq","slide":3,"text":"The repository addresses the need to turn stored state-level weather observations into a next-day average-temperature forecast that users can request through a web application. The project keeps training and serving features consistent, prevents future-data leakage, exposes the workflow in the UI and retains generated forecasts. Source: backend README, feature_service.py and prediction.py."}
+{"kind":"slide","id":"sl/abnamy","slide":4,"title":"Objectives","textShapes":16}
+{"kind":"textbox","id":"sh/m98fi14b","slide":4,"text":"Objectives","textPreview":"Objectives","textChars":10,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/9czetg3m","slide":4,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/8bqxkbmh","slide":4,"text":"Objectives derived from the implemented code","textPreview":"Objectives derived from the implemented code","textChars":44,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/zmhwn6lk","slide":4,"text":"01","textPreview":"01","textChars":2,"textLines":1,"bbox":[92,175,54,44]}
+{"kind":"textbox","id":"sh/ylove14z","slide":4,"text":"Train and compare regression models for next-day Temp_Avg.","textPreview":"Train and compare regression models for next-day Temp_Avg.","textChars":58,"textLines":1,"bbox":[170,173,890,52]}
+{"kind":"textbox","id":"sh/l8zepw3q","slide":4,"text":"02","textPreview":"02","textChars":2,"textLines":1,"bbox":[92,247,54,44]}
+{"kind":"textbox","id":"sh/knqdgrm5","slide":4,"text":"Select and save the trained candidate with the lowest test RMSE.","textPreview":"Select and save the trained candidate with the lowest test RMSE.","textChars":64,"textLines":1,"bbox":[170,245,890,52]}
+{"kind":"textbox","id":"sh/bixwjmlo","slide":4,"text":"03","textPreview":"03","textChars":2,"textLines":1,"bbox":[92,319,54,44]}
+{"kind":"textbox","id":"sh/ahovah43","slide":4,"text":"Build leakage-aware lag, rolling, seasonal and state features.","textPreview":"Build leakage-aware lag, rolling, seasonal and state features.","textChars":62,"textLines":1,"bbox":[170,317,890,52]}
+{"kind":"textbox","id":"sh/g72p83el","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[92,391,54,44]}
+{"kind":"textbox","id":"sh/18b6h8v6","slide":4,"text":"Serve validated predictions through FastAPI.","textPreview":"Serve validated predictions through FastAPI.","textChars":44,"textLines":1,"bbox":[170,389,890,52]}
+{"kind":"textbox","id":"sh/elk76twf","slide":4,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[92,463,54,44]}
+{"kind":"textbox","id":"sh/fmtofyx0","slide":4,"text":"Store weather data and prediction audit records in PostgreSQL.","textPreview":"Store weather data and prediction audit records in PostgreSQL.","textChars":62,"textLines":1,"bbox":[170,461,890,52]}
+{"kind":"textbox","id":"sh/sjip4je9","slide":4,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[92,535,54,44]}
+{"kind":"textbox","id":"sh/tkb6dofu","slide":4,"text":"Provide React pages for forecasts, weather history, model performance and predictions.","textPreview":"Provide React pages for forecasts, weather history, model performance and predictions.","textChars":86,"textLines":1,"bbox":[170,533,890,52]}
+{"kind":"shape","id":"sh/6h072twj","slide":4,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/ri9obyx4","slide":4,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/cfmpgnet","slide":4,"text":"04","textPreview":"04","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"notes","id":"nt/abnamy","slide":4,"text":"The implemented objectives are to train and compare regression models, select a model by test RMSE, serve predictions with FastAPI, use PostgreSQL for weather data and audit records, and provide a React interface for forecasts, weather history, model performance and prediction history. Source: train_model.py, backend application files and frontend App.tsx."}
+{"kind":"slide","id":"sl/xktprz","slide":5,"title":"Existing System vs Proposed System","textShapes":5}
+{"kind":"textbox","id":"sh/dcbadwn2","slide":5,"text":"Existing System vs Proposed System","textPreview":"Existing System vs Proposed System","textChars":34,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/qpkrihor","slide":5,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/batsbm5c","slide":5,"text":"The repository does not document a separate legacy product; this compares a manual historical-data workflow with the implemented system","textPreview":"The repository does not document a separate legacy product; this compares a manual historical-data workflow with the implemented system","textChars":135,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/lgvahwne","slide":5,"text":"Comparison is limited to behaviours evidenced by the repository. It does not claim a named previous product.","textPreview":"Comparison is limited to behaviours evidenced by the repository. It does not claim a named previous product.","textChars":108,"textLines":1,"bbox":[72,614,1120,32]}
+{"kind":"shape","id":"sh/ydkrm14n","slide":5,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/zetsf658","slide":5,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/8jmtsbmp","slide":5,"text":"05","textPreview":"05","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"table","id":"tb/983i9kbm","slide":5,"name":"","rows":7,"cols":3,"preview":"Aspect | Manual / disconnected workflow | Implemented proposed system","bbox":[68,175,1144,410]}
+{"kind":"notes","id":"nt/xktprz","slide":5,"text":"The repository does not describe a separate legacy product, so this comparison describes a manual historical-data workflow versus the implemented system. The proposed system centralises data access, constructs model inputs automatically, validates requests and stores output records. Source: backend README, routes and frontend README."}
+{"kind":"slide","id":"sl/9etx6x","slide":6,"title":"System Architecture","textShapes":13}
+{"kind":"textbox","id":"sh/m9sj298f","slide":6,"text":"System Architecture","textPreview":"System Architecture","textChars":19,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/9w3id47q","slide":6,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/8vu14jq5","slide":6,"text":"Verified request and prediction path","textPreview":"Verified request and prediction path","textChars":36,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/vyl0fepw","slide":6,"text":"User","textPreview":"User","textChars":4,"textLines":1,"bbox":[80,225,135,60]}
+{"kind":"textbox","id":"sh/axcj698b","slide":6,"text":"React + Vite\nFrontend","textPreview":"React + Vite | Frontend","textChars":21,"textLines":2,"bbox":[270,225,175,60]}
+{"kind":"textbox","id":"sh/x03iho72","slide":6,"text":"FastAPI\nBackend","textPreview":"FastAPI | Backend","textChars":15,"textLines":2,"bbox":[500,225,150,60]}
+{"kind":"textbox","id":"sh/wzu18jqh","slide":6,"text":"PostgreSQL\nweather_data","textPreview":"PostgreSQL | weather_data","textChars":23,"textLines":2,"bbox":[705,225,180,60]}
+{"kind":"textbox","id":"sh/b2h03ups","slide":6,"text":"Feature\nService","textPreview":"Feature | Service","textChars":15,"textLines":2,"bbox":[940,225,155,60]}
+{"kind":"textbox","id":"sh/q18zup87","slide":6,"text":"Saved scikit-learn\nGradient Boosting pipeline","textPreview":"Saved scikit-learn | Gradient Boosting pipeline","textChars":45,"textLines":2,"bbox":[805,380,270,66]}
+{"kind":"textbox","id":"sh/cfa1gnu9","slide":6,"text":"PostgreSQL\npredictions","textPreview":"PostgreSQL | predictions","textChars":22,"textLines":2,"bbox":[495,380,180,66]}
+{"kind":"textbox","id":"sh/dgji9svu","slide":6,"text":"JSON response\nto frontend","textPreview":"JSON response | to frontend","textChars":25,"textLines":2,"bbox":[220,380,180,66]}
+{"kind":"shape","id":"sh/qdsjedc3","slide":6,"bbox":[215,255,55,0]}
+{"kind":"shape","id":"sh/be107ido","slide":6,"bbox":[257,248,15,14]}
+{"kind":"shape","id":"sh/0ju1k7ul","slide":6,"bbox":[445,255,55,0]}
+{"kind":"shape","id":"sh/lk3idcvq","slide":6,"bbox":[487,248,15,14]}
+{"kind":"shape","id":"sh/yhsjixcf","slide":6,"bbox":[650,255,55,0]}
+{"kind":"shape","id":"sh/zi10b2d0","slide":6,"bbox":[692,248,15,14]}
+{"kind":"shape","id":"sh/gnqh83u1","slide":6,"bbox":[885,255,55,0]}
+{"kind":"shape","id":"sh/1ozi18vm","slide":6,"bbox":[927,248,15,14]}
+{"kind":"shape","id":"sh/h87qp0je","slide":6,"bbox":[947,285,71,95]}
+{"kind":"shape","id":"sh/w7ypwv2t","slide":6,"bbox":[940,367,14,15]}
+{"kind":"shape","id":"sh/v6ponq18","slide":6,"bbox":[675,413,130,0]}
+{"kind":"shape","id":"sh/u5g7u5kn","slide":6,"bbox":[674,406,15,14]}
+{"kind":"shape","id":"sh/5wrqtkja","slide":6,"bbox":[400,413,95,0]}
+{"kind":"shape","id":"sh/4vipkf2p","slide":6,"bbox":[399,406,15,14]}
+{"kind":"shape","id":"sh/jup8ra14","slide":6,"bbox":[150,285,70,128]}
+{"kind":"shape","id":"sh/i9g7y5kj","slide":6,"bbox":[143,284,14,15]}
+{"kind":"textbox","id":"sh/t0rqxkj6","slide":6,"text":"POST /predict reads seven records before D−1, creates the exact feature row, predicts and writes an audit record.","textPreview":"POST /predict reads seven records before D−1, creates the exact feature row, predicts and writes an audit record.","textChars":113,"textLines":1,"bbox":[154,520,960,42]}
+{"kind":"shape","id":"sh/szipofi1","slide":6,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/q5cnih0j","slide":6,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/b6l4rmho","slide":6,"text":"06","textPreview":"06","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"notes","id":"nt/9etx6x","slide":6,"text":"The user works through the React and Vite interface. FastAPI validates the request and reads weather history from PostgreSQL. The feature service creates the exact 13 inputs used in training. The saved Gradient Boosting pipeline predicts the temperature, FastAPI stores the audit record, and then returns the response to the interface. Source: backend README, main.py, prediction.py and feature_service.py."}
+{"kind":"slide","id":"sl/bod5xt","slide":7,"title":"Technologies Used","textShapes":16}
+{"kind":"textbox","id":"sh/e9cnq1sv","slide":7,"text":"Technologies Used","textPreview":"Technologies Used","textChars":17,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/1w361gr6","slide":7,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/0vu5sbal","slide":7,"text":"Only technologies found in repository source or configuration","textPreview":"Only technologies found in repository source or configuration","textChars":61,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/r61ovm94","slide":7,"text":"Frontend","textPreview":"Frontend","textChars":8,"textLines":1,"bbox":[85,164,250,48]}
+{"kind":"textbox","id":"sh/q5snm1sj","slide":7,"text":"React 18, TypeScript, Vite, Recharts","textPreview":"React 18, TypeScript, Vite, Recharts","textChars":36,"textLines":1,"bbox":[365,164,740,48]}
+{"kind":"textbox","id":"sh/d836xwra","slide":7,"text":"Backend","textPreview":"Backend","textChars":7,"textLines":1,"bbox":[85,238,250,48]}
+{"kind":"textbox","id":"sh/s7a5orap","slide":7,"text":"Python, FastAPI, Uvicorn, SQLAlchemy, psycopg, Pydantic","textPreview":"Python, FastAPI, Uvicorn, SQLAlchemy, psycopg, Pydantic","textChars":55,"textLines":1,"bbox":[365,238,740,48]}
+{"kind":"textbox","id":"sh/3214rm98","slide":7,"text":"Database","textPreview":"Database","textChars":8,"textLines":1,"bbox":[85,312,250,48]}
+{"kind":"textbox","id":"sh/i1snihsn","slide":7,"text":"PostgreSQL","textPreview":"PostgreSQL","textChars":10,"textLines":1,"bbox":[365,312,740,48]}
+{"kind":"textbox","id":"sh/43mdwr2x","slide":7,"text":"Machine Learning","textPreview":"Machine Learning","textChars":16,"textLines":1,"bbox":[85,386,250,48]}
+{"kind":"textbox","id":"sh/54vu5w3i","slide":7,"text":"pandas, NumPy, scikit-learn, joblib","textPreview":"pandas, NumPy, scikit-learn, joblib","textChars":35,"textLines":1,"bbox":[365,386,740,48]}
+{"kind":"textbox","id":"sh/i14buhk7","slide":7,"text":"Data / API","textPreview":"Data / API","textChars":10,"textLines":1,"bbox":[85,460,250,48]}
+{"kind":"textbox","id":"sh/j2dc3mlc","slide":7,"text":"Local archive_c CSV; optional Open-Meteo Archive update script","textPreview":"Local archive_c CSV; optional Open-Meteo Archive update script","textChars":62,"textLines":1,"bbox":[365,460,740,48]}
+{"kind":"textbox","id":"sh/wfmts721","slide":7,"text":"Deployment","textPreview":"Deployment","textChars":10,"textLines":1,"bbox":[85,534,250,48]}
+{"kind":"textbox","id":"sh/hgvu1c3m","slide":7,"text":"Local configuration only. No cloud deployment service verified.","textPreview":"Local configuration only. No cloud deployment service verified.","textChars":63,"textLines":1,"bbox":[365,534,740,48]}
+{"kind":"shape","id":"sh/udkbqxkv","slide":7,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/vedcz2lg","slide":7,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/gb6d4b25","slide":7,"text":"07","textPreview":"07","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"notes","id":"nt/bod5xt","slide":7,"text":"The frontend uses React, TypeScript, Vite and Recharts. The backend uses Python, FastAPI, Uvicorn, SQLAlchemy and psycopg. PostgreSQL stores application data. Pandas, NumPy, scikit-learn and joblib support the model pipeline. Open-Meteo Archive appears only in the optional manual data-update script. No cloud deployment technology is verified. Source: package.json, requirements.txt and update_weather.py."}
+{"kind":"slide","id":"sl/3hog0p","slide":8,"title":"Dataset","textShapes":5}
+{"kind":"textbox","id":"sh/9k3u5k7i","slide":8,"text":"Dataset","textPreview":"Dataset","textChars":7,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/mhsbu5o7","slide":8,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/ni1c3apc","slide":8,"text":"Model source: data/archive_c/PSP_Weather_Merged_EDA_Cleaned.csv","textPreview":"Model source: data/archive_c/PSP_Weather_Merged_EDA_Cleaned.csv","textChars":63,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/lgja107m","slide":8,"text":"Power-demand columns exist in the source but are intentionally excluded from the ML pipeline.","textPreview":"Power-demand columns exist in the source but are intentionally excluded from the ML pipeline.","textChars":93,"textLines":1,"bbox":[80,606,1120,30]}
+{"kind":"shape","id":"sh/ydsbql8v","slide":8,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/ze1szqpg","slide":8,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/4bet4z65","slide":8,"text":"08","textPreview":"08","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"table","id":"tb/1cjad0rq","slide":8,"name":"","rows":8,"cols":2,"preview":"Item | Verified value","bbox":[65,162,1150,412]}
+{"kind":"notes","id":"nt/3hog0p","slide":8,"text":"The training CSV has 31,177 rows across 34 state labels from 1 April 2023 to 6 October 2025. The model selects weather fields, not the power-demand fields also present in the source. Our checks found no nulls in the required modelling fields and no duplicate state-date pair. Source: direct CSV inspection, train_model.py, import_data.py and archive_c README."}
+{"kind":"slide","id":"sl/po5ewa","slide":9,"title":"Machine Learning Model","textShapes":19}
+{"kind":"textbox","id":"sh/vuh03ih4","slide":9,"text":"Machine Learning Model","textPreview":"Machine Learning Model","textChars":22,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/gvq1cnyp","slide":9,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/hwzi5sza","slide":9,"text":"Saved model and test metrics from repository metadata","textPreview":"Saved model and test metrics from repository metadata","textChars":53,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/6poj6d0n","slide":9,"text":"Gradient Boosting Regressor","textPreview":"Gradient Boosting Regressor","textChars":27,"textLines":1,"bbox":[80,165,455,65]}
+{"kind":"textbox","id":"sh/7qh0zihs","slide":9,"text":"Target: next-day Temp_Avg (deg C)","textPreview":"Target: next-day Temp_Avg (deg C)","textChars":33,"textLines":1,"bbox":[80,248,455,45]}
+{"kind":"textbox","id":"sh/8rq183yd","slide":9,"text":"MAE","textPreview":"MAE","textChars":3,"textLines":1,"bbox":[80,330,145,34]}
+{"kind":"textbox","id":"sh/tszi18zy","slide":9,"text":"0.8760 °C","textPreview":"0.8760 °C","textChars":9,"textLines":1,"bbox":[80,368,145,48]}
+{"kind":"textbox","id":"sh/y1oj2t0b","slide":9,"text":"RMSE","textPreview":"RMSE","textChars":4,"textLines":1,"bbox":[240,330,145,34]}
+{"kind":"textbox","id":"sh/j2x0vyhw","slide":9,"text":"1.1854 °C","textPreview":"1.1854 °C","textChars":9,"textLines":1,"bbox":[240,368,145,48]}
+{"kind":"textbox","id":"sh/jip0f6lw","slide":9,"text":"R²","textPreview":"R²","textChars":2,"textLines":1,"bbox":[400,330,145,34]}
+{"kind":"textbox","id":"sh/ihgzm14b","slide":9,"text":"0.9694","textPreview":"0.9694","textChars":6,"textLines":1,"bbox":[400,368,145,48]}
+{"kind":"textbox","id":"sh/5krihg32","slide":9,"text":"Training process","textPreview":"Training process","textChars":16,"textLines":1,"bbox":[650,165,400,30]}
+{"kind":"textbox","id":"sh/kjihobmh","slide":9,"text":"Chronological 80% / 20% train-test split","textPreview":"Chronological 80% / 20% train-test split","textChars":40,"textLines":1,"bbox":[675,218,410,38]}
+{"kind":"textbox","id":"sh/7m90jql8","slide":9,"text":"Common preprocessing for all candidates","textPreview":"Common preprocessing for all candidates","textChars":39,"textLines":1,"bbox":[675,274,410,38]}
+{"kind":"textbox","id":"sh/6l0zql4n","slide":9,"text":"Model selected by lowest test RMSE","textPreview":"Model selected by lowest test RMSE","textChars":34,"textLines":1,"bbox":[675,330,410,38]}
+{"kind":"textbox","id":"sh/toril03y","slide":9,"text":"Saved pipeline: model/weather_model.joblib","textPreview":"Saved pipeline: model/weather_model.joblib","textChars":42,"textLines":1,"bbox":[675,386,410,38]}
+{"kind":"textbox","id":"sh/snihsvmd","slide":9,"text":"Metadata: model/model_info.json","textPreview":"Metadata: model/model_info.json","textChars":31,"textLines":1,"bbox":[675,442,410,38]}
+{"kind":"textbox","id":"sh/nq5g7mlo","slide":9,"text":"Candidates: Linear Regression, Decision Tree, Random Forest, Gradient Boosting, and naive persistence reference","textPreview":"Candidates: Linear Regression, Decision Tree, Random Forest, Gradient Boosting, and naive persistence reference","textChars":111,"textLines":1,"bbox":[80,490,1000,44]}
+{"kind":"shape","id":"sh/mpwzeh43","slide":9,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/ql4jmpor","slide":9,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/r6dkfu5c","slide":9,"text":"09","textPreview":"09","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"notes","id":"nt/po5ewa","slide":9,"text":"The selected model is scikit-learn Gradient Boosting. It predicts next-day Temp_Avg in degrees Celsius. Four regression models and a naive persistence reference were evaluated. The saved Gradient Boosting model had test MAE 0.8760, RMSE 1.1854 and R-squared 0.9694. Model choice used the lowest RMSE. Source: train_model.py, model_info.json and model_comparison.csv."}
+{"kind":"slide","id":"sl/j9s6x1","slide":10,"title":"Feature Engineering","textShapes":17}
+{"kind":"textbox","id":"sh/b69onudc","slide":10,"text":"Feature Engineering","textPreview":"Feature Engineering","textChars":19,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/c7ipgzex","slide":10,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/x8r6p4vi","slide":10,"text":"Actual 13-feature prediction pipeline","textPreview":"Actual 13-feature prediction pipeline","textChars":37,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/y907i9w3","slide":10,"text":"Raw weather\nhistory","textPreview":"Raw weather | history","textChars":19,"textLines":2,"bbox":[75,205,170,64]}
+{"kind":"textbox","id":"sh/zutorudo","slide":10,"text":"PostgreSQL records\nfrom D−2 to D−8","textPreview":"PostgreSQL records | from D−2 to D−8","textChars":34,"textLines":2,"bbox":[75,294,170,66]}
+{"kind":"shape","id":"sh/kv2pkzut","slide":10,"bbox":[245,237,67,0]}
+{"kind":"shape","id":"sh/lwb6t4ve","slide":10,"bbox":[299,230,15,14]}
+{"kind":"textbox","id":"sh/mxk7m9cz","slide":10,"text":"Preprocessing","textPreview":"Preprocessing","textChars":13,"textLines":1,"bbox":[312,205,170,64]}
+{"kind":"textbox","id":"sh/7ytovedk","slide":10,"text":"State-date ordering\nPast-only records","textPreview":"State-date ordering | Past-only records","textChars":37,"textLines":2,"bbox":[312,294,170,66]}
+{"kind":"shape","id":"sh/vixcji58","slide":10,"bbox":[482,237,67,0]}
+{"kind":"shape","id":"sh/uhovqd4n","slide":10,"bbox":[536,230,15,14]}
+{"kind":"textbox","id":"sh/h4ful8ne","slide":10,"text":"Feature\nengineering","textPreview":"Feature | engineering","textChars":19,"textLines":2,"bbox":[549,205,170,64]}
+{"kind":"textbox","id":"sh/w36ds3mt","slide":10,"text":"Lags, rolling means,\nmonth, season, state","textPreview":"Lags, rolling means, | month, season, state","textChars":41,"textLines":2,"bbox":[549,294,170,66]}
+{"kind":"shape","id":"sh/7edcfy5w","slide":10,"bbox":[719,237,67,0]}
+{"kind":"shape","id":"sh/md4vmt4r","slide":10,"bbox":[773,230,15,14]}
+{"kind":"textbox","id":"sh/9gvuh8n2","slide":10,"text":"Model input","textPreview":"Model input","textChars":11,"textLines":1,"bbox":[786,205,170,64]}
+{"kind":"textbox","id":"sh/8fmdo3mh","slide":10,"text":"13 columns in exact\ntraining order","textPreview":"13 columns in exact | training order","textChars":34,"textLines":2,"bbox":[786,294,170,66]}
+{"kind":"shape","id":"sh/rahwr25g","slide":10,"bbox":[956,237,67,0]}
+{"kind":"shape","id":"sh/698vyx4v","slide":10,"bbox":[1010,230,15,14]}
+{"kind":"textbox","id":"sh/25sfq1o3","slide":10,"text":"ML prediction","textPreview":"ML prediction","textChars":13,"textLines":1,"bbox":[1023,205,170,64]}
+{"kind":"textbox","id":"sh/n61gjmpo","slide":10,"text":"Gradient Boosting\nnext-day Temp_Avg","textPreview":"Gradient Boosting | next-day Temp_Avg","textChars":35,"textLines":2,"bbox":[1023,294,170,66]}
+{"kind":"textbox","id":"sh/o7axsr69","slide":10,"text":"Exact numeric inputs","textPreview":"Exact numeric inputs","textChars":20,"textLines":1,"bbox":[90,430,220,30]}
+{"kind":"textbox","id":"sh/ps3ylw7e","slide":10,"text":"lag1_temp_avg, lag2_temp_avg, lag3_temp_avg, lag1_temp_max, lag1_temp_min, lag1_humidity, lag1_rainfall, roll3_temp_avg, roll7_temp_avg, month_sin, month_cos","textPreview":"lag1_temp_avg, lag2_temp_avg, lag3_temp_avg, lag1_temp_max, lag1_temp_min, lag1_humidity, lag1_rainfall, roll3_temp_avg, roll7_temp_avg, ...","textChars":157,"textLines":1,"bbox":[90,470,1070,54]}
+{"kind":"textbox","id":"sh/atczu1oz","slide":10,"text":"Categorical inputs: Season and State. Numeric values are standardised; categories are one-hot encoded within the saved pipeline.","textPreview":"Categorical inputs: Season and State. Numeric values are standardised; categories are one-hot encoded within the saved pipeline.","textChars":128,"textLines":1,"bbox":[90,550,1070,36]}
+{"kind":"shape","id":"sh/bulgn6pk","slide":10,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/cvuhwb65","slide":10,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/xw3ypg7q","slide":10,"text":"10","textPreview":"10","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"notes","id":"nt/j9s6x1","slide":10,"text":"The backend reconstructs the same input row used at training time. It includes one to three day temperature lags, previous-day maximum, minimum, humidity and rainfall, three and seven record averages, cyclic month values, season and state. For date D it uses past records before D minus 1, so the target day's actual weather cannot leak into the forecast. Source: train_model.py and feature_service.py."}
+{"kind":"slide","id":"sl/7cpynu","slide":11,"title":"Backend and API","textShapes":6}
+{"kind":"textbox","id":"sh/6p4rudof","slide":11,"text":"Backend and API","textPreview":"Backend and API","textChars":15,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/tsfq5sn6","slide":11,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/8r69wn6l","slide":11,"text":"FastAPI implementation, request validation and responses","textPreview":"FastAPI implementation, request validation and responses","textChars":56,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/y147qdoj","slide":11,"text":"POST /predict flow","textPreview":"POST /predict flow","textChars":18,"textLines":1,"bbox":[80,532,210,28]}
+{"kind":"textbox","id":"sh/lovq1snu","slide":11,"text":"Pydantic request validation  →  state lookup  →  seven past records  →  staleness check  →  feature builder  →  joblib pipeline  →  predictions table  →  JSON","textPreview":"Pydantic request validation  →  state lookup  →  seven past records  →  staleness check  →  feature builder  →  joblib pipeline  →  predi...","textChars":158,"textLines":1,"bbox":[80,574,1110,44]}
+{"kind":"shape","id":"sh/knm9sn69","slide":11,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/byt8vy5s","slide":11,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/axk7mto7","slide":11,"text":"11","textPreview":"11","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"table","id":"tb/m18jil8v","slide":11,"name":"","rows":8,"cols":3,"preview":"Method | Endpoint | Purpose","bbox":[63,163,1150,330]}
+{"kind":"notes","id":"nt/7cpynu","slide":11,"text":"FastAPI provides seven endpoints. The key endpoint is POST slash predict. It accepts state and date, validates state availability and seven historical records, checks that history is recent, builds features, calls the saved pipeline, saves the outcome to PostgreSQL and returns JSON. It returns 404 for unknown state and 422 for insufficient or stale history. Source: schemas.py, health.py, weather.py and prediction.py."}
+{"kind":"slide","id":"sl/odzler","slide":12,"title":"Frontend","textShapes":14}
+{"kind":"textbox","id":"sh/sfmtw7mh","slide":12,"text":"Frontend","textPreview":"Frontend","textChars":8,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/7eds325w","slide":12,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/6d4bux4r","slide":12,"text":"React single-page application with four tabbed pages","textPreview":"React single-page application with four tabbed pages","textChars":52,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/hkfa9cne","slide":12,"text":"Forecast","textPreview":"Forecast","textChars":8,"textLines":1,"bbox":[82,175,475,45]}
+{"kind":"textbox","id":"sh/gj6t07mt","slide":12,"text":"State and date form\nPrediction result\n30-day context chart","textPreview":"State and date form | Prediction result | 30-day context chart","textChars":58,"textLines":3,"bbox":[108,242,420,80]}
+{"kind":"textbox","id":"sh/fixs7258","slide":12,"text":"Weather History","textPreview":"Weather History","textChars":15,"textLines":1,"bbox":[647,175,475,45]}
+{"kind":"textbox","id":"sh/uhobyh4n","slide":12,"text":"State selector\nTemperature chart and table\nLoad older data","textPreview":"State selector | Temperature chart and table | Load older data","textChars":58,"textLines":3,"bbox":[673,242,420,80]}
+{"kind":"textbox","id":"sh/p8zadwna","slide":12,"text":"Model Performance","textPreview":"Model Performance","textChars":17,"textLines":1,"bbox":[82,365,475,45]}
+{"kind":"textbox","id":"sh/47qt4rmp","slide":12,"text":"Selected model and periods\nCandidate metrics\nGrouped feature list","textPreview":"Selected model and periods | Candidate metrics | Grouped feature list","textChars":65,"textLines":3,"bbox":[108,432,420,80]}
+{"kind":"textbox","id":"sh/ih43adwj","slide":12,"text":"Prediction History","textPreview":"Prediction History","textChars":18,"textLines":1,"bbox":[647,365,475,45]}
+{"kind":"textbox","id":"sh/jid43ix4","slide":12,"text":"Stored forecast table\nPage size and state filter\nLoad more","textPreview":"Stored forecast table | Page size and state filter | Load more","textChars":58,"textLines":3,"bbox":[673,432,420,80]}
+{"kind":"textbox","id":"sh/kjmlcnep","slide":12,"text":"Shared behaviour: typed central API service, loading and error views, and a /health indicator that polls every 30 seconds.","textPreview":"Shared behaviour: typed central API service, loading and error views, and a /health indicator that polls every 30 seconds.","textChars":122,"textLines":1,"bbox":[100,580,1080,36]}
+{"kind":"textbox","id":"sh/5kvm5sfa","slide":12,"text":"No screenshot included: the configured backend was unavailable during verification, so a live UI state could not be captured without fabricating content.","textPreview":"No screenshot included: the configured backend was unavailable during verification, so a live UI state could not be captured without fabr...","textChars":153,"textLines":1,"bbox":[95,630,1090,22]}
+{"kind":"shape","id":"sh/6543exwv","slide":12,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/76x472xg","slide":12,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/s765g7el","slide":12,"text":"12","textPreview":"12","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"notes","id":"nt/odzler","slide":12,"text":"The frontend has four pages. Forecast creates a prediction and shows a recent history chart. Weather History displays state records with paging. Model Performance exposes the metadata and model comparison. Prediction History lists stored predictions with paging and a client-side state filter. The header checks backend health every 30 seconds. Source: App.tsx and all four frontend page components."}
+{"kind":"slide","id":"sl/ou2k3b","slide":13,"title":"Database","textShapes":7}
+{"kind":"textbox","id":"sh/gja9gzqh","slide":13,"text":"Database","textPreview":"Database","textChars":8,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/fi187u9w","slide":13,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/ehsrep8b","slide":13,"text":"PostgreSQL integration through SQLAlchemy ORM","textPreview":"PostgreSQL integration through SQLAlchemy ORM","textChars":45,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/sfa9cfq5","slide":13,"text":"Data flow","textPreview":"Data flow","textChars":9,"textLines":1,"bbox":[78,488,130,28]}
+{"kind":"textbox","id":"sh/re183a9k","slide":13,"text":"weather_data supplies historical input  →  POST /predict creates model input  →  predictions retains the returned temperature and creation time","textPreview":"weather_data supplies historical input  →  POST /predict creates model input  →  predictions retains the returned temperature and creatio...","textChars":143,"textLines":1,"bbox":[78,532,1110,44]}
+{"kind":"textbox","id":"sh/6tsrap8f","slide":13,"text":"No foreign-key relationship is declared between the two ORM models. SQLite is explicitly rejected; PostgreSQL is mandatory.","textPreview":"No foreign-key relationship is declared between the two ORM models. SQLite is explicitly rejected; PostgreSQL is mandatory.","textChars":123,"textLines":1,"bbox":[78,610,1110,28]}
+{"kind":"shape","id":"sh/5sjq1kru","slide":13,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/4rq98fq9","slide":13,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/2hwje5gz","slide":13,"text":"13","textPreview":"13","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"table","id":"tb/4ve1cjip","slide":13,"name":"","rows":3,"cols":3,"preview":"Table | Columns / purpose | Data integrity","bbox":[65,180,1150,255]}
+{"kind":"notes","id":"nt/ou2k3b","slide":13,"text":"PostgreSQL has two tables. Weather_data stores one daily weather record for a state and uses a unique state-date constraint. Predictions stores each generated forecast with its creation time. The project does not declare a foreign key between these tables, but weather_data supplies the forecasting inputs and predictions is the output audit trail. Source: models.py, database.py and import_data.py."}
+{"kind":"slide","id":"sl/hdca1m","slide":14,"title":"Testing and Results","textShapes":26}
+{"kind":"textbox","id":"sh/sv2love9","slide":14,"text":"Testing and Results","textPreview":"Testing and Results","textChars":19,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/ratkfqxo","slide":14,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/q9k3mlg3","slide":14,"text":"Results from current repository inspection and executed checks","textPreview":"Results from current repository inspection and executed checks","textChars":62,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/10vml0fq","slide":14,"text":"Saved model load and metadata","textPreview":"Saved model load and metadata","textChars":29,"textLines":1,"bbox":[82,162,330,38]}
+{"kind":"textbox","id":"sh/0z2lcve5","slide":14,"text":"PASS","textPreview":"PASS","textChars":4,"textLines":1,"bbox":[440,166,94,26]}
+{"kind":"textbox","id":"sh/fyt4jaxk","slide":14,"text":"Gradient Boosting pipeline loaded; 13 features","textPreview":"Gradient Boosting pipeline loaded; 13 features","textChars":46,"textLines":1,"bbox":[560,162,630,42]}
+{"kind":"textbox","id":"sh/exk3a5wf","slide":14,"text":"Dataset NULL and duplicate checks","textPreview":"Dataset NULL and duplicate checks","textChars":33,"textLines":1,"bbox":[82,225,330,38]}
+{"kind":"textbox","id":"sh/p4vmpkf2","slide":14,"text":"PASS","textPreview":"PASS","textChars":4,"textLines":1,"bbox":[440,229,94,26]}
+{"kind":"textbox","id":"sh/o3mlgfeh","slide":14,"text":"0 nulls in required fields; 0 duplicate state-date pairs","textPreview":"0 nulls in required fields; 0 duplicate state-date pairs","textChars":56,"textLines":1,"bbox":[560,225,630,42]}
+{"kind":"textbox","id":"sh/q5k3e5wb","slide":14,"text":"Date range validation","textPreview":"Date range validation","textChars":21,"textLines":1,"bbox":[82,288,330,38]}
+{"kind":"textbox","id":"sh/r6t4naxw","slide":14,"text":"PASS","textPreview":"PASS","textChars":4,"textLines":1,"bbox":[440,292,94,26]}
+{"kind":"textbox","id":"sh/s7mlgfeh","slide":14,"text":"Parsed range: 2023-04-01 to 2025-10-06","textPreview":"Parsed range: 2023-04-01 to 2025-10-06","textChars":38,"textLines":1,"bbox":[560,288,630,42]}
+{"kind":"textbox","id":"sh/d8vmp0f2","slide":14,"text":"Frontend build and TypeScript","textPreview":"Frontend build and TypeScript","textChars":29,"textLines":1,"bbox":[82,351,330,38]}
+{"kind":"textbox","id":"sh/e943i5wn","slide":14,"text":"PASS","textPreview":"PASS","textChars":4,"textLines":1,"bbox":[440,355,94,26]}
+{"kind":"textbox","id":"sh/fad4rax8","slide":14,"text":"tsc and Vite build completed; chunk-size warning issued","textPreview":"tsc and Vite build completed; chunk-size warning issued","textChars":55,"textLines":1,"bbox":[560,351,630,42]}
+{"kind":"textbox","id":"sh/0vm5kfed","slide":14,"text":"SQLite and secret/config checks","textPreview":"SQLite and secret/config checks","textChars":31,"textLines":1,"bbox":[82,414,330,38]}
+{"kind":"textbox","id":"sh/1wvmtkfy","slide":14,"text":"PASS","textPreview":"PASS","textChars":4,"textLines":1,"bbox":[440,418,94,26]}
+{"kind":"textbox","id":"sh/ud036lg3","slide":14,"text":"SQLite rejected; no hard-coded credential assignment found outside local .env","textPreview":"SQLite rejected; no hard-coded credential assignment found outside local .env","textChars":77,"textLines":1,"bbox":[560,414,630,42]}
+{"kind":"textbox","id":"sh/ve94fqxo","slide":14,"text":"Current backend health / DB connection","textPreview":"Current backend health / DB connection","textChars":38,"textLines":1,"bbox":[82,477,330,38]}
+{"kind":"textbox","id":"sh/z65sri94","slide":14,"text":"FAIL","textPreview":"FAIL","textChars":4,"textLines":1,"bbox":[440,481,94,26]}
+{"kind":"textbox","id":"sh/y5wrydsz","slide":14,"text":"Configured PostgreSQL port 5433 was unreachable; check_connection() returned False","textPreview":"Configured PostgreSQL port 5433 was unreachable; check_connection() returned False","textChars":82,"textLines":1,"bbox":[560,477,630,42]}
+{"kind":"textbox","id":"sh/l8natsra","slide":14,"text":"Consistency test, forecast generation, live endpoints","textPreview":"Consistency test, forecast generation, live endpoints","textChars":53,"textLines":1,"bbox":[82,540,330,38]}
+{"kind":"textbox","id":"sh/07e90nap","slide":14,"text":"WARNING","textPreview":"WARNING","textChars":7,"textLines":1,"bbox":[440,544,94,26]}
+{"kind":"textbox","id":"sh/b2lsni98","slide":14,"text":"Not completed because configured database was unavailable","textPreview":"Not completed because configured database was unavailable","textChars":57,"textLines":1,"bbox":[560,540,630,42]}
+{"kind":"textbox","id":"sh/q1crudsn","slide":14,"text":"Stored model test metrics: MAE 0.8760 °C   RMSE 1.1854 °C   R² 0.9694","textPreview":"Stored model test metrics: MAE 0.8760 °C   RMSE 1.1854 °C   R² 0.9694","textChars":69,"textLines":1,"bbox":[135,618,1010,34]}
+{"kind":"shape","id":"sh/d4nap8re","slide":14,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/c3e9wnat","slide":14,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/vypsz29c","slide":14,"text":"14","textPreview":"14","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"notes","id":"nt/hdca1m","slide":14,"text":"The saved model, source data checks and frontend build passed. The build did show a size warning for the JavaScript chunk. The current local database URL points to an unavailable port, so database-dependent tests could not complete. I report those as fail or warning instead of claiming successful live API or forecast testing. Source: executed verification checks and model_info.json."}
+{"kind":"slide","id":"sl/hb9xgt","slide":15,"title":"Deployment Architecture","textShapes":12}
+{"kind":"textbox","id":"sh/q94f650r","slide":15,"text":"Deployment Architecture","textPreview":"Deployment Architecture","textChars":23,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/dcfy10zi","slide":15,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/cb6h8vix","slide":15,"text":"Confirmed local configuration only","textPreview":"Confirmed local configuration only","textChars":34,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/3mdgvqhg","slide":15,"text":"GitHub remote\nrepository","textPreview":"GitHub remote | repository","textChars":24,"textLines":2,"bbox":[90,195,180,68]}
+{"kind":"textbox","id":"sh/2l4f2l0v","slide":15,"text":"React + Vite\nlocal frontend\nport 5173","textPreview":"React + Vite | local frontend | port 5173","textChars":37,"textLines":3,"bbox":[365,195,195,78]}
+{"kind":"textbox","id":"sh/povyx0z6","slide":15,"text":"FastAPI + Uvicorn\nlocal backend\nport 8000","textPreview":"FastAPI + Uvicorn | local backend | port 8000","textChars":41,"textLines":3,"bbox":[655,195,205,78]}
+{"kind":"textbox","id":"sh/4nmx4vi1","slide":15,"text":"PostgreSQL\nvia DATABASE_URL","textPreview":"PostgreSQL | via DATABASE_URL","textChars":27,"textLines":2,"bbox":[955,195,190,78]}
+{"kind":"shape","id":"sh/vitgrqh4","slide":15,"bbox":[270,230,95,0]}
+{"kind":"shape","id":"sh/uhkfyl0j","slide":15,"bbox":[352,223,15,14]}
+{"kind":"shape","id":"sh/g3m9szax","slide":15,"bbox":[560,234,95,0]}
+{"kind":"shape","id":"sh/h4va14bi","slide":15,"bbox":[642,227,15,14]}
+{"kind":"shape","id":"sh/uh4rq9sr","slide":15,"bbox":[860,234,95,0]}
+{"kind":"shape","id":"sh/v2dszetc","slide":15,"bbox":[942,227,15,14]}
+{"kind":"textbox","id":"sh/8fm9oza1","slide":15,"text":"Environment variables","textPreview":"Environment variables","textChars":21,"textLines":1,"bbox":[90,360,250,30]}
+{"kind":"textbox","id":"sh/tgvax4b6","slide":15,"text":"VITE_API_BASE_URL controls the frontend API base URL. DATABASE_URL supplies PostgreSQL. CORS_ORIGINS controls allowed frontend origins.","textPreview":"VITE_API_BASE_URL controls the frontend API base URL. DATABASE_URL supplies PostgreSQL. CORS_ORIGINS controls allowed frontend origins.","textChars":135,"textLines":1,"bbox":[90,403,1030,44]}
+{"kind":"textbox","id":"sh/6dkrmpsv","slide":15,"text":"Not verified in repository","textPreview":"Not verified in repository","textChars":26,"textLines":1,"bbox":[90,500,250,30]}
+{"kind":"textbox","id":"sh/7edsvutg","slide":15,"text":"No Vercel, Render, Neon, Docker, GitHub Actions or production deployment manifest found. Do not claim a cloud deployment topology.","textPreview":"No Vercel, Render, Neon, Docker, GitHub Actions or production deployment manifest found. Do not claim a cloud deployment topology.","textChars":130,"textLines":1,"bbox":[90,543,1030,44]}
+{"kind":"shape","id":"sh/sb6t0ja5","slide":15,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/dcza9orq","slide":15,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/lsvatoju","slide":15,"text":"15","textPreview":"15","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"notes","id":"nt/hb9xgt","slide":15,"text":"The repository confirms local development settings only: Vite on port 5173, FastAPI on port 8000 and PostgreSQL through a connection string. CORS uses an environment-controlled allow-list. No deployment manifest or configuration confirms Vercel, Render, Neon or another production provider, so those services are intentionally not shown as implemented. Source: vite.config.ts, .env.example files, backend README and repository file search."}
+{"kind":"slide","id":"sl/md0yj6","slide":16,"title":"Conclusion and Future Scope","textShapes":14}
+{"kind":"textbox","id":"sh/grel4rax","slide":16,"text":"Conclusion and Future Scope","textPreview":"Conclusion and Future Scope","textChars":27,"textLines":1,"bbox":[64,42,1080,50]}
+{"kind":"shape","id":"sh/fq5kbm9c","slide":16,"bbox":[64,103,105,6]}
+{"kind":"textbox","id":"sh/epw32hsr","slide":16,"text":"Implemented functionality versus explicitly future work","textPreview":"Implemented functionality versus explicitly future work","textChars":55,"textLines":1,"bbox":[64,118,1120,32]}
+{"kind":"textbox","id":"sh/pwn2hwre","slide":16,"text":"Conclusion","textPreview":"Conclusion","textChars":10,"textLines":1,"bbox":[85,165,465,35]}
+{"kind":"textbox","id":"sh/ovel8rat","slide":16,"text":"The repository implements a local full-stack workflow for next-day average-temperature forecasting across 34 state labels. It includes model training and comparison, leakage-aware feature engineering, FastAPI validation, PostgreSQL models and a four-page React interface.","textPreview":"The repository implements a local full-stack workflow for next-day average-temperature forecasting across 34 state labels. It includes mo...","textChars":271,"textLines":1,"bbox":[85,218,465,180]}
+{"kind":"textbox","id":"sh/3u5kf69o","slide":16,"text":"Future scope","textPreview":"Future scope","textChars":12,"textLines":1,"bbox":[690,165,465,35]}
+{"kind":"textbox","id":"sh/2tw361s3","slide":16,"text":"• Compare additional forecasting models","textPreview":"• Compare additional forecasting models","textChars":39,"textLines":1,"bbox":[700,220,430,34]}
+{"kind":"textbox","id":"sh/d07mlgrq","slide":16,"text":"• Add justified weather parameters","textPreview":"• Add justified weather parameters","textChars":34,"textLines":1,"bbox":[700,277,430,34]}
+{"kind":"textbox","id":"sh/czylcba5","slide":16,"text":"• Extend supported locations and forecast horizon","textPreview":"• Extend supported locations and forecast horizon","textChars":49,"textLines":1,"bbox":[700,334,430,34]}
+{"kind":"textbox","id":"sh/ipsnehwr","slide":16,"text":"• Automate reliable data updates","textPreview":"• Automate reliable data updates","textChars":32,"textLines":1,"bbox":[700,391,430,34]}
+{"kind":"textbox","id":"sh/jq14nmxc","slide":16,"text":"• Configure and verify production deployment","textPreview":"• Configure and verify production deployment","textChars":44,"textLines":1,"bbox":[700,448,430,34]}
+{"kind":"textbox","id":"sh/kra5grex","slide":16,"text":"Future items are proposed improvements. They are not claimed as current repository functionality.","textPreview":"Future items are proposed improvements. They are not claimed as current repository functionality.","textChars":97,"textLines":1,"bbox":[125,535,1035,42]}
+{"kind":"textbox","id":"sh/5sjmpcfi","slide":16,"text":"Thank you","textPreview":"Thank you","textChars":9,"textLines":1,"bbox":[480,610,320,34]}
+{"kind":"shape","id":"sh/6tsnihw3","slide":16,"bbox":[64,678,1152,0]}
+{"kind":"textbox","id":"sh/7u14rmdo","slide":16,"text":"Weather Forecasting Using Machine Learning","textPreview":"Weather Forecasting Using Machine Learning","textChars":42,"textLines":1,"bbox":[64,687,520,20]}
+{"kind":"textbox","id":"sh/sva5kret","slide":16,"text":"16","textPreview":"16","textChars":2,"textLines":1,"bbox":[1158,685,58,22]}
+{"kind":"notes","id":"nt/md0yj6","slide":16,"text":"The project implements a complete local full-stack workflow for next-day average-temperature forecasting across 34 state labels. It includes model training, leakage-aware feature building, API validation, storage and UI views. Future work can compare additional models, add supported weather features, extend coverage and automate reliable data updates after a production deployment is configured. Source: verified repository implementation and verification report."}
