@@ -8,6 +8,8 @@ import type {
   PredictionResponse,
   PredictionsResponse,
   StatesResponse,
+  DistrictsResponse,
+  LocationsResponse,
   WeatherResponse,
 } from "../types/api";
 
@@ -53,29 +55,66 @@ export function getStates(): Promise<StatesResponse> {
   return request<StatesResponse>("/states");
 }
 
-// ---------------- GET /weather/{state}?limit=&offset= ----------------
+// ---------------- GET /districts/{state} ----------------
+export function getDistricts(state: string): Promise<DistrictsResponse> {
+  return request<DistrictsResponse>(`/districts/${encodeURIComponent(state)}`);
+}
+
+// ---------------- GET /locations/{state}/{district} ----------------
+export function getLocations(state: string, district: string): Promise<LocationsResponse> {
+  return request<LocationsResponse>(
+    `/locations/${encodeURIComponent(state)}/${encodeURIComponent(district)}`
+  );
+}
+
+// ---------------- GET /weather/... ----------------
 export function getWeatherHistory(
   state: string,
   limit = 100,
   offset = 0,
+  district?: string,
+  location?: string
 ): Promise<WeatherResponse> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (district && location) {
+    return request<WeatherResponse>(
+      `/weather/${encodeURIComponent(state)}/${encodeURIComponent(district)}/${encodeURIComponent(location)}?${params}`
+    );
+  }
   return request<WeatherResponse>(`/weather/${encodeURIComponent(state)}?${params}`);
 }
 
-// ---------------- GET /weather/{state}/recent?days= ----------------
-export function getRecentWeather(state: string, days = 30): Promise<WeatherResponse> {
+export function getRecentWeather(
+  state: string,
+  days = 30,
+  district?: string,
+  location?: string
+): Promise<WeatherResponse> {
+  if (district && location) {
+    return request<WeatherResponse>(
+      `/weather/${encodeURIComponent(state)}/${encodeURIComponent(district)}/${encodeURIComponent(location)}/recent?days=${days}`
+    );
+  }
   return request<WeatherResponse>(
     `/weather/${encodeURIComponent(state)}/recent?days=${days}`,
   );
 }
 
 // ---------------- POST /predict ----------------
-export function predict(state: string, forecastDate: string): Promise<PredictionResponse> {
+export function predict(
+  state: string,
+  forecastDate: string,
+  district?: string,
+  location?: string
+): Promise<PredictionResponse> {
+  const body: any = { state, forecast_date: forecastDate };
+  if (district) body.district = district;
+  if (location) body.location = location;
+
   return request<PredictionResponse>("/predict", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ state, forecast_date: forecastDate }),
+    body: JSON.stringify(body),
   });
 }
 

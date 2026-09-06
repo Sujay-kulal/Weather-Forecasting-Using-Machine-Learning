@@ -9,7 +9,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { getStates, getWeatherHistory } from "../services/api";
+import { getStates, getDistricts, getLocations, getWeatherHistory } from "../services/api";
 import { useFetch } from "../hooks/useFetch";
 import { Card, EmptyNote, ErrorBanner, Spinner } from "../components/ui";
 import type { WeatherRecord } from "../types/api";
@@ -19,18 +19,34 @@ const PAGE_SIZE = 60;
 export function WeatherHistoryPage() {
   const states = useFetch(getStates, []);
   const [state, setState] = useState("");
+  const [district, setDistrict] = useState("");
+  const [location, setLocation] = useState("");
+
   const [records, setRecords] = useState<WeatherRecord[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [exhausted, setExhausted] = useState(false);
 
-  async function load(s: string, reset: boolean) {
+  const districtsFetch = useFetch(
+    () => (state ? getDistricts(state) : Promise.resolve(null)),
+    [state]
+  );
+
+  const locationsFetch = useFetch(
+    () => (state && district ? getLocations(state, district) : Promise.resolve(null)),
+    [state, district]
+  );
+
+  const hasDistricts = (districtsFetch.data?.districts.length ?? 0) > 0;
+  const hasLocations = (locationsFetch.data?.locations.length ?? 0) > 0;
+
+  async function load(s: string, d: string, l: string, reset: boolean) {
     setLoading(true);
     setError(null);
     try {
       const offset = reset ? 0 : records.length;
-      const resp = await getWeatherHistory(s, PAGE_SIZE, offset);
+      const resp = await getWeatherHistory(s, PAGE_SIZE, offset, d, l);
       setTotal(resp.count);
       setRecords((prev) => (reset ? resp.records : [...prev, ...resp.records]));
       if (resp.records.length < PAGE_SIZE) setExhausted(true);
@@ -44,10 +60,37 @@ export function WeatherHistoryPage() {
 
   function onStateChange(s: string) {
     setState(s);
+    setDistrict("");
+    setLocation("");
     setRecords([]);
     setExhausted(false);
-    if (s) void load(s, true);
+
+    // We don't auto-load here if there are districts.
+    // Actually we can't cleanly know synchronously if there are districts.
+    // The user should click a "Load" button or we auto-load when dependencies are met.
   }
+
+  function onDistrictChange(d: string) {
+    setDistrict(d);
+    setLocation("");
+    setRecords([]);
+    setExhausted(false);
+  }
+
+  function onLocationChange(l: string) {
+    setLocation(l);
+    setRecords([]);
+    setExhausted(false);
+    if (state && district && l) void load(state, district, l, true);
+  }
+
+  // Auto load state-level if no districts
+  if (state && !loading && !error && records.length === 0 && !hasDistricts && districtsFetch.data) {
+    // hacky way to auto-load state-level when district fetch completes and is empty
+    if (!exhausted) void load(state, "", "", true);
+  }
+
+  const canLoad = state && (!hasDistricts || location);
 
   // newest-first from API → oldest-first for chart + table
   const chronological = [...records].reverse();
@@ -78,7 +121,47 @@ export function WeatherHistoryPage() {
             )}
           </label>
 
-          {state && !loading && !error && (
+          {hasDistricts && (
+            <label className="field inline">
+              <span>District</span>
+              {districtsFetch.loading ? (
+                <Spinner label="Loading districts…" />
+              ) : (
+                <select value={district} onChange={(e) => onDistrictChange(e.target.value)}>
+                  <option value="" disabled>
+                    Select a district…
+                  </option>
+                  {districtsFetch.data?.districts.map((d) => (
+                    <option key={d} value={d}>
+                      {d}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+          )}
+
+          {district && hasLocations && (
+            <label className="field inline">
+              <span>Location</span>
+              {locationsFetch.loading ? (
+                <Spinner label="Loading locations…" />
+              ) : (
+                <select value={location} onChange={(e) => onLocationChange(e.target.value)}>
+                  <option value="" disabled>
+                    Select a location…
+                  </option>
+                  {locationsFetch.data?.locations.map((l) => (
+                    <option key={l} value={l}>
+                      {l}
+                    </option>
+                  ))}
+                </select>
+              )}
+            </label>
+          )}
+
+          {canLoad && !loading && !error && records.length > 0 && (
             <div className="coverage">
               <div>
                 <strong>{total}</strong> records available
@@ -98,8 +181,8 @@ export function WeatherHistoryPage() {
 
         {loading && <Spinner label="Loading weather history…" />}
         {error && <ErrorBanner message={error} />}
-        {!loading && !error && state && records.length === 0 && (
-          <EmptyNote text="No weather records found for this state." />
+        {!loading && !error && canLoad && records.length === 0 && (
+          <EmptyNote text="No weather records found for this selection." />
         )}
 
         {records.length > 0 && (
@@ -158,7 +241,7 @@ export function WeatherHistoryPage() {
                 </thead>
                 <tbody>
                   {[...records].map((r) => (
-                    <tr key={`${r.date}-${r.state}`}>
+                    <tr key={`${r.date}-${r.state}-${r.district}-${r.location}`}>
                       <td>{r.date}</td>
                       <td>{r.temp_max.toFixed(1)}</td>
                       <td>{r.temp_avg.toFixed(1)}</td>
@@ -174,7 +257,7 @@ export function WeatherHistoryPage() {
             <div className="load-more">
               <button
                 className="btn-secondary"
-                onClick={() => void load(state, false)}
+                onClick={() => void load(state, district, location, false)}
                 disabled={loading || exhausted}
               >
                 {exhausted ? "All records loaded" : "Load older data"}

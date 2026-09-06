@@ -13,6 +13,8 @@ from pydantic import BaseModel, Field
 # ----------------------------- requests -----------------------------
 class PredictionRequest(BaseModel):
     state: str = Field(..., min_length=1, description="Indian state name, e.g. 'Karnataka'")
+    district: Optional[str] = Field("", description="District name, e.g. 'Udupi'")
+    location: Optional[str] = Field("", description="Location name, e.g. 'Kundapura'")
     forecast_date: date_type = Field(..., description="Day to forecast (YYYY-MM-DD). "
                                                       "Must have 7 days of history before it.")
 
@@ -20,6 +22,8 @@ class PredictionRequest(BaseModel):
 # ----------------------------- responses -----------------------------
 class PredictionResponse(BaseModel):
     state: str
+    district: str = ""
+    location: str = ""
     forecast_date: date_type
     predicted_temp_avg: float = Field(..., description="Predicted Temp_Avg in deg C")
     unit: str = "deg C"
@@ -32,6 +36,8 @@ class PredictionResponse(BaseModel):
 class WeatherRecord(BaseModel):
     date: date_type
     state: str
+    district: str = ""
+    location: str = ""
     temp_max: float
     temp_min: float
     temp_avg: float
@@ -41,12 +47,20 @@ class WeatherRecord(BaseModel):
 
 class WeatherResponse(BaseModel):
     state: str
+    district: str = ""
+    location: str = ""
     count: int
     records: List[WeatherRecord]
 
 
 class StatesResponse(BaseModel):
     states: List[str]
+
+class DistrictsResponse(BaseModel):
+    districts: List[str]
+
+class LocationsResponse(BaseModel):
+    locations: List[str]
 
 
 class HealthResponse(BaseModel):
@@ -58,6 +72,8 @@ class HealthResponse(BaseModel):
 class PredictionRecord(BaseModel):
     id: int
     state: str
+    district: str = ""
+    location: str = ""
     forecast_date: date_type
     predicted_temp_avg: float
     created_at: datetime

@@ -10,7 +10,7 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ApiError, getRecentWeather, getStates, predict } from "../services/api";
+import { ApiError, getRecentWeather, getStates, getDistricts, getLocations, predict } from "../services/api";
 import { useFetch } from "../hooks/useFetch";
 import { Card, EmptyNote, ErrorBanner, Spinner } from "../components/ui";
 import type { PredictionResponse } from "../types/api";
@@ -25,16 +25,38 @@ function nextDay(iso: string): string {
 export function ForecastPage() {
   const states = useFetch(getStates, []);
   const [state, setState] = useState("");
+  const [district, setDistrict] = useState("");
+  const [location, setLocation] = useState("");
   const [date, setDate] = useState("");
   const [dateTouched, setDateTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<PredictionResponse | null>(null);
   const [predictError, setPredictError] = useState<string | null>(null);
 
-  // Recent 30 records for the selected state (chart context + default date)
+  const districtsFetch = useFetch(
+    () => (state ? getDistricts(state) : Promise.resolve(null)),
+    [state]
+  );
+
+  const locationsFetch = useFetch(
+    () => (state && district ? getLocations(state, district) : Promise.resolve(null)),
+    [state, district]
+  );
+
+  const hasDistricts = (districtsFetch.data?.districts.length ?? 0) > 0;
+  const hasLocations = (locationsFetch.data?.locations.length ?? 0) > 0;
+
+  // Recent 30 records for the selected state/location (chart context + default date)
   const recent = useFetch(
-    () => (state ? getRecentWeather(state, 30) : Promise.resolve(null)),
-    [state],
+    () => {
+      if (!state) return Promise.resolve(null);
+      if (hasDistricts) {
+        if (!district || !location) return Promise.resolve(null);
+        return getRecentWeather(state, 30, district, location);
+      }
+      return getRecentWeather(state, 30);
+    },
+    [state, district, location, hasDistricts]
   );
 
   const recentRecords = recent.data?.records ?? [];
@@ -48,21 +70,23 @@ export function ForecastPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, recent.loading]);
 
+  const canSubmit = state && date && (!hasDistricts || location);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!state || !date) return;
+    if (!canSubmit) return;
     setSubmitting(true);
     setPredictError(null);
     setResult(null);
     try {
-      const prediction = await predict(state, date);
+      const prediction = await predict(state, date, district, location);
       setResult(prediction);
     } catch (err) {
       const apiErr = err as ApiError;
       if (apiErr.status === 422) {
         setPredictError(
           `This forecast date cannot currently be predicted because sufficient recent ` +
-            `historical measurements are unavailable. (${apiErr.message})`,
+            `historical measurements are unavailable. (${apiErr.message})`
         );
       } else {
         setPredictError(apiErr.message);
@@ -71,6 +95,8 @@ export function ForecastPage() {
       setSubmitting(false);
     }
   }
+
+  const locStr = location ? `${state} → ${district} → ${location}` : state;
 
   return (
     <div className="page">
@@ -88,6 +114,8 @@ export function ForecastPage() {
                   value={state}
                   onChange={(e) => {
                     setState(e.target.value);
+                    setDistrict("");
+                    setLocation("");
                     setDateTouched(false);
                     setResult(null);
                     setPredictError(null);
@@ -106,6 +134,69 @@ export function ForecastPage() {
               )}
             </label>
 
+            {hasDistricts && (
+              <label className="field">
+                <span>District</span>
+                {districtsFetch.loading ? (
+                  <Spinner label="Loading districts…" />
+                ) : districtsFetch.error ? (
+                  <ErrorBanner message={districtsFetch.error.message} />
+                ) : (
+                  <select
+                    value={district}
+                    onChange={(e) => {
+                      setDistrict(e.target.value);
+                      setLocation("");
+                      setDateTouched(false);
+                      setResult(null);
+                      setPredictError(null);
+                    }}
+                    required
+                  >
+                    <option value="" disabled>
+                      Select a district…
+                    </option>
+                    {districtsFetch.data?.districts.map((d) => (
+                      <option key={d} value={d}>
+                        {d}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </label>
+            )}
+
+            {district && hasLocations && (
+              <label className="field">
+                <span>Location</span>
+                {locationsFetch.loading ? (
+                  <Spinner label="Loading locations…" />
+                ) : locationsFetch.error ? (
+                  <ErrorBanner message={locationsFetch.error.message} />
+                ) : (
+                  <select
+                    value={location}
+                    onChange={(e) => {
+                      setLocation(e.target.value);
+                      setDateTouched(false);
+                      setResult(null);
+                      setPredictError(null);
+                    }}
+                    required
+                  >
+                    <option value="" disabled>
+                      Select a location…
+                    </option>
+                    {locationsFetch.data?.locations.map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </label>
+            )}
+
             <label className="field">
               <span>Forecast date</span>
               <input
@@ -120,12 +211,12 @@ export function ForecastPage() {
               <small className="hint">
                 {recentRecords.length > 0
                   ? `Latest available measurement: ${recentRecords[recentRecords.length - 1].date}. Default forecast: day after latest measurement.`
-                  : "Select a state to see available history."}{" "}
+                  : "Select a location to see available history."}{" "}
                 The backend validates the date and rejects dates without sufficient history.
               </small>
             </label>
 
-            <button className="btn-primary" type="submit" disabled={submitting || !state || !date}>
+            <button className="btn-primary" type="submit" disabled={submitting || !canSubmit}>
               {submitting ? "Generating forecast…" : "Generate Forecast"}
             </button>
             <small className="hint">
@@ -140,7 +231,7 @@ export function ForecastPage() {
           {!submitting && predictError && <ErrorBanner message={predictError} />}
 
           {!submitting && !predictError && !result && (
-            <EmptyNote text="Select a state and a forecast date, then generate a forecast. The result will appear here." />
+            <EmptyNote text="Select a location and a forecast date, then generate a forecast. The result will appear here." />
           )}
 
           {!submitting && result && (
@@ -156,6 +247,18 @@ export function ForecastPage() {
                   <dt>State</dt>
                   <dd>{result.state}</dd>
                 </div>
+                {result.district && (
+                  <div>
+                    <dt>District</dt>
+                    <dd>{result.district}</dd>
+                  </div>
+                )}
+                {result.location && (
+                  <div>
+                    <dt>Location</dt>
+                    <dd>{result.location}</dd>
+                  </div>
+                )}
                 <div>
                   <dt>Forecast date</dt>
                   <dd>{result.forecast_date}</dd>
@@ -183,8 +286,8 @@ export function ForecastPage() {
       <Card title="Historical Temperature + Forecast">
         {recent.loading && <Spinner label="Loading weather history…" />}
         {recent.error && <ErrorBanner message={recent.error.message} />}
-        {!recent.loading && !recent.error && recentRecords.length === 0 && state && (
-          <EmptyNote text="No recent weather records available for this state." />
+        {!recent.loading && !recent.error && recentRecords.length === 0 && canSubmit && (
+          <EmptyNote text="No recent weather records available." />
         )}
         {recentRecords.length > 0 && (
           <>
@@ -257,7 +360,7 @@ export function ForecastPage() {
               </ResponsiveContainer>
             </div>
             <p className="chart-note">
-              The most recent {recentRecords.length} daily measurements for {state} (real
+              The most recent {recentRecords.length} daily measurements for {locStr} (real
               PostgreSQL data), {result ? "with the generated forecast appended." : "from the backend."}
             </p>
             <p className="chart-note subtle">
@@ -283,7 +386,7 @@ export function ForecastPage() {
           For each prediction the backend builds the same input the model was trained on:
           lag features (temperature of the previous days), 3-day and 7-day rolling averages,
           seasonal/monthly encoding, and the state and season identifiers. You never enter
-          weather values manually — only a state and a date.
+          weather values manually — only a location and a date.
         </p>
       </Card>
     </div>

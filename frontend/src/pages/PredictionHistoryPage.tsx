@@ -19,6 +19,8 @@ export function PredictionHistoryPage() {
     rows: {
       id: number;
       state: string;
+      district?: string;
+      location?: string;
       forecast_date: string;
       predicted_temp_avg: number;
       created_at: string;
@@ -114,6 +116,8 @@ export function PredictionHistoryPage() {
                   <tr>
                     <th>ID</th>
                     <th>State</th>
+                    <th>District</th>
+                    <th>Location</th>
                     <th>Forecast Date</th>
                     <th>Predicted Temperature (°C)</th>
                     <th>Created At</th>
@@ -124,6 +128,8 @@ export function PredictionHistoryPage() {
                     <tr key={r.id}>
                       <td>{r.id}</td>
                       <td>{r.state}</td>
+                      <td>{r.district || "-"}</td>
+                      <td>{r.location || "-"}</td>
                       <td>{r.forecast_date}</td>
                       <td>{r.predicted_temp_avg.toFixed(2)}</td>
                       <td>{new Date(r.created_at).toLocaleString()}</td>

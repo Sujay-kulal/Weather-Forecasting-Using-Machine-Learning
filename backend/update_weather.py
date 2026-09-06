@@ -50,41 +50,61 @@ STATE_COORDS = {
     'West Bengal': (22.9868, 87.8550)
 }
 
-def get_coords(state: str):
-    if state in STATE_COORDS:
-        return STATE_COORDS[state]
-    return 20.5937, 78.9629
+LOCATIONS = [
+    {"state": state, "district": "", "location": "", "lat": lat, "lon": lon}
+    for state, (lat, lon) in STATE_COORDS.items()
+]
+LOCATIONS.append({
+    "state": "Karnataka",
+    "district": "Udupi",
+    "location": "Kundapura",
+    "lat": 13.6236,
+    "lon": 74.6905
+})
 
 def main():
     print("Starting weather update...")
     session = SessionLocal()
-    
-    # 1. Get all states and their max dates
-    states_data = session.execute(
-        select(WeatherData.state, func.max(WeatherData.date))
-        .group_by(WeatherData.state)
-    ).all()
-    
+
     today = date.today()
-    
     added_total = 0
-    for state, max_date in states_data:
-        if max_date >= today:
-            print(f"[{state}] Already up to date (Latest: {max_date})")
-            continue
-            
-        start_date = max_date + timedelta(days=1)
+
+    for loc in LOCATIONS:
+        state = loc["state"]
+        district = loc["district"]
+        location_name = loc["location"]
+        lat = loc["lat"]
+        lon = loc["lon"]
+
+        loc_str = state if not location_name else f"{state}/{district}/{location_name}"
+
+        # Get max date for this specific location
+        max_date = session.execute(
+            select(func.max(WeatherData.date))
+            .where(
+                WeatherData.state == state,
+                WeatherData.district == district,
+                WeatherData.location == location_name
+            )
+        ).scalar()
+
+        if max_date is None:
+            # Fetch from 2015-01-01 for new locations
+            start_date = date(2015, 1, 1)
+        else:
+            if max_date >= today:
+                print(f"[{loc_str}] Already up to date (Latest: {max_date})")
+                continue
+            start_date = max_date + timedelta(days=1)
+
         end_date = today # we try to fetch up to today
-        
-        # If the gap is huge or invalid, just log
+
         if start_date > end_date:
             continue
-            
-        print(f"[{state}] Fetching from {start_date} to {end_date}...")
-        lat, lon = get_coords(state)
+
+        print(f"[{loc_str}] Fetching from {start_date} to {end_date}...")
         time.sleep(0.5) # respect rate limit
-        
-        # Fetch from open-meteo archive
+
         url = (
             f"https://archive-api.open-meteo.com/v1/archive?"
             f"latitude={lat}&longitude={lon}&"
@@ -96,13 +116,13 @@ def main():
             res = urllib.request.urlopen(url).read()
             data = json.loads(res)
         except Exception as e:
-            print(f"[{state}] Failed to fetch data: {e}")
+            print(f"[{loc_str}] Failed to fetch data: {e}")
             continue
-            
+
         if "daily" not in data:
-            print(f"[{state}] No daily data in response")
+            print(f"[{loc_str}] No daily data in response")
             continue
-            
+
         daily = data["daily"]
         times = daily["time"]
         t_max = daily["temperature_2m_max"]
@@ -110,26 +130,31 @@ def main():
         t_mean = daily["temperature_2m_mean"]
         precip = daily["precipitation_sum"]
         humid = daily["relative_humidity_2m_mean"]
-        
+
         buffer = []
         for i in range(len(times)):
-            # If any value is null, skip
             if t_max[i] is None or t_min[i] is None or t_mean[i] is None or precip[i] is None or humid[i] is None:
                 continue
-                
+
             d = datetime.strptime(times[i], "%Y-%m-%d").date()
             if d < start_date or d > end_date:
                 continue
-                
-            # Check if exists just in case
+
             exists = session.execute(
                 select(func.count()).select_from(WeatherData)
-                .where(WeatherData.state == state, WeatherData.date == d)
+                .where(
+                    WeatherData.state == state,
+                    WeatherData.district == district,
+                    WeatherData.location == location_name,
+                    WeatherData.date == d
+                )
             ).scalar_one()
-            
+
             if exists == 0:
                 record = WeatherData(
                     state=state,
+                    district=district,
+                    location=location_name,
                     date=d,
                     temp_max=float(t_max[i]),
                     temp_min=float(t_min[i]),
@@ -138,16 +163,16 @@ def main():
                     rainfall=float(precip[i])
                 )
                 buffer.append(record)
-                
+
         if buffer:
             session.add_all(buffer)
             session.commit()
             added_total += len(buffer)
-            print(f"[{state}] Inserted {len(buffer)} records.")
+            print(f"[{loc_str}] Inserted {len(buffer)} records.")
         else:
-            print(f"[{state}] No new valid records found.")
-            
-        time.sleep(0.5) # respect rate limit
+            print(f"[{loc_str}] No new valid records found.")
+
+        time.sleep(0.5)
 
     print(f"Weather update completed. Total new records: {added_total}")
     session.close()

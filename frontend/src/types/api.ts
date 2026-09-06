@@ -13,9 +13,19 @@ export interface StatesResponse {
   states: string[];
 }
 
+export interface DistrictsResponse {
+  districts: string[];
+}
+
+export interface LocationsResponse {
+  locations: string[];
+}
+
 export interface WeatherRecord {
   date: string; // YYYY-MM-DD
   state: string;
+  district?: string;
+  location?: string;
   temp_max: number;
   temp_min: number;
   temp_avg: number;
@@ -25,6 +35,8 @@ export interface WeatherRecord {
 
 export interface WeatherResponse {
   state: string;
+  district?: string;
+  location?: string;
   count: number;
   records: WeatherRecord[];
 }
@@ -36,6 +48,8 @@ export interface LastKnown {
 
 export interface PredictionResponse {
   state: string;
+  district?: string;
+  location?: string;
   forecast_date: string;
   predicted_temp_avg: number;
   unit: string;
@@ -47,6 +61,8 @@ export interface PredictionResponse {
 export interface PredictionRecord {
   id: number;
   state: string;
+  district?: string;
+  location?: string;
   forecast_date: string;
   predicted_temp_avg: number;
   created_at: string;
