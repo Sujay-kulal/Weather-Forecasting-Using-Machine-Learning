@@ -1,9 +1,0 @@
-Model,CV_Mean_MAE,CV_Std_MAE,CV_Mean_RMSE,CV_Std_RMSE,CV_Mean_R2
-Naive (tomorrow=today),0.942,0.157,1.286,0.217,0.973
-LightGBM,0.955,0.166,1.322,0.246,0.972
-Random Forest (Tuned),0.965,0.156,1.328,0.229,0.971
-Random Forest (Default),0.971,0.159,1.337,0.237,0.971
-Gradient Boosting (Tuned),0.983,0.172,1.342,0.246,0.971
-Gradient Boosting (Default),0.991,0.173,1.349,0.249,0.97
-Linear Regression,1.007,0.161,1.331,0.209,0.971
-Decision Tree,1.127,0.253,1.58,0.391,0.959
