@@ -41,11 +41,14 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS - allow local frontend dev servers (React/Next.js). Override via env:
-#   CORS_ORIGINS=http://localhost:3000,http://localhost:5173
-origins_env = os.environ.get("CORS_ORIGINS",
-                             "http://localhost:3000,http://localhost:5173,"
-                             "http://127.0.0.1:3000,http://127.0.0.1:5173")
+# CORS - allow local dev servers AND production deployments.
+# Override via env var:  CORS_ORIGINS=https://your-app.vercel.app
+origins_env = os.environ.get(
+    "CORS_ORIGINS",
+    "http://localhost:3000,http://localhost:5173,"
+    "http://127.0.0.1:3000,http://127.0.0.1:5173,"
+    "https://weather-forecasting-using-machine.onrender.com"
+)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in origins_env.split(",")],
