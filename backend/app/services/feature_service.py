@@ -41,13 +41,15 @@ def build_features(history: list, state: str, asof_date) -> pd.DataFrame:
     history : the 7 most recent WeatherData rows STRICTLY BEFORE (D - 1),
               ordered most-recent-first -> history[0] = measurement at D-2.
     asof_date : the training-row date t = D-1 (drives month_sin/cos and Season).
-    Returns a one-row DataFrame with the model's 13 feature columns.
+    Returns a one-row DataFrame with the model's 18 feature columns.
     """
     if len(history) < REQUIRED_HISTORY:
         raise InsufficientHistoryError(
             f"Need {REQUIRED_HISTORY} historical records before {asof_date} "
             f"for '{state}', found {len(history)}."
         )
+
+    day_of_year = asof_date.timetuple().tm_yday
 
     features = {
         # training row t = asof_date: lag1 = temp at t-1 = history[0], etc.
@@ -58,10 +60,17 @@ def build_features(history: list, state: str, asof_date) -> pd.DataFrame:
         "lag1_temp_min": history[0].temp_min,
         "lag1_humidity": history[0].humidity,
         "lag1_rainfall": history[0].rainfall,
+        "lag2_humidity": history[1].humidity,
+        "lag2_rainfall": history[1].rainfall,
+        "temp_range": history[0].temp_max - history[0].temp_min,
         "roll3_temp_avg": float(np.mean([r.temp_avg for r in history[:3]])),
         "roll7_temp_avg": float(np.mean([r.temp_avg for r in history[:7]])),
+        "rainfall_roll3": float(np.sum([r.rainfall for r in history[:3]])),
+        "rainfall_roll7": float(np.sum([r.rainfall for r in history[:7]])),
         "month_sin": float(np.sin(2 * np.pi * asof_date.month / 12)),
         "month_cos": float(np.cos(2 * np.pi * asof_date.month / 12)),
+        "day_of_year_sin": float(np.sin(2 * np.pi * day_of_year / 365)),
+        "day_of_year_cos": float(np.cos(2 * np.pi * day_of_year / 365)),
         "Season": month_to_season(asof_date.month),
         "State": state,
     }

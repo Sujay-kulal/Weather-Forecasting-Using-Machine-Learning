@@ -46,6 +46,13 @@ df["month_sin"] = np.sin(2 * np.pi * df["Month"] / 12) if "Month" in df else np.
 # (Month is not in usecols above; recompute from Date like training did)
 df["month_sin"] = np.sin(2 * np.pi * df["Date"].dt.month / 12)
 df["month_cos"] = np.cos(2 * np.pi * df["Date"].dt.month / 12)
+df["lag2_humidity"] = g["Humidity"].shift(2)
+df["lag2_rainfall"] = g["Rainfall"].shift(2)
+df["temp_range"] = df["lag1_temp_max"] - df["lag1_temp_min"]
+df["rainfall_roll3"] = g["Rainfall"].shift(1).rolling(3).sum()
+df["rainfall_roll7"] = g["Rainfall"].shift(1).rolling(7).sum()
+df["day_of_year_sin"] = np.sin(2 * np.pi * df["Date"].dt.dayofyear / 365)
+df["day_of_year_cos"] = np.cos(2 * np.pi * df["Date"].dt.dayofyear / 365)
 
 
 def training_reference(state: str, forecast_date: str) -> pd.Series:
@@ -73,7 +80,7 @@ try:
         # backend path: history from POSTGRESQL (same query as /predict)
         asof = (pd.Timestamp(forecast_date) - pd.Timedelta(days=1)).date()
         history = session.query(WeatherData).filter(
-            WeatherData.state == state, WeatherData.date < asof
+            WeatherData.state == state, WeatherData.district == "", WeatherData.location == "", WeatherData.date < asof
         ).order_by(WeatherData.date.desc()).limit(7).all()
         backend_feats = build_features(history, state, asof).iloc[0]
 

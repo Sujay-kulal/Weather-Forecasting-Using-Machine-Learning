@@ -25,7 +25,7 @@ try:
         model_info = json.load(f)
     FEATURE_ORDER = model_info["features"]          # exact training column order
     MODEL_NAME = model_info["best_model"]
-    MODEL_MAE = model_info["metrics"][MODEL_NAME]["MAE"]
+    MODEL_MAE = model_info["metrics"][MODEL_NAME]["MAE_mean"]
     logger.info("Loaded %s pipeline from %s (%d input features)",
                 MODEL_NAME, MODEL_PATH, len(FEATURE_ORDER))
 except Exception:

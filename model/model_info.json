@@ -1,5 +1,5 @@
 {
-  "best_model": "Gradient Boosting",
+  "best_model": "LightGBM",
   "target": "next-day Temp_Avg (deg C)",
   "features": [
     "lag1_temp_avg",
@@ -9,46 +9,91 @@
     "lag1_temp_min",
     "lag1_humidity",
     "lag1_rainfall",
+    "lag2_humidity",
+    "lag2_rainfall",
+    "temp_range",
     "roll3_temp_avg",
     "roll7_temp_avg",
+    "rainfall_roll3",
+    "rainfall_roll7",
     "month_sin",
     "month_cos",
+    "day_of_year_sin",
+    "day_of_year_cos",
     "Season",
     "State"
   ],
   "train_period": [
     "2023-04-08",
-    "2025-04-06"
+    "2025-10-05"
   ],
   "test_period": [
-    "2025-04-07",
-    "2025-10-05"
+    "N/A (TimeSeriesSplit CV used)"
   ],
   "metrics": {
     "Linear Regression": {
-      "MAE": 0.9129,
-      "RMSE": 1.2196,
-      "R2": 0.9676
+      "MAE_mean": 1.007,
+      "MAE_std": 0.1607,
+      "RMSE_mean": 1.3309,
+      "RMSE_std": 0.2093,
+      "R2_mean": 0.9709,
+      "R2_std": 0.006
     },
     "Decision Tree": {
-      "MAE": 0.9144,
-      "RMSE": 1.2521,
-      "R2": 0.9659
+      "MAE_mean": 1.1271,
+      "MAE_std": 0.2525,
+      "RMSE_mean": 1.5804,
+      "RMSE_std": 0.3912,
+      "R2_mean": 0.959,
+      "R2_std": 0.0147
     },
-    "Random Forest": {
-      "MAE": 0.8731,
-      "RMSE": 1.1928,
-      "R2": 0.9691
+    "Random Forest (Default)": {
+      "MAE_mean": 0.971,
+      "MAE_std": 0.1594,
+      "RMSE_mean": 1.3369,
+      "RMSE_std": 0.2374,
+      "R2_mean": 0.971,
+      "R2_std": 0.0053
     },
-    "Gradient Boosting": {
-      "MAE": 0.876,
-      "RMSE": 1.1854,
-      "R2": 0.9694
+    "Gradient Boosting (Default)": {
+      "MAE_mean": 0.9914,
+      "MAE_std": 0.173,
+      "RMSE_mean": 1.3487,
+      "RMSE_std": 0.2487,
+      "R2_mean": 0.9703,
+      "R2_std": 0.0071
+    },
+    "LightGBM": {
+      "MAE_mean": 0.9547,
+      "MAE_std": 0.1657,
+      "RMSE_mean": 1.3215,
+      "RMSE_std": 0.2459,
+      "R2_mean": 0.9717,
+      "R2_std": 0.0055
+    },
+    "Random Forest (Tuned)": {
+      "MAE_mean": 0.9653,
+      "MAE_std": 0.1556,
+      "RMSE_mean": 1.3276,
+      "RMSE_std": 0.2289,
+      "R2_mean": 0.9714,
+      "R2_std": 0.0049
+    },
+    "Gradient Boosting (Tuned)": {
+      "MAE_mean": 0.9832,
+      "MAE_std": 0.1719,
+      "RMSE_mean": 1.3424,
+      "RMSE_std": 0.2461,
+      "R2_mean": 0.9707,
+      "R2_std": 0.0061
     },
     "Naive (tomorrow=today)": {
-      "MAE": 0.9148,
-      "RMSE": 1.2551,
-      "R2": 0.9657
+      "MAE_mean": 0.9419,
+      "MAE_std": 0.1571,
+      "RMSE_mean": 1.2857,
+      "RMSE_std": 0.2171,
+      "R2_mean": 0.9729,
+      "R2_std": 0.0055
     }
   },
   "states": [
