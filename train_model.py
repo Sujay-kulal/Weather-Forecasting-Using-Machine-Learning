@@ -45,9 +45,21 @@ MODEL_DIR = "model"
 RESULTS_DIR = "results"
 
 # ------------------------------------------------------------------
+# 0. Fetch dataset from Kaggle if not already present
+#    (kept simple for project viva - downloads once, then cached locally)
+# ------------------------------------------------------------------
+print("0. Checking for dataset ...")
+if not os.path.exists(DATA_PATH):
+    print("   Dataset not found locally. Fetching from Kaggle ...")
+    from fetch_data import download_dataset
+    download_dataset()
+else:
+    print(f"   Dataset found at {DATA_PATH}")
+
+# ------------------------------------------------------------------
 # 1. Load data - only the real weather columns (power columns excluded)
 # ------------------------------------------------------------------
-print("1. Loading data ...")
+print("\n1. Loading data ...")
 df = pd.read_csv(DATA_PATH)
 df["Date"] = pd.to_datetime(df["Date"])
 

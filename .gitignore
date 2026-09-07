@@ -23,5 +23,11 @@ build/
 .DS_Store
 Thumbs.db
 
-# Generated outputs
+# Generated outputs (re-created by train_model.py)
 results/
+
+# Dataset (fetched from Kaggle via fetch_data.py - not stored in git)
+data/
+
+# Kaggle credentials - NEVER commit
+.kaggle/

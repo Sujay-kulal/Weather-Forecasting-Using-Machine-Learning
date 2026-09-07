@@ -31,6 +31,13 @@ CSV_PATH = PROJECT_ROOT / "data" / "archive_c" / "PSP_Weather_Merged_EDA_Cleaned
 def main():
     load_dotenv(Path(__file__).resolve().parent / ".env")
 
+    # Auto-fetch dataset from Kaggle if not present
+    if not CSV_PATH.exists():
+        print("[0/5] Dataset not found locally. Fetching from Kaggle ...")
+        sys.path.insert(0, str(PROJECT_ROOT))
+        from fetch_data import download_dataset
+        download_dataset()
+
     if not CSV_PATH.exists():
         sys.exit(f"FATAL: dataset not found at {CSV_PATH}")
 
