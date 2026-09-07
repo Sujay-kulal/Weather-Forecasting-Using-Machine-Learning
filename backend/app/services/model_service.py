@@ -33,11 +33,11 @@ except Exception:
     raise
 
 
-def predict(features: pd.DataFrame) -> float:
+def predict(features: pd.DataFrame) -> list[float]:
     """
     Run the trained pipeline on a one-row feature DataFrame.
     Columns are re-indexed to the exact training order as a safety net.
     Scaling and one-hot encoding happen inside the pipeline itself.
     """
     X = features[FEATURE_ORDER]
-    return float(pipeline.predict(X)[0])
+    return pipeline.predict(X)[0].tolist()

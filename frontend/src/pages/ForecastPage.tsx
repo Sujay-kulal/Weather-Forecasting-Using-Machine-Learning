@@ -4,7 +4,6 @@ import {
   ComposedChart,
   Legend,
   Line,
-  ReferenceDot,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -261,7 +260,7 @@ export function ForecastPage() {
               {submitting ? "Generating forecast…" : "Generate Forecast"}
             </button>
             <small className="hint">
-              Forecasts the next-day average temperature using historical weather data.
+              Forecasts the 7-day average temperature using historical weather data.
             </small>
           </form>
         </Card>
@@ -280,23 +279,36 @@ export function ForecastPage() {
 
           {!submitting && result && (
             <div className="result">
-              <div className="result-hero">
+              <div className="result-hero" style={{ paddingBottom: '1rem' }}>
                 <CloudSunIcon className="hero-icon" />
-                <div className="result-label">Predicted Average Temperature</div>
-                <div className="result-value">
-                  {result.predicted_temp_avg.toFixed(2)}
-                  <span className="unit">°C</span>
+                <div className="result-label">7-Day Predicted Average Temperature</div>
+                
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'center', margin: '1.5rem 0' }}>
+                  {(Array.isArray(result.predicted_temp_avg) ? result.predicted_temp_avg : [result.predicted_temp_avg]).map((temp, i) => (
+                    <div key={i} style={{ padding: '0.5rem 1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', minWidth: '80px' }}>
+                      <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.25rem' }}>
+                        {Array.isArray(result.predicted_temp_avg) ? (i === 0 ? "Day 1" : `Day ${i + 1}`) : "Prediction"}
+                      </div>
+                      <div style={{ fontSize: '1.25rem', fontWeight: 600, color: '#0f4c81' }}>
+                        {Number(temp).toFixed(1)}°
+                      </div>
+                    </div>
+                  ))}
                 </div>
+
                 <div className="result-sub">
                   for {result.location || result.state}
-                  {result.district && result.location ? `, ${result.district}` : ""} on{" "}
+                  {result.district && result.location ? `, ${result.district}` : ""} starting on{" "}
                   {prettyDate(result.forecast_date)}
                 </div>
                 {result.last_known && (
                   <span className="result-delta">
                     {(() => {
+                      const first_pred = Array.isArray(result.predicted_temp_avg) 
+                        ? result.predicted_temp_avg[0] 
+                        : result.predicted_temp_avg;
                       const delta =
-                        Math.round((result.predicted_temp_avg - result.last_known.temp_avg) * 10) /
+                        Math.round((Number(first_pred) - result.last_known.temp_avg) * 10) /
                         10;
                       const Icon =
                         delta > 0 ? ArrowUpIcon : delta < 0 ? ArrowDownIcon : MinusIcon;
@@ -447,18 +459,8 @@ export function ForecastPage() {
                       stroke="#0284c7"
                       strokeWidth={2}
                       strokeDasharray="5 4"
-                      dot={false}
+                      dot={{ r: 4, fill: "#0284c7", stroke: "#ffffff", strokeWidth: 2 }}
                       connectNulls
-                    />
-                  )}
-                  {result && (
-                    <ReferenceDot
-                      x={result.forecast_date}
-                      y={result.predicted_temp_avg}
-                      r={6}
-                      fill="#0284c7"
-                      stroke="#ffffff"
-                      strokeWidth={2}
                     />
                   )}
                 </ComposedChart>
@@ -492,7 +494,7 @@ export function ForecastPage() {
           </span>
           <span className="arrow" aria-hidden="true">→</span>
           <span className="pipeline-step">
-            <ThermometerIcon /> Next-day Avg Temperature
+            <ThermometerIcon /> 7-Day Avg Temperature
           </span>
         </div>
         <p className="chart-note">
@@ -529,13 +531,21 @@ function chartData(
   if (result && rows.length > 0) {
     // dashed connector starts at the last known temperature
     rows[rows.length - 1].predicted = rows[rows.length - 1].temp_avg;
-    rows.push({
-      date: result.forecast_date,
-      temp_max: null,
-      temp_min: null,
-      temp_avg: null,
-      predicted: result.predicted_temp_avg,
-    });
+    
+    let currentDate = result.forecast_date;
+    const preds = Array.isArray(result.predicted_temp_avg) 
+        ? result.predicted_temp_avg 
+        : [result.predicted_temp_avg];
+    for (let i = 0; i < preds.length; i++) {
+      rows.push({
+        date: currentDate,
+        temp_max: null,
+        temp_min: null,
+        temp_avg: null,
+        predicted: Number(preds[i]),
+      });
+      currentDate = nextDay(currentDate);
+    }
   }
   return rows;
 }

@@ -109,13 +109,13 @@ try:
                                       for f in FEATURES}])
         pred_train = model_service.predict(ref_features)
         pred_backend = model_service.predict(backend_feats.to_frame().T)
-        pred_diff = abs(pred_train - pred_backend)
+        pred_diff = max(abs(a - b) for a, b in zip(pred_train, pred_backend))
 
         ok = max_diff < 1e-9 and pred_diff < 1e-9
         all_ok = all_ok and ok
         print(f"{state + ' @ ' + forecast_date:38s} {max_diff:10.2e}  "
               f"{'OK' if ok else 'FAIL'}      "
-              f"{pred_train:.6f} vs {pred_backend:.6f} (diff {pred_diff:.2e})")
+              f"{pred_train[0]:.6f} vs {pred_backend[0]:.6f} (diff {pred_diff:.2e})")
 finally:
     session.close()
 

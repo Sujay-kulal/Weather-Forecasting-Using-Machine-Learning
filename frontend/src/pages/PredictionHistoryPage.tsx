@@ -33,7 +33,7 @@ export function PredictionHistoryPage() {
       district?: string;
       location?: string;
       forecast_date: string;
-      predicted_temp_avg: number;
+      predicted_temp_avg: number[];
       created_at: string;
     }[];
     exhausted: boolean;
@@ -173,7 +173,17 @@ export function PredictionHistoryPage() {
                       <td>{r.district || <Badge neutral>—</Badge>}</td>
                       <td>{r.location || <Badge neutral>—</Badge>}</td>
                       <td title={r.forecast_date}>{prettyDate(r.forecast_date)}</td>
-                      <td className="num strong">{r.predicted_temp_avg.toFixed(2)}</td>
+                      <td className="num strong" style={{ fontSize: '0.9em' }}>
+                        {Array.isArray(r.predicted_temp_avg) ? (
+                          <span title={r.predicted_temp_avg.map(v => v.toFixed(1)).join(", ")}>
+                            {r.predicted_temp_avg.slice(0, 3).map(v => v.toFixed(1)).join(", ")}
+                            {r.predicted_temp_avg.length > 3 ? "..." : ""}
+                          </span>
+                        ) : (
+                          // Fallback for older scalar data if it somehow reaches the frontend
+                          Number(r.predicted_temp_avg).toFixed(1)
+                        )}
+                      </td>
                       <td>{new Date(r.created_at).toLocaleString()}</td>
                     </tr>
                   ))}

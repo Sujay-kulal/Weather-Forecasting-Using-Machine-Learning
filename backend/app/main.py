@@ -13,7 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import Base, check_connection, engine
+from app.database import Base, check_connection, engine, init_db
 from app.routes import health, prediction, weather
 
 logging.basicConfig(level=logging.INFO,
@@ -24,7 +24,7 @@ logger = logging.getLogger("main")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: create tables if missing and verify PostgreSQL connectivity."""
-    Base.metadata.create_all(bind=engine)
+    init_db()
     if not check_connection():
         logger.error("Cannot connect to PostgreSQL - check DATABASE_URL in backend/.env")
     else:

@@ -30,6 +30,7 @@ from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
+from sklearn.multioutput import MultiOutputRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.tree import DecisionTreeRegressor
@@ -105,13 +106,14 @@ day_of_year = df["Date"].dt.dayofyear
 df["day_of_year_sin"] = np.sin(2 * np.pi * day_of_year / 365)
 df["day_of_year_cos"] = np.cos(2 * np.pi * day_of_year / 365)
 
-# TARGET: next day's average temperature (shift -1 = tomorrow)
-df["target"] = g["Temp_Avg"].shift(-1)
+# TARGET: next 7 days average temperature
+for i in range(1, 8):
+    df[f"target_{i}"] = g["Temp_Avg"].shift(-i)
 
 # First ~7 days per state lack lag history, last day lacks tomorrow -> drop them
 df = df.dropna(subset=["lag1_temp_avg", "lag2_temp_avg", "lag3_temp_avg",
-                       "roll3_temp_avg", "roll7_temp_avg", "target",
-                       "lag2_humidity", "lag2_rainfall", "rainfall_roll3", "rainfall_roll7", "temp_range"])
+                       "roll3_temp_avg", "roll7_temp_avg",
+                       "lag2_humidity", "lag2_rainfall", "rainfall_roll3", "rainfall_roll7", "temp_range"] + [f"target_{i}" for i in range(1, 8)])
 print(f"   Rows after building lags/target: {len(df)}")
 
 FEATURES_NUM = ["lag1_temp_avg", "lag2_temp_avg", "lag3_temp_avg",
@@ -121,12 +123,12 @@ FEATURES_NUM = ["lag1_temp_avg", "lag2_temp_avg", "lag3_temp_avg",
                 "month_sin", "month_cos", "day_of_year_sin", "day_of_year_cos"]
 FEATURES_CAT = ["Season", "State"]
 FEATURES = FEATURES_NUM + FEATURES_CAT
-TARGET = "target"
+TARGETS = [f"target_{i}" for i in range(1, 8)]
 
 # To ensure Temporal CV doesn't mix future info, we must sort the final dataset chronologically
 df = df.sort_values("Date").reset_index(drop=True)
 X = df[FEATURES]
-y = df[TARGET]
+y = df[TARGETS]
 
 # ------------------------------------------------------------------
 # 3. Cross-validation setup (TimeSeriesSplit)
@@ -152,21 +154,21 @@ models = {
     "Decision Tree": DecisionTreeRegressor(max_depth=8, random_state=RANDOM_STATE),
     "Random Forest (Default)": RandomForestRegressor(n_estimators=100, max_depth=12,
                                                      random_state=RANDOM_STATE, n_jobs=-1),
-    "Gradient Boosting (Default)": GradientBoostingRegressor(random_state=RANDOM_STATE),
-    "LightGBM": lgb.LGBMRegressor(random_state=RANDOM_STATE, n_jobs=-1, verbose=-1)
+    "Gradient Boosting (Default)": MultiOutputRegressor(GradientBoostingRegressor(random_state=RANDOM_STATE)),
+    "LightGBM": MultiOutputRegressor(lgb.LGBMRegressor(random_state=RANDOM_STATE, n_jobs=-1, verbose=-1))
 }
 
 # --- Hyperparameter Tuning ---
 print("   -> Tuning Random Forest (this might take a few minutes) ...")
 rf_param_grid = {
-    "model__n_estimators": [100, 200, 300],
-    "model__max_depth": [10, 15, 20, None],
-    "model__min_samples_leaf": [1, 2, 4]
+    "model__n_estimators": [50, 100],
+    "model__max_depth": [10, 20],
+    "model__min_samples_leaf": [2, 4]
 }
 rf_search = RandomizedSearchCV(
     make_pipeline(RandomForestRegressor(random_state=RANDOM_STATE, n_jobs=-1)),
     param_distributions=rf_param_grid,
-    n_iter=5, cv=tscv, scoring="neg_mean_absolute_error",
+    n_iter=2, cv=tscv, scoring="neg_mean_absolute_error",
     random_state=RANDOM_STATE, n_jobs=-1
 )
 rf_search.fit(X, y)
@@ -175,15 +177,15 @@ print(f"      Best RF Params: {rf_search.best_params_}")
 
 print("   -> Tuning Gradient Boosting (this might take a few minutes) ...")
 gb_param_grid = {
-    "model__n_estimators": [100, 200, 300],
-    "model__max_depth": [3, 5, 7],
-    "model__learning_rate": [0.01, 0.05, 0.1, 0.2],
-    "model__subsample": [0.8, 0.9, 1.0]
+    "model__estimator__n_estimators": [10, 50],
+    "model__estimator__max_depth": [3, 5],
+    "model__estimator__learning_rate": [0.1],
+    "model__estimator__subsample": [0.9]
 }
 gb_search = RandomizedSearchCV(
-    make_pipeline(GradientBoostingRegressor(random_state=RANDOM_STATE)),
+    make_pipeline(MultiOutputRegressor(GradientBoostingRegressor(random_state=RANDOM_STATE))),
     param_distributions=gb_param_grid,
-    n_iter=5, cv=tscv, scoring="neg_mean_absolute_error",
+    n_iter=2, cv=tscv, scoring="neg_mean_absolute_error",
     random_state=RANDOM_STATE, n_jobs=-1
 )
 gb_search.fit(X, y)
@@ -224,11 +226,11 @@ for name, model in models.items():
           f"RMSE={results[name]['RMSE_mean']:.3f}±{results[name]['RMSE_std']:.3f}  "
           f"R2={results[name]['R2_mean']:.3f}±{results[name]['R2_std']:.3f}")
 
-# Naive persistence reference: "tomorrow = today"
+# Naive persistence reference: "tomorrow = today" (extended to 7 days)
 naive_maes, naive_rmses, naive_r2s = [], [], []
 for train_idx, test_idx in tscv.split(X):
     y_test = y.iloc[test_idx]
-    naive_pred = X.iloc[test_idx]["lag1_temp_avg"]
+    naive_pred = np.column_stack([X.iloc[test_idx]["lag1_temp_avg"]] * 7)
     
     naive_maes.append(mean_absolute_error(y_test, naive_pred))
     naive_rmses.append(np.sqrt(mean_squared_error(y_test, naive_pred)))
@@ -263,9 +265,13 @@ final_preds = best_pipeline.predict(X)
 
 # --- Breakdown by State and Season (using full data predictions for simplicity of breakdown) ---
 df_eval = df.copy()
-df_eval["Predicted"] = final_preds
-df_eval["Residual"] = df_eval["target"] - df_eval["Predicted"]
-df_eval["AbsError"] = df_eval["Residual"].abs()
+abs_errors = []
+for i in range(1, 8):
+    df_eval[f"Predicted_{i}"] = final_preds[:, i-1]
+    df_eval[f"Residual_{i}"] = df_eval[f"target_{i}"] - df_eval[f"Predicted_{i}"]
+    abs_errors.append(df_eval[f"Residual_{i}"].abs())
+
+df_eval["AbsError"] = pd.concat(abs_errors, axis=1).mean(axis=1)
 
 state_mae = df_eval.groupby("State")["AbsError"].mean().sort_values(ascending=False)
 season_mae = df_eval.groupby("Season")["AbsError"].mean().sort_values(ascending=False)
@@ -278,29 +284,29 @@ print("\n   --- MAE Breakdown by Season ---")
 for season, mae in season_mae.items():
     print(f"      {season}: {mae:.3f}")
 
-# --- Plot Residuals ---
-print("\n   Plotting Residuals ...")
+# --- Plot Residuals (for Day 1) ---
+print("\n   Plotting Residuals (Day 1) ...")
 os.makedirs(RESULTS_DIR, exist_ok=True)
 
 fig, axes = plt.subplots(1, 2, figsize=(15, 6))
 
-# Predicted vs Actual
-axes[0].scatter(df_eval["Predicted"], df_eval["target"], alpha=0.3, color="blue")
-axes[0].plot([df_eval["target"].min(), df_eval["target"].max()], 
-             [df_eval["target"].min(), df_eval["target"].max()], 'r--', lw=2)
-axes[0].set_xlabel("Predicted Next-Day Temp_Avg")
-axes[0].set_ylabel("Actual Next-Day Temp_Avg")
-axes[0].set_title(f"Predicted vs Actual ({best_name})")
+# Predicted vs Actual (Day 1)
+axes[0].scatter(df_eval["Predicted_1"], df_eval["target_1"], alpha=0.3, color="blue")
+axes[0].plot([df_eval["target_1"].min(), df_eval["target_1"].max()], 
+             [df_eval["target_1"].min(), df_eval["target_1"].max()], 'r--', lw=2)
+axes[0].set_xlabel("Predicted Next-Day Temp_Avg (Day 1)")
+axes[0].set_ylabel("Actual Next-Day Temp_Avg (Day 1)")
+axes[0].set_title(f"Predicted vs Actual (Day 1 - {best_name})")
 
-# Residuals vs Season
+# Residuals vs Season (Day 1)
 seasons = df_eval["Season"].unique()
-season_data = [df_eval[df_eval["Season"] == s]["Residual"].dropna() for s in seasons]
+season_data = [df_eval[df_eval["Season"] == s]["Residual_1"].dropna() for s in seasons]
 axes[1].boxplot(season_data)
 axes[1].set_xticks(range(1, len(seasons) + 1))
 axes[1].set_xticklabels(seasons)
 axes[1].set_xlabel("Season")
-axes[1].set_ylabel("Residual (Actual - Predicted)")
-axes[1].set_title(f"Residuals by Season ({best_name})")
+axes[1].set_ylabel("Residual (Actual - Predicted) (Day 1)")
+axes[1].set_title(f"Residuals by Season (Day 1 - {best_name})")
 axes[1].axhline(0, color='r', linestyle='--', lw=2)
 
 plt.tight_layout()
@@ -318,7 +324,7 @@ joblib.dump(best_pipeline, os.path.join(MODEL_DIR, "weather_model.joblib"))
 
 metadata = {
     "best_model": best_name,
-    "target": "next-day Temp_Avg (deg C)",
+    "target": "next 7 days Temp_Avg (deg C)",
     "features": FEATURES,
     "train_period": [str(df["Date"].min().date()), str(df["Date"].max().date())],
     "test_period": ["N/A (TimeSeriesSplit CV used)"],

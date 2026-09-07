@@ -20,10 +20,8 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if not DATABASE_URL:
     raise RuntimeError(
         "DATABASE_URL is not set. Copy backend/.env.example to backend/.env "
-        "and set your PostgreSQL connection string."
+        "and set your database connection string."
     )
-if DATABASE_URL.startswith("sqlite"):
-    raise RuntimeError("SQLite is not supported. Use PostgreSQL (DATABASE_URL).")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, echo=False)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
@@ -31,6 +29,9 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 class Base(DeclarativeBase):
     pass
+
+def init_db():
+    Base.metadata.create_all(bind=engine)
 
 
 def get_db():

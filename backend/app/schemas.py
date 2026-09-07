@@ -25,7 +25,7 @@ class PredictionResponse(BaseModel):
     district: str = ""
     location: str = ""
     forecast_date: date_type
-    predicted_temp_avg: float = Field(..., description="Predicted Temp_Avg in deg C")
+    predicted_temp_avg: list[float] = Field(..., description="Predicted Temp_Avg for next 7 days in deg C")
     unit: str = "deg C"
     model: str = Field(..., description="Model name that produced the prediction")
     typical_error_mae: Optional[float] = Field(None, description="Test-set MAE of the model")
@@ -75,7 +75,7 @@ class PredictionRecord(BaseModel):
     district: str = ""
     location: str = ""
     forecast_date: date_type
-    predicted_temp_avg: float
+    predicted_temp_avg: list[float]
     created_at: datetime
 
 

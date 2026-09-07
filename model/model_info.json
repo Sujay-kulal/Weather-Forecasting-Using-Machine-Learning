@@ -1,6 +1,6 @@
 {
   "best_model": "LightGBM",
-  "target": "next-day Temp_Avg (deg C)",
+  "target": "next 7 days Temp_Avg (deg C)",
   "features": [
     "lag1_temp_avg",
     "lag2_temp_avg",
@@ -25,75 +25,75 @@
   ],
   "train_period": [
     "2023-04-08",
-    "2025-10-05"
+    "2025-09-29"
   ],
   "test_period": [
     "N/A (TimeSeriesSplit CV used)"
   ],
   "metrics": {
     "Linear Regression": {
-      "MAE_mean": 1.007,
-      "MAE_std": 0.1607,
-      "RMSE_mean": 1.3309,
-      "RMSE_std": 0.2093,
-      "R2_mean": 0.9709,
-      "R2_std": 0.006
+      "MAE_mean": 1.3477,
+      "MAE_std": 0.2962,
+      "RMSE_mean": 1.7676,
+      "RMSE_std": 0.381,
+      "R2_mean": 0.948,
+      "R2_std": 0.0182
     },
     "Decision Tree": {
-      "MAE_mean": 1.1271,
-      "MAE_std": 0.2525,
-      "RMSE_mean": 1.5804,
-      "RMSE_std": 0.3912,
-      "R2_mean": 0.959,
-      "R2_std": 0.0147
+      "MAE_mean": 1.486,
+      "MAE_std": 0.3791,
+      "RMSE_mean": 2.0547,
+      "RMSE_std": 0.5684,
+      "R2_mean": 0.9294,
+      "R2_std": 0.0324
     },
     "Random Forest (Default)": {
-      "MAE_mean": 0.971,
-      "MAE_std": 0.1594,
-      "RMSE_mean": 1.3369,
-      "RMSE_std": 0.2374,
-      "R2_mean": 0.971,
-      "R2_std": 0.0053
+      "MAE_mean": 1.3088,
+      "MAE_std": 0.2954,
+      "RMSE_mean": 1.7852,
+      "RMSE_std": 0.41,
+      "R2_mean": 0.9476,
+      "R2_std": 0.0171
     },
     "Gradient Boosting (Default)": {
-      "MAE_mean": 0.9914,
-      "MAE_std": 0.173,
-      "RMSE_mean": 1.3487,
-      "RMSE_std": 0.2487,
-      "R2_mean": 0.9703,
-      "R2_std": 0.0071
+      "MAE_mean": 1.3026,
+      "MAE_std": 0.2717,
+      "RMSE_mean": 1.7502,
+      "RMSE_std": 0.3641,
+      "R2_mean": 0.9499,
+      "R2_std": 0.0136
     },
     "LightGBM": {
-      "MAE_mean": 0.9547,
-      "MAE_std": 0.1657,
-      "RMSE_mean": 1.3215,
-      "RMSE_std": 0.2459,
-      "R2_mean": 0.9717,
-      "R2_std": 0.0055
+      "MAE_mean": 1.2525,
+      "MAE_std": 0.2604,
+      "RMSE_mean": 1.7013,
+      "RMSE_std": 0.3433,
+      "R2_mean": 0.953,
+      "R2_std": 0.0105
     },
     "Random Forest (Tuned)": {
-      "MAE_mean": 0.9653,
-      "MAE_std": 0.1556,
-      "RMSE_mean": 1.3276,
-      "RMSE_std": 0.2289,
-      "R2_mean": 0.9714,
-      "R2_std": 0.0049
+      "MAE_mean": 1.3069,
+      "MAE_std": 0.2968,
+      "RMSE_mean": 1.7818,
+      "RMSE_std": 0.4092,
+      "R2_mean": 0.9479,
+      "R2_std": 0.0168
     },
     "Gradient Boosting (Tuned)": {
-      "MAE_mean": 0.9832,
-      "MAE_std": 0.1719,
-      "RMSE_mean": 1.3424,
-      "RMSE_std": 0.2461,
-      "R2_mean": 0.9707,
-      "R2_std": 0.0061
+      "MAE_mean": 1.2977,
+      "MAE_std": 0.2831,
+      "RMSE_mean": 1.7565,
+      "RMSE_std": 0.3942,
+      "R2_mean": 0.9492,
+      "R2_std": 0.0165
     },
     "Naive (tomorrow=today)": {
-      "MAE_mean": 0.9419,
-      "MAE_std": 0.1571,
-      "RMSE_mean": 1.2857,
-      "RMSE_std": 0.2171,
-      "R2_mean": 0.9729,
-      "R2_std": 0.0055
+      "MAE_mean": 1.2811,
+      "MAE_std": 0.2214,
+      "RMSE_mean": 1.7391,
+      "RMSE_std": 0.2958,
+      "R2_mean": 0.9503,
+      "R2_std": 0.0107
     }
   },
   "states": [

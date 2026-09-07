@@ -51,7 +51,7 @@ export interface PredictionResponse {
   district?: string;
   location?: string;
   forecast_date: string;
-  predicted_temp_avg: number;
+  predicted_temp_avg: number[];
   unit: string;
   model: string;
   typical_error_mae: number;
@@ -64,7 +64,7 @@ export interface PredictionRecord {
   district?: string;
   location?: string;
   forecast_date: string;
-  predicted_temp_avg: number;
+  predicted_temp_avg: number[];
   created_at: string;
 }
 

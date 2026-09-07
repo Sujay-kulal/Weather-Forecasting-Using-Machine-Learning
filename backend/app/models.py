@@ -6,7 +6,7 @@ weather_data : historical daily weather per state (imported from the real CSV).
                power-demand variables are intentionally excluded.
 predictions  : audit log of every prediction made through the API.
 """
-from sqlalchemy import Column, Date, DateTime, Float, Integer, String, UniqueConstraint, func
+from sqlalchemy import Column, Date, DateTime, Float, Integer, String, UniqueConstraint, func, JSON
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -43,7 +43,7 @@ class Prediction(Base):
     district: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="", index=True)
     location: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="", index=True)
     forecast_date: Mapped[object] = mapped_column(Date, nullable=False, index=True)
-    predicted_temp_avg: Mapped[float] = mapped_column(Float, nullable=False)
+    predicted_temp_avg: Mapped[list] = mapped_column(JSON, nullable=False)
     created_at: Mapped[object] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
