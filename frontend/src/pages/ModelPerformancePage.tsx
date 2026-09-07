@@ -10,9 +10,10 @@ import {
 } from "recharts";
 import { getModelInfo } from "../services/api";
 import { useFetch } from "../hooks/useFetch";
-import { Card, ErrorBanner, Spinner } from "../components/ui";
+import { Card, ErrorBanner, PageHead, Spinner, StatChip } from "../components/ui";
+import { CalendarIcon, ChipIcon, SlidersIcon, TargetIcon } from "../components/icons";
 
-/** Groups the 13 model input features for display (names come from the API). */
+/** Groups the model input features for display (names come from the API). */
 function groupFeatures(features: string[]) {
   const groups: { label: string; items: string[] }[] = [
     { label: "Lag Features", items: features.filter((f) => f.startsWith("lag")) },
@@ -38,8 +39,24 @@ export function ModelPerformancePage() {
 
   return (
     <div className="page">
+      <PageHead
+        title="Model Performance"
+        desc="Evaluation of the trained model on the held-out test period. Every number below comes from the backend's /model-info endpoint — nothing is hardcoded."
+      />
+
+      <div className="stat-chips">
+        <StatChip icon={<ChipIcon />} label="Model type" value={model_name} />
+        <StatChip icon={<TargetIcon />} label="Prediction target" value={target} />
+        <StatChip icon={<SlidersIcon />} label="Engineered features" value={features.length} />
+        <StatChip
+          icon={<CalendarIcon />}
+          label="Test period"
+          value={`${test_period[0]} → ${test_period[1]}`}
+        />
+      </div>
+
       <div className="model-grid">
-        <Card title="Selected model">
+        <Card title="Model & training setup" icon={<ChipIcon />}>
           <dl className="meta-list">
             <div>
               <dt>Model</dt>
@@ -47,7 +64,11 @@ export function ModelPerformancePage() {
             </div>
             <div>
               <dt>Target</dt>
-              <dd>{target}</dd>
+              <dd>{target} (next-day average temperature, °C)</dd>
+            </div>
+            <div>
+              <dt>Input features</dt>
+              <dd>{features.length} engineered features (grouped below)</dd>
             </div>
             <div>
               <dt>Training period</dt>
@@ -62,9 +83,14 @@ export function ModelPerformancePage() {
               </dd>
             </div>
           </dl>
+          <p className="chart-note" style={{ marginTop: 12 }}>
+            The split is <strong>temporal</strong>: the model is trained on the earlier period and
+            evaluated on the later one, so the test metrics reflect performance on dates the
+            model has never seen.
+          </p>
         </Card>
 
-        <Card title={`Metrics — ${model_name} (test set)`}>
+        <Card title={`Metrics — ${model_name} (test set)`} icon={<TargetIcon />}>
           <div className="metric-row">
             <div className="metric">
               <div className="metric-value">{selected.MAE.toFixed(3)}</div>
@@ -96,26 +122,30 @@ export function ModelPerformancePage() {
         </Card>
       </div>
 
-      <Card title="Model comparison (all candidates evaluated in Phase 1)">
+      <Card
+        title="Model comparison (all candidates evaluated in Phase 1)"
+        icon={<ChipIcon />}
+        subtitle="Lower RMSE is better. The highlighted bar is the model currently deployed in the backend (selected by lowest RMSE during training)."
+      >
         <div className="chart-box">
           <ResponsiveContainer width="100%" height={280}>
             <BarChart data={comparison} margin={{ top: 10, right: 20, bottom: 5, left: 0 }}>
-              <CartesianGrid stroke="#eceef1" vertical={false} />
+              <CartesianGrid stroke="#e7edf4" vertical={false} />
               <XAxis
                 dataKey="name"
-                tick={{ fontSize: 11 }}
+                tick={{ fontSize: 11, fill: "#5a6b82" }}
                 interval={0}
                 angle={-15}
                 textAnchor="end"
                 height={50}
               />
-              <YAxis tick={{ fontSize: 11 }} unit=" °C" />
+              <YAxis tick={{ fontSize: 11, fill: "#5a6b82" }} unit=" °C" />
               <Tooltip formatter={(v: number) => v.toFixed(3)} />
-              <Bar dataKey="RMSE" name="RMSE (°C)" radius={[3, 3, 0, 0]}>
+              <Bar dataKey="RMSE" name="RMSE (°C)" radius={[4, 4, 0, 0]}>
                 {comparison.map((entry) => (
                   <Cell
                     key={entry.name}
-                    fill={entry.name === model_name ? "#0e7490" : "#b9c6d3"}
+                    fill={entry.name === model_name ? "#0284c7" : "#c3d3e4"}
                   />
                 ))}
               </Bar>
@@ -123,10 +153,8 @@ export function ModelPerformancePage() {
           </ResponsiveContainer>
         </div>
         <p className="chart-note">
-          Lower RMSE is better. The highlighted bar is the model currently deployed in the
-          backend (selected by lowest RMSE during training). The naive baseline
-          &ldquo;tomorrow&nbsp;=&nbsp;today&rdquo; is included to show the improvement over a
-          no-ML approach.
+          The naive baseline &ldquo;tomorrow&nbsp;=&nbsp;today&rdquo; is included to show the
+          improvement over a no-ML approach.
         </p>
 
         <div className="table-wrap">
@@ -134,18 +162,21 @@ export function ModelPerformancePage() {
             <thead>
               <tr>
                 <th>Model</th>
-                <th>MAE (°C)</th>
-                <th>RMSE (°C)</th>
-                <th>R²</th>
+                <th className="num">MAE (°C)</th>
+                <th className="num">RMSE (°C)</th>
+                <th className="num">R²</th>
               </tr>
             </thead>
             <tbody>
               {comparison.map((m) => (
                 <tr key={m.name} className={m.name === model_name ? "highlight-row" : ""}>
-                  <td>{m.name}</td>
-                  <td>{m.MAE.toFixed(4)}</td>
-                  <td>{m.RMSE.toFixed(4)}</td>
-                  <td>{m.R2.toFixed(4)}</td>
+                  <td>
+                    {m.name}
+                    {m.name === model_name ? " · deployed" : ""}
+                  </td>
+                  <td className="num">{m.MAE.toFixed(4)}</td>
+                  <td className="num">{m.RMSE.toFixed(4)}</td>
+                  <td className="num">{m.R2.toFixed(4)}</td>
                 </tr>
               ))}
             </tbody>
@@ -153,11 +184,18 @@ export function ModelPerformancePage() {
         </div>
       </Card>
 
-      <Card title="Model input features (built automatically by the backend)">
+      <Card
+        title="Model input features (built automatically by the backend)"
+        icon={<SlidersIcon />}
+        subtitle={`Exactly ${features.length} features are engineered server-side from recent measurements before every prediction.`}
+      >
         <div className="feature-groups">
           {groupFeatures(features).map((g) => (
             <div key={g.label} className="feature-group">
-              <h4>{g.label}</h4>
+              <h4>
+                {g.label}
+                <span className="count-badge">{g.items.length}</span>
+              </h4>
               <ul>
                 {g.items.map((f) => (
                   <li key={f}>

@@ -12,7 +12,21 @@ import {
 } from "recharts";
 import { ApiError, getRecentWeather, getStates, getDistricts, getLocations, predict } from "../services/api";
 import { useFetch } from "../hooks/useFetch";
-import { Card, EmptyNote, ErrorBanner, Spinner } from "../components/ui";
+import { Card, EmptyNote, ErrorBanner, PageHead, Spinner, StatChip } from "../components/ui";
+import {
+  ArrowDownIcon,
+  ArrowUpIcon,
+  CalendarIcon,
+  ChipIcon,
+  CloudSunIcon,
+  DatabaseIcon,
+  DropletIcon,
+  MinusIcon,
+  RainIcon,
+  SlidersIcon,
+  SparkIcon,
+  ThermometerIcon,
+} from "../components/icons";
 import type { PredictionResponse } from "../types/api";
 
 function nextDay(iso: string): string {
@@ -20,6 +34,17 @@ function nextDay(iso: string): string {
   // unlike new Date(iso) + toISOString() which can shift the date by a day.
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
+function prettyDate(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 export function ForecastPage() {
@@ -60,6 +85,7 @@ export function ForecastPage() {
   );
 
   const recentRecords = recent.data?.records ?? [];
+  const latest = recentRecords.length > 0 ? recentRecords[recentRecords.length - 1] : null;
 
   // Convenient default: the day after the latest available measurement.
   // Only applied while the user has not picked a date themselves.
@@ -97,14 +123,22 @@ export function ForecastPage() {
   }
 
   const locStr = location ? `${state} → ${district} → ${location}` : state;
+  const dateStepNo = 1 + (hasDistricts ? 1 : 0) + (district && hasLocations ? 1 : 0) + 1;
 
   return (
     <div className="page">
+      <PageHead
+        title="Forecast"
+        desc="Select a region and a date — the backend engineers the same 13 features used in training and the Gradient Boosting model predicts the average temperature for that day."
+      />
+
       <div className="forecast-grid">
-        <Card title="Generate a forecast">
+        <Card title="Generate a forecast" icon={<CloudSunIcon />}>
           <form onSubmit={onSubmit} className="forecast-form">
             <label className="field">
-              <span>State</span>
+              <span>
+                <span className="step-number" aria-hidden="true">1</span> State
+              </span>
               {states.loading ? (
                 <Spinner label="Loading states…" />
               ) : states.error ? (
@@ -136,7 +170,9 @@ export function ForecastPage() {
 
             {hasDistricts && (
               <label className="field">
-                <span>District</span>
+                <span>
+                  <span className="step-number" aria-hidden="true">2</span> District
+                </span>
                 {districtsFetch.loading ? (
                   <Spinner label="Loading districts…" />
                 ) : districtsFetch.error ? (
@@ -168,7 +204,9 @@ export function ForecastPage() {
 
             {district && hasLocations && (
               <label className="field">
-                <span>Location</span>
+                <span>
+                  <span className="step-number" aria-hidden="true">3</span> Location
+                </span>
                 {locationsFetch.loading ? (
                   <Spinner label="Loading locations…" />
                 ) : locationsFetch.error ? (
@@ -198,7 +236,9 @@ export function ForecastPage() {
             )}
 
             <label className="field">
-              <span>Forecast date</span>
+              <span>
+                <span className="step-number" aria-hidden="true">{dateStepNo}</span> Forecast date
+              </span>
               <input
                 type="date"
                 value={date}
@@ -209,14 +249,15 @@ export function ForecastPage() {
                 required
               />
               <small className="hint">
-                {recentRecords.length > 0
-                  ? `Latest available measurement: ${recentRecords[recentRecords.length - 1].date}. Default forecast: day after latest measurement.`
+                {latest
+                  ? `Latest available measurement: ${latest.date}. Default: the day after the latest measurement.`
                   : "Select a location to see available history."}{" "}
                 The backend validates the date and rejects dates without sufficient history.
               </small>
             </label>
 
             <button className="btn-primary" type="submit" disabled={submitting || !canSubmit}>
+              <SparkIcon />
               {submitting ? "Generating forecast…" : "Generate Forecast"}
             </button>
             <small className="hint">
@@ -225,22 +266,51 @@ export function ForecastPage() {
           </form>
         </Card>
 
-        <Card title="Prediction result">
+        <Card title="Prediction result" icon={<ThermometerIcon />}>
           {submitting && <Spinner label="Generating forecast…" />}
 
           {!submitting && predictError && <ErrorBanner message={predictError} />}
 
           {!submitting && !predictError && !result && (
-            <EmptyNote text="Select a location and a forecast date, then generate a forecast. The result will appear here." />
+            <EmptyNote
+              title="No forecast yet"
+              hint="Select a location and a forecast date, then generate a forecast. The result will appear here."
+            />
           )}
 
           {!submitting && result && (
             <div className="result">
               <div className="result-hero">
+                <CloudSunIcon className="hero-icon" />
                 <div className="result-label">Predicted Average Temperature</div>
                 <div className="result-value">
-                  {result.predicted_temp_avg.toFixed(2)} <span className="unit">°C</span>
+                  {result.predicted_temp_avg.toFixed(2)}
+                  <span className="unit">°C</span>
                 </div>
+                <div className="result-sub">
+                  for {result.location || result.state}
+                  {result.district && result.location ? `, ${result.district}` : ""} on{" "}
+                  {prettyDate(result.forecast_date)}
+                </div>
+                {result.last_known && (
+                  <span className="result-delta">
+                    {(() => {
+                      const delta =
+                        Math.round((result.predicted_temp_avg - result.last_known.temp_avg) * 10) /
+                        10;
+                      const Icon =
+                        delta > 0 ? ArrowUpIcon : delta < 0 ? ArrowDownIcon : MinusIcon;
+                      return (
+                        <>
+                          <Icon />
+                          {delta > 0 ? "+" : ""}
+                          {delta.toFixed(1)} °C vs last known ({result.last_known.date}:{" "}
+                          {result.last_known.temp_avg.toFixed(1)} °C)
+                        </>
+                      );
+                    })()}
+                  </span>
+                )}
               </div>
               <dl className="result-meta">
                 <div>
@@ -268,14 +338,8 @@ export function ForecastPage() {
                   <dd>{result.model}</dd>
                 </div>
                 <div>
-                  <dt>Typical MAE</dt>
-                  <dd>{result.typical_error_mae.toFixed(3)} °C</dd>
-                </div>
-                <div>
-                  <dt>Last known temperature</dt>
-                  <dd>
-                    {result.last_known.temp_avg.toFixed(2)} °C ({result.last_known.date})
-                  </dd>
+                  <dt>Typical error (MAE)</dt>
+                  <dd>± {result.typical_error_mae.toFixed(3)} °C</dd>
                 </div>
               </dl>
             </div>
@@ -283,11 +347,52 @@ export function ForecastPage() {
         </Card>
       </div>
 
-      <Card title="Historical Temperature + Forecast">
+      <Card
+        title="Recent weather context"
+        icon={<DropletIcon />}
+        subtitle={
+          latest
+            ? `Latest measurements recorded for ${locStr} — loaded from the backend (real PostgreSQL data).`
+            : undefined
+        }
+      >
         {recent.loading && <Spinner label="Loading weather history…" />}
         {recent.error && <ErrorBanner message={recent.error.message} />}
-        {!recent.loading && !recent.error && recentRecords.length === 0 && canSubmit && (
-          <EmptyNote text="No recent weather records available." />
+        {!recent.loading && !recent.error && recentRecords.length === 0 && state && (
+          <EmptyNote
+            title="No recent weather records"
+            hint="The backend returned no recent measurements for this selection."
+          />
+        )}
+        {!recent.loading && !recent.error && recentRecords.length === 0 && !state && (
+          <EmptyNote
+            title="Select a region first"
+            hint="Recent measurements for the selected region will appear here."
+          />
+        )}
+        {latest && (
+          <div className="stat-chips" style={{ marginBottom: 16 }}>
+            <StatChip
+              icon={<ThermometerIcon />}
+              label={`Latest temp avg · ${latest.date}`}
+              value={`${latest.temp_avg.toFixed(1)} °C`}
+            />
+            <StatChip
+              icon={<CalendarIcon />}
+              label="Day range"
+              value={`${latest.temp_min.toFixed(0)}–${latest.temp_max.toFixed(0)} °C`}
+            />
+            <StatChip
+              icon={<DropletIcon />}
+              label="Humidity (latest)"
+              value={`${latest.humidity.toFixed(0)} %`}
+            />
+            <StatChip
+              icon={<RainIcon />}
+              label="Rainfall (latest)"
+              value={`${latest.rainfall.toFixed(1)} mm`}
+            />
+          </div>
         )}
         {recentRecords.length > 0 && (
           <>
@@ -297,10 +402,10 @@ export function ForecastPage() {
                   data={chartData(recentRecords, result)}
                   margin={{ top: 10, right: 20, bottom: 5, left: 0 }}
                 >
-                  <CartesianGrid stroke="#eceef1" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 11 }} tickFormatter={shortDate} />
+                  <CartesianGrid stroke="#e7edf4" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#5a6b82" }} tickFormatter={shortDate} />
                   <YAxis
-                    tick={{ fontSize: 11 }}
+                    tick={{ fontSize: 11, fill: "#5a6b82" }}
                     domain={["dataMin - 2", "dataMax + 2"]}
                     tickFormatter={(v: number) => v.toFixed(1)}
                     unit=" °C"
@@ -311,7 +416,7 @@ export function ForecastPage() {
                     type="monotone"
                     dataKey="temp_max"
                     name="Temp Max"
-                    stroke="#8fb3c7"
+                    stroke="#f59e0b"
                     strokeWidth={1.5}
                     dot={false}
                     connectNulls
@@ -320,7 +425,7 @@ export function ForecastPage() {
                     type="monotone"
                     dataKey="temp_avg"
                     name="Temp Avg"
-                    stroke="#1e3a5f"
+                    stroke="#0f4c81"
                     strokeWidth={2.2}
                     dot={false}
                     connectNulls
@@ -329,7 +434,7 @@ export function ForecastPage() {
                     type="monotone"
                     dataKey="temp_min"
                     name="Temp Min"
-                    stroke="#c9ccd1"
+                    stroke="#93c5fd"
                     strokeWidth={1.5}
                     dot={false}
                     connectNulls
@@ -339,7 +444,7 @@ export function ForecastPage() {
                       type="monotone"
                       dataKey="predicted"
                       name="Predicted"
-                      stroke="#0e7490"
+                      stroke="#0284c7"
                       strokeWidth={2}
                       strokeDasharray="5 4"
                       dot={false}
@@ -351,7 +456,7 @@ export function ForecastPage() {
                       x={result.forecast_date}
                       y={result.predicted_temp_avg}
                       r={6}
-                      fill="#0e7490"
+                      fill="#0284c7"
                       stroke="#ffffff"
                       strokeWidth={2}
                     />
@@ -372,15 +477,23 @@ export function ForecastPage() {
         )}
       </Card>
 
-      <Card title="How the prediction works">
+      <Card title="How the prediction works" icon={<ChipIcon />}>
         <div className="pipeline" aria-label="prediction pipeline">
-          <span>Historical Weather</span>
-          <span className="arrow">→</span>
-          <span>Feature Engineering</span>
-          <span className="arrow">→</span>
-          <span>Gradient Boosting</span>
-          <span className="arrow">→</span>
-          <span>Next-day Avg Temperature</span>
+          <span className="pipeline-step">
+            <DatabaseIcon /> Historical Weather
+          </span>
+          <span className="arrow" aria-hidden="true">→</span>
+          <span className="pipeline-step">
+            <SlidersIcon /> Feature Engineering
+          </span>
+          <span className="arrow" aria-hidden="true">→</span>
+          <span className="pipeline-step">
+            <ChipIcon /> Gradient Boosting
+          </span>
+          <span className="arrow" aria-hidden="true">→</span>
+          <span className="pipeline-step">
+            <ThermometerIcon /> Next-day Avg Temperature
+          </span>
         </div>
         <p className="chart-note">
           For each prediction the backend builds the same input the model was trained on:
@@ -431,5 +544,5 @@ function shortDate(iso: string): string {
   return iso.slice(5); // MM-DD
 }
 function fullDate(iso: string): string {
-  return iso;
+  return prettyDate(iso);
 }

@@ -4,12 +4,13 @@ import { WeatherHistoryPage } from "./pages/WeatherHistoryPage";
 import { ModelPerformancePage } from "./pages/ModelPerformancePage";
 import { PredictionHistoryPage } from "./pages/PredictionHistoryPage";
 import { useHealth, type HealthState } from "./hooks/useHealth";
+import { ChartIcon, ChipIcon, CloudSunIcon, ListIcon } from "./components/icons";
 
 const TABS = [
-  { id: "forecast", label: "Forecast" },
-  { id: "history", label: "Weather History" },
-  { id: "model", label: "Model Performance" },
-  { id: "predictions", label: "Prediction History" },
+  { id: "forecast", label: "Forecast", Icon: CloudSunIcon },
+  { id: "history", label: "Weather History", Icon: ChartIcon },
+  { id: "model", label: "Model Performance", Icon: ChipIcon },
+  { id: "predictions", label: "Prediction History", Icon: ListIcon },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -29,9 +30,14 @@ export default function App() {
     <div className="app">
       <header className="header">
         <div className="header-inner">
-          <div>
-            <h1>Weather Forecasting System</h1>
-            <p className="subtitle">Machine Learning Based Temperature Forecasting</p>
+          <div className="brand">
+            <span className="brand-mark" aria-hidden="true">
+              <CloudSunIcon />
+            </span>
+            <div className="brand-text">
+              <h1>Weather Forecasting System</h1>
+              <p className="subtitle">Machine Learning Based Temperature Forecasting</p>
+            </div>
           </div>
           <div className={`health health-${health}`} title={detail}>
             <span className="health-dot" aria-hidden="true" />
@@ -43,8 +49,10 @@ export default function App() {
             <button
               key={t.id}
               className={`nav-tab ${tab === t.id ? "active" : ""}`}
+              aria-current={tab === t.id ? "page" : undefined}
               onClick={() => setTab(t.id)}
             >
+              <t.Icon />
               {t.label}
             </button>
           ))}
