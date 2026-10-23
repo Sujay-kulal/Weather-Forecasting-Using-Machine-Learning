@@ -1,9 +1,11 @@
 import sys
 import time
 import json
+import logging
+import argparse
 import urllib.request
-import urllib.parse
-from datetime import datetime, date, timedelta
+import urllib.error
+from datetime import datetime, date
 from pathlib import Path
 
 # Make `app` importable
@@ -11,7 +13,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from app.database import SessionLocal
 from app.models import WeatherData
-from sqlalchemy import select, func
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
+logger = logging.getLogger("update_weather")
 
 STATE_COORDS = {
     'Andhra Pradesh': (15.9129, 79.7400),
@@ -50,132 +55,107 @@ STATE_COORDS = {
     'West Bengal': (22.9868, 87.8550)
 }
 
-LOCATIONS = [
-    {"state": state, "district": "", "location": "", "lat": lat, "lon": lon}
-    for state, (lat, lon) in STATE_COORDS.items()
-]
-LOCATIONS.append({
-    "state": "Karnataka",
-    "district": "Udupi",
-    "location": "Kundapura",
-    "lat": 13.6236,
-    "lon": 74.6905
-})
+def fetch_forecast_for_state(state: str, lat: float, lon: float, days_back: int = 7, max_retries: int = 5):
+    """Fetch recent days using the Open-Meteo Forecast API with past_days."""
+    url = (
+        f"https://api.open-meteo.com/v1/forecast?"
+        f"latitude={lat}&longitude={lon}&"
+        f"past_days={days_back}&forecast_days=1&"
+        f"daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,relative_humidity_2m_mean&"
+        f"timezone=auto"
+    )
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "WeatherUpdate/1.0"})
+            with urllib.request.urlopen(req, timeout=20) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                return data
+        except Exception as e:
+            logger.warning(f"[{state}] Attempt {attempt}/{max_retries} failed: {e}")
+            if attempt == max_retries:
+                logger.error(f"[{state}] All {max_retries} attempts failed.")
+                raise
+            time.sleep(2 ** attempt)
+
+def update_weather(days_back: int = 7, session=None) -> int:
+    """
+    Ingest recent weather data using the Open-Meteo Forecast API (past_days)
+    and perform an idempotent UPSERT into weather_data.
+    """
+    close_session = False
+    if session is None:
+        session = SessionLocal()
+        close_session = True
+
+    logger.info(f"Starting weather update (days_back={days_back}) for {len(STATE_COORDS)} states...")
+    added_or_updated_total = 0
+
+    try:
+        for state, (lat, lon) in STATE_COORDS.items():
+            data = fetch_forecast_for_state(state, lat, lon, days_back=days_back)
+            if not data or "daily" not in data or "time" not in data["daily"]:
+                logger.warning(f"[{state}] No daily data in response")
+                continue
+
+            daily = data["daily"]
+            times = daily["time"]
+            t_max = daily["temperature_2m_max"]
+            t_min = daily["temperature_2m_min"]
+            t_mean = daily["temperature_2m_mean"]
+            precip = daily["precipitation_sum"]
+            humid = daily["relative_humidity_2m_mean"]
+
+            buffer = []
+            for i in range(len(times)):
+                if t_max[i] is None or t_min[i] is None or t_mean[i] is None or precip[i] is None or humid[i] is None:
+                    continue
+
+                d = datetime.strptime(times[i], "%Y-%m-%d").date()
+                buffer.append({
+                    "state": state,
+                    "district": "",
+                    "location": "",
+                    "date": d,
+                    "temp_max": float(t_max[i]),
+                    "temp_min": float(t_min[i]),
+                    "temp_avg": float(t_mean[i]),
+                    "humidity": float(humid[i]),
+                    "rainfall": float(precip[i]),
+                })
+
+            if buffer:
+                stmt = pg_insert(WeatherData).values(buffer)
+                upsert_stmt = stmt.on_conflict_do_update(
+                    constraint="uq_weather_state_date",
+                    set_={
+                        "temp_max": stmt.excluded.temp_max,
+                        "temp_min": stmt.excluded.temp_min,
+                        "temp_avg": stmt.excluded.temp_avg,
+                        "humidity": stmt.excluded.humidity,
+                        "rainfall": stmt.excluded.rainfall,
+                    }
+                )
+                session.execute(upsert_stmt)
+                session.commit()
+                added_or_updated_total += len(buffer)
+                logger.info(f"[{state}] Upserted {len(buffer)} records.")
+            else:
+                logger.info(f"[{state}] No valid records to upsert.")
+
+            time.sleep(0.5)
+
+        logger.info(f"Weather update completed. Total upserted records: {added_or_updated_total}")
+        return added_or_updated_total
+    finally:
+        if close_session:
+            session.close()
 
 def main():
-    print("Starting weather update...")
-    session = SessionLocal()
-
-    today = date.today()
-    added_total = 0
-
-    for loc in LOCATIONS:
-        state = loc["state"]
-        district = loc["district"]
-        location_name = loc["location"]
-        lat = loc["lat"]
-        lon = loc["lon"]
-
-        loc_str = state if not location_name else f"{state}/{district}/{location_name}"
-
-        # Get max date for this specific location
-        max_date = session.execute(
-            select(func.max(WeatherData.date))
-            .where(
-                WeatherData.state == state,
-                WeatherData.district == district,
-                WeatherData.location == location_name
-            )
-        ).scalar()
-
-        if max_date is None:
-            # Fetch from 2015-01-01 for new locations
-            start_date = date(2015, 1, 1)
-        else:
-            if max_date >= today:
-                print(f"[{loc_str}] Already up to date (Latest: {max_date})")
-                continue
-            start_date = max_date + timedelta(days=1)
-
-        end_date = today # we try to fetch up to today
-
-        if start_date > end_date:
-            continue
-
-        print(f"[{loc_str}] Fetching from {start_date} to {end_date}...")
-        time.sleep(0.5) # respect rate limit
-
-        url = (
-            f"https://archive-api.open-meteo.com/v1/archive?"
-            f"latitude={lat}&longitude={lon}&"
-            f"start_date={start_date}&end_date={end_date}&"
-            f"daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,relative_humidity_2m_mean&"
-            f"timezone=auto"
-        )
-        try:
-            res = urllib.request.urlopen(url).read()
-            data = json.loads(res)
-        except Exception as e:
-            print(f"[{loc_str}] Failed to fetch data: {e}")
-            continue
-
-        if "daily" not in data:
-            print(f"[{loc_str}] No daily data in response")
-            continue
-
-        daily = data["daily"]
-        times = daily["time"]
-        t_max = daily["temperature_2m_max"]
-        t_min = daily["temperature_2m_min"]
-        t_mean = daily["temperature_2m_mean"]
-        precip = daily["precipitation_sum"]
-        humid = daily["relative_humidity_2m_mean"]
-
-        buffer = []
-        for i in range(len(times)):
-            if t_max[i] is None or t_min[i] is None or t_mean[i] is None or precip[i] is None or humid[i] is None:
-                continue
-
-            d = datetime.strptime(times[i], "%Y-%m-%d").date()
-            if d < start_date or d > end_date:
-                continue
-
-            exists = session.execute(
-                select(func.count()).select_from(WeatherData)
-                .where(
-                    WeatherData.state == state,
-                    WeatherData.district == district,
-                    WeatherData.location == location_name,
-                    WeatherData.date == d
-                )
-            ).scalar_one()
-
-            if exists == 0:
-                record = WeatherData(
-                    state=state,
-                    district=district,
-                    location=location_name,
-                    date=d,
-                    temp_max=float(t_max[i]),
-                    temp_min=float(t_min[i]),
-                    temp_avg=float(t_mean[i]),
-                    humidity=float(humid[i]),
-                    rainfall=float(precip[i])
-                )
-                buffer.append(record)
-
-        if buffer:
-            session.add_all(buffer)
-            session.commit()
-            added_total += len(buffer)
-            print(f"[{loc_str}] Inserted {len(buffer)} records.")
-        else:
-            print(f"[{loc_str}] No new valid records found.")
-
-        time.sleep(0.5)
-
-    print(f"Weather update completed. Total new records: {added_total}")
-    session.close()
+    parser = argparse.ArgumentParser(description="Update weather data from Open-Meteo Forecast API.")
+    parser.add_argument("--days-back", type=int, default=7, help="Number of past days to fetch (default: 7)")
+    args = parser.parse_args()
+    update_weather(days_back=args.days_back)
 
 if __name__ == "__main__":
     main()

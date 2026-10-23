@@ -67,6 +67,7 @@ class HealthResponse(BaseModel):
     status: str
     database: str
     model_loaded: bool
+    last_ingested_at: Optional[datetime] = None
 
 
 class PredictionRecord(BaseModel):

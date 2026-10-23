@@ -8,3 +8,5 @@ scikit-learn
 joblib
 python-dotenv
 lightgbm
+apscheduler
+cachetools

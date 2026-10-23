@@ -10,11 +10,14 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, check_connection, engine, init_db
-from app.routes import health, prediction, weather
+from app.routes import admin, health, prediction, weather
+from app.services.ingestion_service import run_ingestion_with_lock
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -30,7 +33,27 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("PostgreSQL connection OK, tables ready")
     logger.info("Trained model loaded: %s", prediction.model_service.MODEL_NAME)
-    yield
+
+    # Start APScheduler: Daily at 06:30 Asia/Kolkata
+    scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
+    scheduler.add_job(
+        run_ingestion_with_lock,
+        trigger=CronTrigger(hour=6, minute=30, timezone="Asia/Kolkata"),
+        id="daily_weather_ingest",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+        replace_existing=True,
+    )
+    scheduler.start()
+    app.state.scheduler = scheduler
+    logger.info("APScheduler BackgroundScheduler started (Daily 06:30 Asia/Kolkata).")
+
+    try:
+        yield
+    finally:
+        scheduler.shutdown(wait=False)
+        logger.info("APScheduler BackgroundScheduler shut down.")
 
 
 app = FastAPI(
@@ -58,6 +81,7 @@ app.add_middleware(
 )
 
 app.include_router(health.router)
+app.include_router(admin.router)
 app.include_router(weather.states_router)
 app.include_router(weather.router)
 app.include_router(prediction.router)

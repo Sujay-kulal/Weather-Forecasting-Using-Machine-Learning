@@ -16,6 +16,7 @@ class WeatherData(Base):
     """One row = weather measurements for one state on one day."""
     __tablename__ = "weather_data"
     __table_args__ = (
+        UniqueConstraint("state", "date", name="uq_weather_state_date"),
         UniqueConstraint("state", "district", "location", "date", name="uq_weather_state_dist_loc_date"),
     )
 

@@ -4,6 +4,7 @@ from fastapi import APIRouter
 from app.database import check_connection
 from app.schemas import HealthResponse
 from app.services import model_service
+from app.services.ingestion_service import get_last_ingested_at
 
 router = APIRouter(tags=["health"])
 
@@ -15,6 +16,7 @@ def health():
         status="healthy" if db_ok else "degraded",
         database="connected" if db_ok else "unreachable",
         model_loaded=pipeline_loaded(),
+        last_ingested_at=get_last_ingested_at(),
     )
 
 
