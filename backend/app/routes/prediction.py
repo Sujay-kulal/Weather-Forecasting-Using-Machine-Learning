@@ -26,6 +26,8 @@ router = APIRouter(tags=["prediction"])
 
 def _resolve_location_predict(state: str, district: str, location: str, db: Session):
     canonical_state = state.strip().title()
+    if canonical_state == "Other":
+        raise HTTPException(404, detail="Unknown state 'Other'. Call GET /states for the available names.")
     dist = district.strip()
     loc = location.strip()
 

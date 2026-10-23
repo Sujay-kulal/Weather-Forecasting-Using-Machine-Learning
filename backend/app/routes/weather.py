@@ -40,7 +40,12 @@ def _resolve_location(state: str, district: str, location: str, db: Session):
 def list_states(response: Response, db: Session = Depends(get_db)):
     """Distinct states present in the weather database."""
     response.headers["Cache-Control"] = "public, max-age=300"
-    rows = db.execute(select(WeatherData.state).distinct().order_by(WeatherData.state)).scalars()
+    rows = db.execute(
+        select(WeatherData.state)
+        .distinct()
+        .where(WeatherData.state != "Other")
+        .order_by(WeatherData.state)
+    ).scalars()
     return StatesResponse(states=list(rows))
 
 @states_router.get("/districts/{state}", response_model=DistrictsResponse)
