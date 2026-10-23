@@ -42,7 +42,7 @@ async def lifespan(app: FastAPI):
 
     # Start APScheduler: Daily at 06:30 Asia/Kolkata
     scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
-    scheduler.add_job(
+    job = scheduler.add_job(
         run_ingestion_with_lock,
         trigger=CronTrigger(hour=6, minute=30, timezone="Asia/Kolkata"),
         id="daily_weather_ingest",
@@ -53,7 +53,9 @@ async def lifespan(app: FastAPI):
     )
     scheduler.start()
     app.state.scheduler = scheduler
-    logger.info("APScheduler BackgroundScheduler started (Daily 06:30 Asia/Kolkata).")
+    print(f"Registered scheduler job: id='{job.id}', next_run_time='{job.next_run_time}'")
+    logger.info("APScheduler BackgroundScheduler started: job_id='%s', next_run_time='%s'",
+                job.id, job.next_run_time)
 
     try:
         yield

@@ -15,8 +15,16 @@ def admin_ingest(
     days_back: int = Query(7, ge=1, le=90)
 ):
     expected_token = os.environ.get("ADMIN_TOKEN")
-    if not expected_token or x_admin_token != expected_token:
-        raise HTTPException(status_code=401, detail="Unauthorized: invalid or missing X-Admin-Token")
+    if not expected_token:
+        raise HTTPException(
+            status_code=503,
+            detail="Service Unavailable: ADMIN_TOKEN environment variable is not configured"
+        )
+    if not x_admin_token or x_admin_token != expected_token:
+        raise HTTPException(
+            status_code=401,
+            detail="Unauthorized: invalid or missing X-Admin-Token"
+        )
 
     try:
         result = run_ingestion_with_lock(days_back=days_back)
