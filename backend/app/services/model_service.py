@@ -16,7 +16,9 @@ import pandas as pd
 logger = logging.getLogger("model_service")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]   # backend/app/services -> project root
-MODEL_PATH = PROJECT_ROOT / "model" / "weather_model.joblib"
+MODEL_PATH = PROJECT_ROOT / "model" / "weather_model_v2.joblib"
+if not MODEL_PATH.exists():
+    MODEL_PATH = PROJECT_ROOT / "model" / "weather_model.joblib"
 MODEL_INFO_PATH = PROJECT_ROOT / "model" / "model_info.json"
 
 try:
@@ -25,7 +27,7 @@ try:
         model_info = json.load(f)
     FEATURE_ORDER = model_info["features"]          # exact training column order
     MODEL_NAME = model_info["best_model"]
-    MODEL_MAE = model_info["metrics"][MODEL_NAME]["MAE_mean"]
+    MODEL_MAE = model_info["metrics"][MODEL_NAME].get("MAE", model_info["metrics"][MODEL_NAME].get("MAE_mean"))
     logger.info("Loaded %s pipeline from %s (%d input features)",
                 MODEL_NAME, MODEL_PATH, len(FEATURE_ORDER))
 except Exception:
