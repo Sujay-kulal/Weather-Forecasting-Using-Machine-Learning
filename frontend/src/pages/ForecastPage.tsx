@@ -21,6 +21,7 @@ import {
   CloudSunIcon,
   DatabaseIcon,
   DropletIcon,
+  MapIcon,
   MinusIcon,
   RainIcon,
   SlidersIcon,
@@ -28,6 +29,7 @@ import {
   ThermometerIcon,
 } from "../components/icons";
 import type { PredictionResponse } from "../types/api";
+import { IndiaMap } from "../components/IndiaMap";
 
 function nextDay(iso: string): string {
   // Pure calendar arithmetic (UTC) — immune to the browser's timezone offset,
@@ -47,9 +49,15 @@ function prettyDate(iso: string): string {
   });
 }
 
-export function ForecastPage() {
+export function ForecastPage({
+  selectedState,
+  onSelectState,
+}: {
+  selectedState?: string;
+  onSelectState?: (s: string) => void;
+} = {}) {
   const states = useFetch(getStates, []);
-  const [state, setState] = useState("");
+  const [state, setState] = useState(selectedState || "");
   const [district, setDistrict] = useState("");
   const [location, setLocation] = useState("");
   const [date, setDate] = useState("");
@@ -57,6 +65,17 @@ export function ForecastPage() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<PredictionResponse | null>(null);
   const [predictError, setPredictError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (selectedState && selectedState !== state) {
+      setState(selectedState);
+      setDistrict("");
+      setLocation("");
+      setDateTouched(false);
+      setResult(null);
+      setPredictError(null);
+    }
+  }, [selectedState]);
 
   const districtsFetch = useFetch(
     () => (state ? getDistricts(state) : Promise.resolve(null)),
@@ -493,6 +512,27 @@ export function ForecastPage() {
             </p>
           </>
         )}
+      </Card>
+
+      <Card
+        title="India Temperature Forecast Map"
+        icon={<MapIcon />}
+        subtitle="Choropleth map of next-day predicted temperatures across India. Click any state to select it and update the forecast."
+      >
+        <IndiaMap
+          selectedState={state}
+          forecastDate={date}
+          onSelectState={(s) => {
+            setState(s);
+            setDistrict("");
+            setLocation("");
+            setDateTouched(false);
+            setResult(null);
+            setPredictError(null);
+            if (onSelectState) onSelectState(s);
+          }}
+          height="540px"
+        />
       </Card>
 
       <Card title="How the prediction works" icon={<ChipIcon />}>

@@ -4,10 +4,13 @@ import { WeatherHistoryPage } from "./pages/WeatherHistoryPage";
 import { ModelPerformancePage } from "./pages/ModelPerformancePage";
 import { PredictionHistoryPage } from "./pages/PredictionHistoryPage";
 import { useHealth, type HealthState } from "./hooks/useHealth";
-import { ChartIcon, ChipIcon, CloudSunIcon, ListIcon } from "./components/icons";
+import { ChartIcon, ChipIcon, CloudSunIcon, ListIcon, MapIcon } from "./components/icons";
+import { Card, PageHead } from "./components/ui";
+import { IndiaMap } from "./components/IndiaMap";
 
 const TABS = [
   { id: "forecast", label: "Forecast", Icon: CloudSunIcon },
+  { id: "map", label: "India Map", Icon: MapIcon },
   { id: "history", label: "Weather History", Icon: ChartIcon },
   { id: "model", label: "Model Performance", Icon: ChipIcon },
   { id: "predictions", label: "Prediction History", Icon: ListIcon },
@@ -24,6 +27,7 @@ const HEALTH_LABEL: Record<HealthState, string> = {
 
 export default function App() {
   const [tab, setTab] = useState<TabId>("forecast");
+  const [selectedState, setSelectedState] = useState<string>("");
   const { health, detail } = useHealth();
 
   return (
@@ -60,7 +64,30 @@ export default function App() {
       </header>
 
       <main className="main">
-        {tab === "forecast" && <ForecastPage />}
+        {tab === "forecast" && (
+          <ForecastPage
+            selectedState={selectedState}
+            onSelectState={setSelectedState}
+          />
+        )}
+        {tab === "map" && (
+          <div className="page">
+            <PageHead
+              title="India Weather Map"
+              desc="Interactive choropleth map showing predicted next-day average temperatures across Indian states and union territories. Click any state to select it and switch to its detailed forecast."
+            />
+            <Card title="Interactive Temperature Map" icon={<MapIcon />}>
+              <IndiaMap
+                selectedState={selectedState}
+                onSelectState={(s) => {
+                  setSelectedState(s);
+                  setTab("forecast");
+                }}
+                height="620px"
+              />
+            </Card>
+          </div>
+        )}
         {tab === "history" && <WeatherHistoryPage />}
         {tab === "model" && <ModelPerformancePage />}
         {tab === "predictions" && <PredictionHistoryPage />}

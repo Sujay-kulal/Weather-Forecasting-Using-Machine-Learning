@@ -7,7 +7,8 @@ POST /predict implements the Phase 2 pipeline:
   predictions table -> JSON response. No future data, no stale data,
   no hardcoded values.
 """
-from datetime import timedelta
+from datetime import date as date_type, timedelta
+from typing import Dict, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select
@@ -173,3 +174,63 @@ def model_info(response: Response):
         q=info.get("q"),
         coverage_90=info.get("coverage_90"),
     )
+
+
+@router.get("/forecast/all", response_model=Dict[str, float])
+def forecast_all(
+    req: Request,
+    date: Optional[date_type] = Query(None, description="Target forecast date (YYYY-MM-DD). Defaults to next day after latest data."),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns {state: temp_avg} for all 33 states (excluding 'Other').
+    Uses existing prediction path (build_features + model_service.predict) and TTLCache.
+    """
+    if date is None:
+        latest_date = db.execute(
+            select(func.max(WeatherData.date)).where(WeatherData.state != "Other")
+        ).scalar()
+        if not latest_date:
+            raise HTTPException(404, detail="No weather data available")
+        target_date = latest_date + timedelta(days=1)
+    else:
+        target_date = date
+
+    asof = target_date - timedelta(days=1)
+    pipeline = getattr(req.app.state, "pipeline", None)
+
+    # 33 canonical states excluding 'Other'
+    states = [s for s in model_service.model_info.get("states", []) if s != "Other"]
+
+    results: Dict[str, float] = {}
+    for state in states:
+        history = db.execute(
+            select(WeatherData)
+            .where(
+                WeatherData.state == state,
+                WeatherData.district == "",
+                WeatherData.location == "",
+                WeatherData.date < asof
+            )
+            .order_by(WeatherData.date.desc())
+            .limit(REQUIRED_HISTORY)
+        ).scalars().all()
+
+        if len(history) < REQUIRED_HISTORY:
+            continue
+
+        cache_key = (state, target_date, history[0].date)
+        if cache_key in prediction_cache:
+            predicted = prediction_cache[cache_key]
+        else:
+            try:
+                features = build_features(history, state, asof)
+                predicted = model_service.predict(features, pipeline=pipeline)
+                prediction_cache[cache_key] = predicted
+            except Exception:
+                continue
+
+        results[state] = round(predicted[0], 2)
+
+    return results
+

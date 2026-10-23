@@ -128,3 +128,9 @@ export function getPredictions(limit = 50, offset = 0): Promise<PredictionsRespo
 export function getModelInfo(): Promise<ModelInfoResponse> {
   return request<ModelInfoResponse>("/model-info");
 }
+
+// ---------------- GET /forecast/all?date= ----------------
+export function getForecastAll(date?: string): Promise<Record<string, number>> {
+  const query = date ? `?date=${encodeURIComponent(date)}` : "";
+  return request<Record<string, number>>(`/forecast/all${query}`);
+}
