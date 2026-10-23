@@ -8,7 +8,8 @@ import json
 import logging
 import urllib.request
 import urllib.error
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 # Add backend directory to sys.path so app modules can be loaded
@@ -49,7 +50,8 @@ def fetch_archive_for_state(state: str, lat: float, lon: float, start_date: date
             time.sleep(2 ** attempt)
 
 def backfill():
-    end_date = date.today()
+    ist_yesterday = datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=1)
+    end_date = ist_yesterday
     logger.info(f"Starting historical backfill from {START_DATE} to {end_date} for {len(STATE_COORDS)} states.")
     session = SessionLocal()
     total_added = 0
@@ -90,6 +92,8 @@ def backfill():
                 if t_max[i] is None or t_min[i] is None or t_mean[i] is None or precip[i] is None or humid[i] is None:
                     continue
                 d = datetime.strptime(times[i], "%Y-%m-%d").date()
+                if d > ist_yesterday:
+                    continue
                 if d in existing_dates:
                     continue
 

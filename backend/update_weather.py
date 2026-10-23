@@ -5,7 +5,8 @@ import logging
 import argparse
 import urllib.request
 import urllib.error
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 # Make `app` importable
@@ -90,6 +91,7 @@ def update_weather(days_back: int = 7, session=None) -> int:
 
     logger.info(f"Starting weather update (days_back={days_back}) for {len(STATE_COORDS)} states...")
     added_or_updated_total = 0
+    ist_yesterday = datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=1)
 
     try:
         for state, (lat, lon) in STATE_COORDS.items():
@@ -112,6 +114,8 @@ def update_weather(days_back: int = 7, session=None) -> int:
                     continue
 
                 d = datetime.strptime(times[i], "%Y-%m-%d").date()
+                if d > ist_yesterday:
+                    continue  # Keep only dates <= yesterday (IST); today is a forecast, not observation
                 buffer.append({
                     "state": state,
                     "district": "",
