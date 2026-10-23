@@ -92,3 +92,4 @@ class ModelInfoResponse(BaseModel):
     metrics: dict
     train_period: List[str]
     test_period: List[str]
+    trained_through: Optional[str] = None

@@ -16,7 +16,9 @@ import pandas as pd
 logger = logging.getLogger("model_service")
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]   # backend/app/services -> project root
-MODEL_PATH = PROJECT_ROOT / "model" / "weather_model_v2.joblib"
+MODEL_PATH = PROJECT_ROOT / "model" / "weather_model_v3.joblib"
+if not MODEL_PATH.exists():
+    MODEL_PATH = PROJECT_ROOT / "model" / "weather_model_v2.joblib"
 if not MODEL_PATH.exists():
     MODEL_PATH = PROJECT_ROOT / "model" / "weather_model.joblib"
 MODEL_INFO_PATH = PROJECT_ROOT / "model" / "model_info.json"

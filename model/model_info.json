@@ -72,7 +72,6 @@
     "Mizoram",
     "Nagaland",
     "Odisha",
-    "Other",
     "Puducherry",
     "Punjab",
     "Rajasthan",
@@ -83,5 +82,7 @@
     "Uttar Pradesh",
     "Uttarakhand",
     "West Bengal"
-  ]
+  ],
+  "trained_through": "2026-10-22",
+  "model_v3_path": "model\\weather_model_v3.joblib"
 }

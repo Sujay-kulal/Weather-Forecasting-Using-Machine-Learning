@@ -162,4 +162,5 @@ def model_info(response: Response):
         metrics=info["metrics"],
         train_period=info["train_period"],
         test_period=info["test_period"],
+        trained_through=info.get("trained_through"),
     )

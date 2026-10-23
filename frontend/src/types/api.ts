@@ -86,4 +86,5 @@ export interface ModelInfoResponse {
   metrics: Record<string, ModelMetrics>;
   train_period: string[];
   test_period: string[];
+  trained_through?: string;
 }
