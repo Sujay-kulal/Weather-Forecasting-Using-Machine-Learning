@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  Area,
   CartesianGrid,
   ComposedChart,
   Legend,
@@ -284,16 +285,20 @@ export function ForecastPage() {
                 <div className="result-label">7-Day Predicted Average Temperature</div>
                 
                 <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'center', margin: '1.5rem 0' }}>
-                  {(Array.isArray(result.predicted_temp_avg) ? result.predicted_temp_avg : [result.predicted_temp_avg]).map((temp, i) => (
-                    <div key={i} style={{ padding: '0.5rem 1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', minWidth: '80px' }}>
-                      <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.25rem' }}>
-                        {Array.isArray(result.predicted_temp_avg) ? (i === 0 ? "Day 1" : `Day ${i + 1}`) : "Prediction"}
+                  {(Array.isArray(result.predicted_temp_avg) ? result.predicted_temp_avg : [result.predicted_temp_avg]).map((temp, i) => {
+                    const lo = result.temp_lo && result.temp_lo[i] !== undefined ? result.temp_lo[i].toFixed(1) : null;
+                    const hi = result.temp_hi && result.temp_hi[i] !== undefined ? result.temp_hi[i].toFixed(1) : null;
+                    return (
+                      <div key={i} style={{ padding: '0.5rem 1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', minWidth: '100px', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.25rem' }}>
+                          {Array.isArray(result.predicted_temp_avg) ? (i === 0 ? "Day 1" : `Day ${i + 1}`) : "Prediction"}
+                        </div>
+                        <div style={{ fontSize: '1.25rem', fontWeight: 600, color: '#0f4c81' }}>
+                          {Number(temp).toFixed(1)} °C {lo !== null && hi !== null ? `(${lo} – ${hi})` : ""}
+                        </div>
                       </div>
-                      <div style={{ fontSize: '1.25rem', fontWeight: 600, color: '#0f4c81' }}>
-                        {Number(temp).toFixed(1)}°
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
                 <div className="result-sub">
@@ -452,6 +457,17 @@ export function ForecastPage() {
                     connectNulls
                   />
                   {result && (
+                    <Area
+                      type="monotone"
+                      dataKey="ci_band"
+                      name="90% CI"
+                      stroke="none"
+                      fill="#0284c7"
+                      fillOpacity={0.2}
+                      connectNulls
+                    />
+                  )}
+                  {result && (
                     <Line
                       type="monotone"
                       dataKey="predicted"
@@ -515,6 +531,7 @@ interface ChartRow {
   temp_min: number | null;
   temp_avg: number | null;
   predicted: number | null;
+  ci_band?: [number, number] | null;
 }
 
 function chartData(
@@ -537,12 +554,15 @@ function chartData(
         ? result.predicted_temp_avg 
         : [result.predicted_temp_avg];
     for (let i = 0; i < preds.length; i++) {
+      const lo = result.temp_lo && result.temp_lo[i] !== undefined ? Number(result.temp_lo[i]) : null;
+      const hi = result.temp_hi && result.temp_hi[i] !== undefined ? Number(result.temp_hi[i]) : null;
       rows.push({
         date: currentDate,
         temp_max: null,
         temp_min: null,
         temp_avg: null,
         predicted: Number(preds[i]),
+        ci_band: lo !== null && hi !== null ? [lo, hi] : null,
       });
       currentDate = nextDay(currentDate);
     }

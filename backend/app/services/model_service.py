@@ -30,8 +30,10 @@ try:
     FEATURE_ORDER = model_info["features"]          # exact training column order
     MODEL_NAME = model_info["best_model"]
     MODEL_MAE = model_info["metrics"][MODEL_NAME].get("MAE", model_info["metrics"][MODEL_NAME].get("MAE_mean"))
-    logger.info("Loaded %s pipeline from %s (%d input features)",
-                MODEL_NAME, MODEL_PATH, len(FEATURE_ORDER))
+    MODEL_Q = float(model_info.get("q", 1.8339))
+    MODEL_COVERAGE_90 = float(model_info.get("coverage_90", 0.8678))
+    logger.info("Loaded %s pipeline from %s (%d input features, q=%.4f, coverage_90=%.4f)",
+                MODEL_NAME, MODEL_PATH, len(FEATURE_ORDER), MODEL_Q, MODEL_COVERAGE_90)
 except Exception:
     logger.exception("FATAL: could not load the trained model from %s", MODEL_PATH)
     raise

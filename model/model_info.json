@@ -84,5 +84,7 @@
     "West Bengal"
   ],
   "trained_through": "2026-10-22",
-  "model_v3_path": "model\\weather_model_v3.joblib"
+  "model_v3_path": "model\\weather_model_v3.joblib",
+  "q": 1.8339,
+  "coverage_90": 0.8678
 }

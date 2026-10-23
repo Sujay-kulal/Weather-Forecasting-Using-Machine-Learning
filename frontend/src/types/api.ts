@@ -52,6 +52,8 @@ export interface PredictionResponse {
   location?: string;
   forecast_date: string;
   predicted_temp_avg: number[];
+  temp_lo?: number[];
+  temp_hi?: number[];
   unit: string;
   model: string;
   typical_error_mae: number;
@@ -87,4 +89,6 @@ export interface ModelInfoResponse {
   train_period: string[];
   test_period: string[];
   trained_through?: string;
+  q?: number;
+  coverage_90?: number;
 }

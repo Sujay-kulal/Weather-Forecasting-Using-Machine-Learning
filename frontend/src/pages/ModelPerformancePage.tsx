@@ -53,6 +53,13 @@ export function ModelPerformancePage() {
           label="Test period"
           value={`${test_period[0]} → ${test_period[1]}`}
         />
+        {info.data.coverage_90 !== undefined && (
+          <StatChip
+            icon={<TargetIcon />}
+            label="90% Test Coverage"
+            value={`${(info.data.coverage_90 * 100).toFixed(1)}%`}
+          />
+        )}
       </div>
 
       <div className="model-grid">
@@ -104,6 +111,12 @@ export function ModelPerformancePage() {
               <div className="metric-value">{selected.R2.toFixed(3)}</div>
               <div className="metric-name">R²</div>
             </div>
+            {info.data.coverage_90 !== undefined && (
+              <div className="metric">
+                <div className="metric-value">{(info.data.coverage_90 * 100).toFixed(1)}%</div>
+                <div className="metric-name">90% Coverage (q = ±{info.data.q?.toFixed(2)} °C)</div>
+              </div>
+            )}
           </div>
           <ul className="explanations">
             <li>
@@ -118,6 +131,11 @@ export function ModelPerformancePage() {
               <strong>R²</strong> — proportion of the target&apos;s variation explained by the
               model (1.0 = perfect).
             </li>
+            {info.data.coverage_90 !== undefined && (
+              <li>
+                <strong>90% Conformal Coverage</strong> — split conformal prediction interval with q = ±{info.data.q?.toFixed(2)} °C achieves {(info.data.coverage_90 * 100).toFixed(1)}% empirical coverage on the held-out test period.
+              </li>
+            )}
           </ul>
         </Card>
       </div>

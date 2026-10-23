@@ -26,6 +26,8 @@ class PredictionResponse(BaseModel):
     location: str = ""
     forecast_date: date_type
     predicted_temp_avg: list[float] = Field(..., description="Predicted Temp_Avg for next 7 days in deg C")
+    temp_lo: Optional[list[float]] = Field(None, description="Lower bound of 90% confidence interval for next 7 days in deg C")
+    temp_hi: Optional[list[float]] = Field(None, description="Upper bound of 90% confidence interval for next 7 days in deg C")
     unit: str = "deg C"
     model: str = Field(..., description="Model name that produced the prediction")
     typical_error_mae: Optional[float] = Field(None, description="Test-set MAE of the model")
@@ -93,3 +95,5 @@ class ModelInfoResponse(BaseModel):
     train_period: List[str]
     test_period: List[str]
     trained_through: Optional[str] = None
+    q: Optional[float] = None
+    coverage_90: Optional[float] = None

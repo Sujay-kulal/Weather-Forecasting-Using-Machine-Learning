@@ -120,12 +120,19 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
     db.add(record)
     db.commit()
 
+    q = getattr(model_service, "MODEL_Q", 1.8339)
+    preds_rounded = [round(p, 2) for p in predicted]
+    temp_lo = [round(p - q, 2) for p in preds_rounded]
+    temp_hi = [round(p + q, 2) for p in preds_rounded]
+
     return PredictionResponse(
         state=canonical,
         district=dist,
         location=loc,
         forecast_date=request.forecast_date,
-        predicted_temp_avg=[round(p, 2) for p in predicted],
+        predicted_temp_avg=preds_rounded,
+        temp_lo=temp_lo,
+        temp_hi=temp_hi,
         model=model_service.MODEL_NAME,
         typical_error_mae=model_service.MODEL_MAE,
         last_known={"date": str(history[0].date), "temp_avg": history[0].temp_avg},
@@ -163,4 +170,6 @@ def model_info(response: Response):
         train_period=info["train_period"],
         test_period=info["test_period"],
         trained_through=info.get("trained_through"),
+        q=info.get("q"),
+        coverage_90=info.get("coverage_90"),
     )
