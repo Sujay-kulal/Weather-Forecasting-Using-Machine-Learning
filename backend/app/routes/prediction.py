@@ -9,7 +9,7 @@ POST /predict implements the Phase 2 pipeline:
 """
 from datetime import timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -20,6 +20,7 @@ from app.schemas import (ModelInfoResponse, PredictionRecord, PredictionRequest,
 from app.services import feature_service, model_service
 from app.services.feature_service import (MAX_STALENESS_DAYS, REQUIRED_HISTORY,
                                           build_features)
+from app.services.prediction_cache import prediction_cache
 
 router = APIRouter(tags=["prediction"])
 
@@ -47,7 +48,7 @@ def _resolve_location_predict(state: str, district: str, location: str, db: Sess
     return canonical_state, dist, loc
 
 @router.post("/predict", response_model=PredictionResponse)
-def predict(request: PredictionRequest, db: Session = Depends(get_db)):
+def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_db)):
     # 1. Validate the state/district/location against the database
     canonical, dist, loc = _resolve_location_predict(
         request.state, request.district or "", request.location or "", db
@@ -90,17 +91,23 @@ def predict(request: PredictionRequest, db: Session = Depends(get_db)):
                    f"A forecast needs data up to ~2 days before the target date.",
         )
 
-    # 4. Build the exact 13 training features and predict with the saved model
-    # Notice we pass 'canonical' as the state for feature_service so the model gets "Karnataka" as a feature.
-    try:
-        features = build_features(history, canonical, asof)
-        predicted = model_service.predict(features)
-    except feature_service.InsufficientHistoryError as exc:
-        raise HTTPException(422, detail=str(exc))
-    except Exception as exc:  # model failure -> honest 500, never fake values
-        raise HTTPException(500, detail=f"Model prediction failed: {exc}")
+    # 4. Check TTLCache for prediction computation, keyed (state, target_date, latest_data_date)
+    cache_key = (canonical, request.forecast_date, history[0].date)
+    if cache_key in prediction_cache:
+        predicted = prediction_cache[cache_key]
+    else:
+        # Build features and predict with saved model (from app.state if available)
+        try:
+            features = build_features(history, canonical, asof)
+            pipeline = getattr(req.app.state, "pipeline", None)
+            predicted = model_service.predict(features, pipeline=pipeline)
+            prediction_cache[cache_key] = predicted
+        except feature_service.InsufficientHistoryError as exc:
+            raise HTTPException(422, detail=str(exc))
+        except Exception as exc:  # model failure -> honest 500, never fake values
+            raise HTTPException(500, detail=f"Model prediction failed: {exc}")
 
-    # 5. Store the prediction audit record
+    # 5. Store the prediction audit record (MUST write on every call, including cache hits)
     record = Prediction(
         state=canonical,
         district=dist,
@@ -142,8 +149,9 @@ def prediction_history(limit: int = Query(50, ge=1, le=500),
 
 
 @router.get("/model-info", response_model=ModelInfoResponse)
-def model_info():
+def model_info(response: Response):
     """Information about the trained model (from model/model_info.json)."""
+    response.headers["Cache-Control"] = "public, max-age=300"
     info = model_service.model_info
     return ModelInfoResponse(
         model_name=info["best_model"],

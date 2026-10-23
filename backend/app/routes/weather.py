@@ -1,5 +1,5 @@
 """Weather data endpoints - states, history, recent records. All from PostgreSQL."""
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -37,8 +37,9 @@ def _resolve_location(state: str, district: str, location: str, db: Session):
 
 
 @states_router.get("/states", response_model=StatesResponse)
-def list_states(db: Session = Depends(get_db)):
+def list_states(response: Response, db: Session = Depends(get_db)):
     """Distinct states present in the weather database."""
+    response.headers["Cache-Control"] = "public, max-age=300"
     rows = db.execute(select(WeatherData.state).distinct().order_by(WeatherData.state)).scalars()
     return StatesResponse(states=list(rows))
 

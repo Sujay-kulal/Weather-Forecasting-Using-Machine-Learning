@@ -34,6 +34,12 @@ async def lifespan(app: FastAPI):
         logger.info("PostgreSQL connection OK, tables ready")
     logger.info("Trained model loaded: %s", prediction.model_service.MODEL_NAME)
 
+    # Keep model pipeline on app.state
+    app.state.pipeline = prediction.model_service.pipeline
+    app.state.model_info = prediction.model_service.model_info
+    app.state.model_name = prediction.model_service.MODEL_NAME
+    app.state.model_mae = prediction.model_service.MODEL_MAE
+
     # Start APScheduler: Daily at 06:30 Asia/Kolkata
     scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
     scheduler.add_job(
