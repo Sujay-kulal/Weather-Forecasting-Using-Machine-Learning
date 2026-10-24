@@ -94,8 +94,9 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
                    f"A forecast needs data up to ~2 days before the target date.",
         )
 
-    # 4. Check TTLCache for prediction computation, keyed (state, target_date, latest_data_date)
-    cache_key = (canonical, request.forecast_date, history[0].date)
+    # 4. Check TTLCache for prediction computation. Include the full location
+    # identity so same-state districts can never share a cached forecast.
+    cache_key = (canonical, dist, loc, request.forecast_date, history[0].date)
     if cache_key in prediction_cache:
         predicted = prediction_cache[cache_key]
     else:

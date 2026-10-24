@@ -14,7 +14,7 @@ import type {
 } from "../types/api";
 
 const BASE_URL: string =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8000";
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://127.0.0.1:8000";
 
 /** Error carrying the backend's HTTP status and message (or a network failure). */
 export class ApiError extends Error {

@@ -1,6 +1,6 @@
 # Weather Forecasting Using Machine Learning
 
-Weather forecasting for 34 Indian states/UTs using Gradient Boosting / LightGBM models trained on Open-Meteo historical reanalysis and forecast data.
+ML temperature forecasting for Indian states/UTs using a LightGBM model trained on historical weather data. The map can also display live weather observations for Indian cities; those city readings are not ML forecasts.
 
 ---
 
@@ -38,6 +38,10 @@ docker compose exec backend python backfill.py
 ```
 
 This ingests historical weather records for all states with retries, delay throttling, and idempotent upserts.
+
+### Geographic scope
+
+The trained model and bundled historical dataset are state/UT-level. District and location fields are reserved for future datasets; city-level ML forecasting requires city-level historical training data and a retrained model. Do not present the live city-weather layer as a city forecast.
 
 ### 4. Health Check
 

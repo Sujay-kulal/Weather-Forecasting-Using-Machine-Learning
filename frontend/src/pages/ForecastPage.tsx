@@ -16,7 +16,6 @@ import { Card, EmptyNote, ErrorBanner, PageHead, Spinner, StatChip } from "../co
 import {
   ArrowDownIcon,
   ArrowUpIcon,
-  CalendarIcon,
   ChipIcon,
   CloudSunIcon,
   DatabaseIcon,
@@ -27,6 +26,9 @@ import {
   SlidersIcon,
   SparkIcon,
   ThermometerIcon,
+  SunIcon,
+  GaugeIcon,
+  LocationPinIcon,
 } from "../components/icons";
 import type { PredictionResponse } from "../types/api";
 import { IndiaMap } from "../components/IndiaMap";
@@ -47,6 +49,23 @@ function prettyDate(iso: string): string {
     year: "numeric",
     timeZone: "UTC",
   });
+}
+
+function shortDayName(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {
+    weekday: "short",
+    timeZone: "UTC",
+  });
+}
+
+function getWeatherEmoji(temp: number): string {
+  if (temp < 15) return "❄️";
+  if (temp < 20) return "🌤";
+  if (temp < 25) return "⛅";
+  if (temp < 30) return "☀️";
+  if (temp < 35) return "🔥";
+  return "🌡️";
 }
 
 export function ForecastPage({
@@ -147,16 +166,16 @@ export function ForecastPage({
   return (
     <div className="page">
       <PageHead
-        title="Forecast"
-        desc="Select a region and a date — the backend engineers the same 13 features used in training and the Gradient Boosting model predicts the average temperature for that day."
+        title="Temperature Forecast"
+        desc="Select a state or UT and date — our ML model predicts its average temperature from historical weather data and gradient boosting."
       />
 
       <div className="forecast-grid">
-        <Card title="Generate a forecast" icon={<CloudSunIcon />}>
+        <Card title="Generate Forecast" icon={<LocationPinIcon />}>
           <form onSubmit={onSubmit} className="forecast-form">
             <label className="field">
               <span>
-                <span className="step-number" aria-hidden="true">1</span> State
+                <span className="step-number" aria-hidden="true">1</span> State / UT (ML forecast)
               </span>
               {states.loading ? (
                 <Spinner label="Loading states…" />
@@ -281,11 +300,12 @@ export function ForecastPage({
             </button>
             <small className="hint">
               Forecasts the 7-day average temperature using historical weather data.
+              District and location choices appear only when that location has ML-ready historical data.
             </small>
           </form>
         </Card>
 
-        <Card title="Prediction result" icon={<ThermometerIcon />}>
+        <Card title="Prediction Result" icon={<ThermometerIcon />}>
           {submitting && <Spinner label="Generating forecast…" />}
 
           {!submitting && predictError && <ErrorBanner message={predictError} />}
@@ -293,28 +313,40 @@ export function ForecastPage({
           {!submitting && !predictError && !result && (
             <EmptyNote
               title="No forecast yet"
-              hint="Select a location and a forecast date, then generate a forecast. The result will appear here."
+              hint="Select a location and a forecast date, then generate a forecast. The result will appear here with a 7-day outlook."
             />
           )}
 
           {!submitting && result && (
             <div className="result">
-              <div className="result-hero" style={{ paddingBottom: '1rem' }}>
+              {/* Hero temperature display */}
+              <div className="result-hero">
                 <CloudSunIcon className="hero-icon" />
                 <div className="result-label">7-Day Predicted Average Temperature</div>
-                
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'center', margin: '1.5rem 0' }}>
+
+                {/* AccuWeather-style day cards */}
+                <div className="day-forecast-grid" style={{ margin: '16px 0' }}>
                   {(Array.isArray(result.predicted_temp_avg) ? result.predicted_temp_avg : [result.predicted_temp_avg]).map((temp, i) => {
                     const lo = result.temp_lo && result.temp_lo[i] !== undefined ? result.temp_lo[i].toFixed(1) : null;
                     const hi = result.temp_hi && result.temp_hi[i] !== undefined ? result.temp_hi[i].toFixed(1) : null;
+                    let dayDate = result.forecast_date;
+                    for (let j = 0; j < i; j++) dayDate = nextDay(dayDate);
                     return (
-                      <div key={i} style={{ padding: '0.5rem 1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', minWidth: '100px', textAlign: 'center' }}>
-                        <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.25rem' }}>
-                          {Array.isArray(result.predicted_temp_avg) ? (i === 0 ? "Day 1" : `Day ${i + 1}`) : "Prediction"}
+                      <div key={i} className="day-forecast-card" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff' }}>
+                        <div className="day-label" style={{ color: 'rgba(255,255,255,0.7)' }}>
+                          {shortDayName(dayDate)}
                         </div>
-                        <div style={{ fontSize: '1.25rem', fontWeight: 600, color: '#0f4c81' }}>
-                          {Number(temp).toFixed(1)} °C {lo !== null && hi !== null ? `(${lo} – ${hi})` : ""}
+                        <div style={{ fontSize: 22, lineHeight: 1 }}>
+                          {getWeatherEmoji(Number(temp))}
                         </div>
+                        <div className="day-temp" style={{ color: '#fff' }}>
+                          {Number(temp).toFixed(1)}°
+                        </div>
+                        {lo !== null && hi !== null && (
+                          <div className="day-range" style={{ color: 'rgba(255,255,255,0.5)' }}>
+                            {lo}° – {hi}°
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -383,12 +415,13 @@ export function ForecastPage({
         </Card>
       </div>
 
+      {/* Current conditions panel — AccuWeather style */}
       <Card
-        title="Recent weather context"
-        icon={<DropletIcon />}
+        title="Current Weather Context"
+        icon={<SunIcon />}
         subtitle={
           latest
-            ? `Latest measurements recorded for ${locStr} — loaded from the backend (real PostgreSQL data).`
+            ? `Latest measurements for ${locStr} — real-time data from PostgreSQL.`
             : undefined
         }
       >
@@ -410,22 +443,22 @@ export function ForecastPage({
           <div className="stat-chips" style={{ marginBottom: 16 }}>
             <StatChip
               icon={<ThermometerIcon />}
-              label={`Latest temp avg · ${latest.date}`}
+              label={`Avg Temperature · ${latest.date}`}
               value={`${latest.temp_avg.toFixed(1)} °C`}
             />
             <StatChip
-              icon={<CalendarIcon />}
-              label="Day range"
-              value={`${latest.temp_min.toFixed(0)}–${latest.temp_max.toFixed(0)} °C`}
+              icon={<GaugeIcon />}
+              label="Day Range"
+              value={`${latest.temp_min.toFixed(0)}° – ${latest.temp_max.toFixed(0)}°`}
             />
             <StatChip
               icon={<DropletIcon />}
-              label="Humidity (latest)"
-              value={`${latest.humidity.toFixed(0)} %`}
+              label="Humidity"
+              value={`${latest.humidity.toFixed(0)}%`}
             />
             <StatChip
               icon={<RainIcon />}
-              label="Rainfall (latest)"
+              label="Rainfall"
               value={`${latest.rainfall.toFixed(1)} mm`}
             />
           </div>
@@ -452,7 +485,7 @@ export function ForecastPage({
                     type="monotone"
                     dataKey="temp_max"
                     name="Temp Max"
-                    stroke="#f59e0b"
+                    stroke="#f26522"
                     strokeWidth={1.5}
                     dot={false}
                     connectNulls
@@ -461,7 +494,7 @@ export function ForecastPage({
                     type="monotone"
                     dataKey="temp_avg"
                     name="Temp Avg"
-                    stroke="#0f4c81"
+                    stroke="#1b1b2f"
                     strokeWidth={2.2}
                     dot={false}
                     connectNulls
@@ -470,7 +503,7 @@ export function ForecastPage({
                     type="monotone"
                     dataKey="temp_min"
                     name="Temp Min"
-                    stroke="#93c5fd"
+                    stroke="#4a90d9"
                     strokeWidth={1.5}
                     dot={false}
                     connectNulls
@@ -481,8 +514,8 @@ export function ForecastPage({
                       dataKey="ci_band"
                       name="90% CI"
                       stroke="none"
-                      fill="#0284c7"
-                      fillOpacity={0.2}
+                      fill="#f26522"
+                      fillOpacity={0.15}
                       connectNulls
                     />
                   )}
@@ -491,10 +524,10 @@ export function ForecastPage({
                       type="monotone"
                       dataKey="predicted"
                       name="Predicted"
-                      stroke="#0284c7"
+                      stroke="#f26522"
                       strokeWidth={2}
                       strokeDasharray="5 4"
-                      dot={{ r: 4, fill: "#0284c7", stroke: "#ffffff", strokeWidth: 2 }}
+                      dot={{ r: 4, fill: "#f26522", stroke: "#ffffff", strokeWidth: 2 }}
                       connectNulls
                     />
                   )}
@@ -517,7 +550,7 @@ export function ForecastPage({
       <Card
         title="India Temperature Forecast Map"
         icon={<MapIcon />}
-        subtitle="Choropleth map of next-day predicted temperatures across India. Click any state to select it and update the forecast."
+        subtitle="State/UT ML forecast overlay with a separate live-weather city layer. Click a state to view its 7-day ML forecast."
       >
         <IndiaMap
           selectedState={state}
@@ -535,7 +568,7 @@ export function ForecastPage({
         />
       </Card>
 
-      <Card title="How the prediction works" icon={<ChipIcon />}>
+      <Card title="How the Prediction Works" icon={<ChipIcon />}>
         <div className="pipeline" aria-label="prediction pipeline">
           <span className="pipeline-step">
             <DatabaseIcon /> Historical Weather

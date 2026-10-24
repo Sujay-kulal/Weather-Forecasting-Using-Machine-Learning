@@ -17,10 +17,10 @@ WORKDIR /app
 COPY backend/requirements.txt ./backend/requirements.txt
 RUN pip install --no-cache-dir -r ./backend/requirements.txt
 
-# Copy application code, model artifacts, and ingestion scripts
+# Copy application code and model artifacts. The ingestion scripts are already
+# included inside ./backend by the copy below.
 COPY backend ./backend
 COPY model ./model
-COPY update_weather.py backfill.py ./
 
 EXPOSE 8000
 

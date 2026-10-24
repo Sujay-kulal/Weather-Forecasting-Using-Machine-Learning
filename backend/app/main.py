@@ -93,3 +93,24 @@ app.include_router(admin.router)
 app.include_router(weather.states_router)
 app.include_router(weather.router)
 app.include_router(prediction.router)
+
+
+@app.get("/", tags=["Root"])
+async def root():
+    """API root – returns service info and available endpoints."""
+    return {
+        "service": "Weather Forecasting API",
+        "version": "2.0.0",
+        "description": "ML-powered weather forecasting for Indian states using LightGBM",
+        "docs": "/docs",
+        "endpoints": {
+            "health": "/health",
+            "states": "/states",
+            "model_info": "/model-info",
+            "forecast_all": "/forecast/all",
+            "predict": "/predict",
+            "predictions": "/predictions",
+            "swagger_docs": "/docs",
+            "redoc_docs": "/redoc",
+        },
+    }

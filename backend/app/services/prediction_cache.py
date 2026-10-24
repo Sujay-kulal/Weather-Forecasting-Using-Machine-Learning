@@ -1,6 +1,7 @@
 """
 Prediction computation cache using cachetools TTLCache.
-Keyed by (state, target_date, latest_data_date) with TTL of 3600 seconds.
+Keyed by a request's full geographic identity, target date, and latest data
+date with a TTL of 3600 seconds.
 """
 from cachetools import TTLCache
 

@@ -1,29 +1,59 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ForecastPage } from "./pages/ForecastPage";
 import { WeatherHistoryPage } from "./pages/WeatherHistoryPage";
 import { ModelPerformancePage } from "./pages/ModelPerformancePage";
 import { PredictionHistoryPage } from "./pages/PredictionHistoryPage";
+import { MLDashboardPage } from "./pages/MLDashboardPage";
 import { useHealth, type HealthState } from "./hooks/useHealth";
-import { ChartIcon, ChipIcon, CloudSunIcon, ListIcon, MapIcon } from "./components/icons";
+import {
+  ChartIcon,
+  ChipIcon,
+  CloudSunIcon,
+  DatabaseIcon,
+  ListIcon,
+  MapIcon,
+} from "./components/icons";
 import { Card, PageHead } from "./components/ui";
 import { IndiaMap } from "./components/IndiaMap";
 
 const TABS = [
   { id: "forecast", label: "Forecast", Icon: CloudSunIcon },
   { id: "map", label: "India Map", Icon: MapIcon },
+  { id: "ml", label: "ML Project", Icon: DatabaseIcon },
   { id: "history", label: "Weather History", Icon: ChartIcon },
-  { id: "model", label: "Model Performance", Icon: ChipIcon },
-  { id: "predictions", label: "Prediction History", Icon: ListIcon },
+  { id: "model", label: "Model Metrics", Icon: ChipIcon },
+  { id: "predictions", label: "Predictions", Icon: ListIcon },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
 const HEALTH_LABEL: Record<HealthState, string> = {
-  checking: "Checking backend…",
-  ok: "Backend online",
-  degraded: "Backend degraded",
-  down: "Backend offline",
+  checking: "Connecting…",
+  ok: "Live",
+  degraded: "Degraded",
+  down: "Offline",
 };
+
+function CurrentTime() {
+  const [time, setTime] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span style={{
+      fontSize: 12,
+      color: 'rgba(255,255,255,0.5)',
+      fontWeight: 500,
+      fontVariantNumeric: 'tabular-nums',
+      letterSpacing: '0.02em'
+    }}>
+      {time.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+      {' · '}
+      {time.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+    </span>
+  );
+}
 
 export default function App() {
   const [tab, setTab] = useState<TabId>("forecast");
@@ -39,13 +69,16 @@ export default function App() {
               <CloudSunIcon />
             </span>
             <div className="brand-text">
-              <h1>Weather Forecasting System</h1>
-              <p className="subtitle">Machine Learning Based Temperature Forecasting</p>
+              <h1>WeatherCast India</h1>
+              <p className="subtitle">ML-Powered Temperature Forecasting</p>
             </div>
           </div>
-          <div className={`health health-${health}`} title={detail}>
-            <span className="health-dot" aria-hidden="true" />
-            {HEALTH_LABEL[health]}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <CurrentTime />
+            <div className={`health health-${health}`} title={detail}>
+              <span className="health-dot" aria-hidden="true" />
+              {HEALTH_LABEL[health]}
+            </div>
           </div>
         </div>
         <nav className="nav" aria-label="Sections">
@@ -88,14 +121,17 @@ export default function App() {
             </Card>
           </div>
         )}
+        {tab === "ml" && <MLDashboardPage />}
         {tab === "history" && <WeatherHistoryPage />}
         {tab === "model" && <ModelPerformancePage />}
         {tab === "predictions" && <PredictionHistoryPage />}
       </main>
 
       <footer className="footer">
-        Final-year project · Next-day average temperature (Temp_Avg) forecasting for Indian
-        states · Model served by FastAPI + PostgreSQL
+        <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <span>Final-year project · ML-based temperature forecasting for Indian states</span>
+          <span style={{ opacity: 0.7 }}>FastAPI + PostgreSQL + Gradient Boosting</span>
+        </div>
       </footer>
     </div>
   );
