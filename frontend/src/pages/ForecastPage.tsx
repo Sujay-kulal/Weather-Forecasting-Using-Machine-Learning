@@ -223,7 +223,7 @@ export function ForecastPage({
     <div className="page">
       <PageHead
         title="Weather Search"
-        desc="Search any Indian city, town, district, or state. The backend automatically uses the saved ML model only when the exact selected location has valid ML-ready history; otherwise it retrieves verified Open-Meteo weather for the selected coordinates."
+        desc="Search any Indian city, town, district, or state. Future forecasts use the saved ML model with fresh matching history, then the state's recent history when location data is incomplete; Open-Meteo is used when the model cannot forecast."
       />
 
       <div className="forecast-grid">
@@ -294,7 +294,7 @@ export function ForecastPage({
                 onChange={(event) => setForecastDate(event.target.value)}
                 required
               />
-              <small className="hint">Past dates return real observations when available; today returns current conditions; future dates use ML only when supported, then the provider forecast.</small>
+              <small className="hint">Past dates return historical data; today returns current conditions; future dates use the saved ML model when recent history is available, then fall back to Open-Meteo.</small>
             </label>
 
             <button className="btn-primary" type="submit" disabled={submitting || !canSubmit}>
