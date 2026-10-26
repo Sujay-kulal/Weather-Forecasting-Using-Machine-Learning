@@ -37,6 +37,10 @@ class Prediction(Base):
     __tablename__ = "predictions"
     __table_args__ = (
         UniqueConstraint("state", "district", "location", "forecast_date", "created_at", name="uq_prediction_run_dist_loc"),
+        UniqueConstraint(
+            "state", "district", "location", "forecast_date", "model_version",
+            name="uq_prediction_state_location_date_model_version",
+        ),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
@@ -45,6 +49,8 @@ class Prediction(Base):
     location: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="", index=True)
     forecast_date: Mapped[object] = mapped_column(Date, nullable=False, index=True)
     predicted_temp_avg: Mapped[list] = mapped_column(JSON, nullable=False)
+    model_version: Mapped[str | None] = mapped_column(String(100), nullable=True, index=True)
+    actual_temp: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[object] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )

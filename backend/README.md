@@ -54,7 +54,27 @@ No credentials are hardcoded — for a password-protected server use
 pip install -r requirements.txt
 ```
 
-## 4. Import the dataset (safe to re-run)
+For tests, install `pytest` from the development-only requirements file:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+## 4. Prediction metrics migration
+
+Apply the additive SQL migration before deploying the updated API:
+
+```bash
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/002_prediction_metrics.sql
+```
+
+The migration adds nullable `model_version` and `actual_temp` columns and a
+model-version uniqueness constraint. Existing prediction rows are not updated;
+their new fields remain null initially. The scheduled job may fill `actual_temp`
+when matching historical weather becomes available; historical model versions
+and duplicate records remain unchanged.
+
+## 5. Import the dataset (safe to re-run)
 
 ```bash
 python import_data.py
@@ -75,18 +95,18 @@ python update_weather.py
 
 This polls missing days up to the current date and inserts them safely. The script checks the latest measurement date for each state and pulls exact missing daily variables (`temperature_2m_max/min/mean`, `relative_humidity_2m_mean`, `precipitation_sum`).
 
-## 5. Start the API
+## 6. Start the API
 
 ```bash
 uvicorn app.main:app --reload
 ```
 
-## 6. API documentation
+## 7. API documentation
 
 * Swagger UI: <http://localhost:8000/docs>
 * ReDoc: <http://localhost:8000/redoc>
 
-## 7. Endpoints
+## 8. Endpoints
 
 | Method | Path | Purpose |
 |---|---|---|
@@ -95,17 +115,19 @@ uvicorn app.main:app --reload
 | GET | `/weather/{state}?limit=&offset=` | Historical weather (paginated) |
 | GET | `/weather/{state}/recent?days=` | Recent measurements |
 | POST | `/predict` | Next-day Temp_Avg forecast |
-| GET | `/predictions?limit=&offset=` | Prediction history |
-| GET | `/model-info` | Model name, target, features, metrics, train/test periods |
+| GET | `/predictions?limit=&offset=&state=&model_version=` | Filtered prediction history with total count |
+| GET | `/model-info` | Model features, train/calibration/test periods, per-horizon metrics, validation status |
+| GET | `/forecast/all?date=&day=1..7` | Selected forecast horizon for each model-supported state |
+| GET | `/metrics/live` | Rolling 30-day model and persistence MAE on matched actuals |
 
-## 8. Example `/predict` request
+## 9. Example `/predict` request
 
 ```bash
 curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" ^
   -d "{\"state\": \"Karnataka\", \"forecast_date\": \"2025-10-06\"}"
 ```
 
-## 9. Example response
+## 10. Example response
 
 ```json
 {

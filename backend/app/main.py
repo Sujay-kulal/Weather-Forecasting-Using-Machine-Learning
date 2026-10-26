@@ -18,6 +18,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.database import Base, check_connection, engine, init_db
 from app.routes import admin, health, prediction, weather
 from app.services.ingestion_service import run_ingestion_with_lock
+from app.services.metrics_service import fill_missing_actuals
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -46,6 +47,15 @@ async def lifespan(app: FastAPI):
         run_ingestion_with_lock,
         trigger=CronTrigger(hour=6, minute=30, timezone="Asia/Kolkata"),
         id="daily_weather_ingest",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        fill_missing_actuals,
+        trigger=CronTrigger(hour=7, minute=0, timezone="Asia/Kolkata"),
+        id="fill_prediction_actuals",
         max_instances=1,
         coalesce=True,
         misfire_grace_time=3600,
