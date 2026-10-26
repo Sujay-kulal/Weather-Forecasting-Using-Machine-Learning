@@ -57,14 +57,25 @@ export function Spinner(props: { label: string }) {
   );
 }
 
-export function ErrorBanner(props: { message: string }) {
+export function ErrorBanner(props: { message: string; onRetry?: () => void }) {
   return (
     <div className="error-banner" role="alert">
       <AlertIcon />
       <div>
         <strong>Something went wrong.</strong>
         {props.message}
+        {props.onRetry && <button className="retry-button" onClick={props.onRetry}>Try again</button>}
       </div>
+    </div>
+  );
+}
+
+export function Skeleton(props: { rows?: number }) {
+  return (
+    <div className="skeleton-stack" role="status" aria-label="Loading content">
+      {Array.from({ length: props.rows ?? 3 }, (_, index) => (
+        <span className="skeleton-line" key={index} />
+      ))}
     </div>
   );
 }

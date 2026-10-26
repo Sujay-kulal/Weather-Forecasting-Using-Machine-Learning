@@ -11,6 +11,7 @@ import type {
   DistrictsResponse,
   LocationsResponse,
   WeatherResponse,
+  LiveMetricsResponse,
 } from "../types/api";
 
 const BASE_URL: string =
@@ -107,7 +108,10 @@ export function predict(
   district?: string,
   location?: string
 ): Promise<PredictionResponse> {
-  const body: any = { state, forecast_date: forecastDate };
+  const body: { state: string; forecast_date: string; district?: string; location?: string } = {
+    state,
+    forecast_date: forecastDate,
+  };
   if (district) body.district = district;
   if (location) body.location = location;
 
@@ -119,12 +123,29 @@ export function predict(
 }
 
 // ---------------- GET /predictions?limit=&offset= ----------------
-export function getPredictions(limit = 50, offset = 0): Promise<PredictionsResponse> {
+export function getPredictions(
+  limit = 50,
+  offset = 0,
+  state?: string,
+  modelVersion?: string,
+): Promise<PredictionsResponse> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (state) params.set("state", state);
+  if (modelVersion) params.set("model_version", modelVersion);
   return request<PredictionsResponse>(`/predictions?${params}`);
+}
+
+// ---------------- GET /forecast/all?day=1..7 ----------------
+export function getForecastAll(day: number): Promise<Record<string, number>> {
+  return request<Record<string, number>>(`/forecast/all?day=${day}`);
 }
 
 // ---------------- GET /model-info ----------------
 export function getModelInfo(): Promise<ModelInfoResponse> {
   return request<ModelInfoResponse>("/model-info");
+}
+
+// ---------------- GET /metrics/live ----------------
+export function getLiveMetrics(): Promise<LiveMetricsResponse> {
+  return request<LiveMetricsResponse>("/metrics/live");
 }

@@ -65,11 +65,16 @@ export interface PredictionRecord {
   location?: string;
   forecast_date: string;
   predicted_temp_avg: number[];
+  model_version: string | null;
+  actual_temp: number | null;
   created_at: string;
 }
 
 export interface PredictionsResponse {
-  count: number; // NOTE: page size, not total (backend limitation)
+  count: number;
+  total: number;
+  limit: number;
+  offset: number;
   predictions: PredictionRecord[];
 }
 
@@ -83,7 +88,36 @@ export interface ModelInfoResponse {
   model_name: string;
   target: string;
   features: string[];
-  metrics: Record<string, ModelMetrics>;
+  metrics: Record<string, ModelMetrics & {
+    overall?: ModelMetrics;
+    by_horizon?: Record<string, ModelMetrics>;
+    skill_vs_persistence?: number | null;
+    skill_vs_persistence_by_horizon?: Record<string, number> | null;
+  }>;
   train_period: string[];
   test_period: string[];
+  calibration_period: string[] | null;
+  metrics_status: string | null;
+  validated_for_artifact: boolean | null;
+  loaded_artifact_version: string;
+  evaluation: {
+    status: string;
+    validated_for_artifact: boolean;
+    test_period: string[];
+    metrics: ModelInfoResponse["metrics"];
+    note: string | null;
+  } | null;
+}
+
+export interface LiveMetricsResponse {
+  rolling_days: number;
+  period_start: string;
+  period_end: string;
+  models: {
+    model_version: string;
+    sample_count: number;
+    model_mae: number | null;
+    persistence_mae: number | null;
+    skill_vs_persistence: number | null;
+  }[];
 }

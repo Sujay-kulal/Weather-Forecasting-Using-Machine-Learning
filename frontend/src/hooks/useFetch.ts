@@ -3,7 +3,7 @@
  * re-fetches when its arguments change. Mutations (predict) live in
  * their components since they are user-triggered.
  */
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { ApiError } from "../services/api";
 
 interface AsyncState<T> {
@@ -12,7 +12,9 @@ interface AsyncState<T> {
   error: ApiError | null;
 }
 
-export function useFetch<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T> {
+export function useFetch<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T> & { retry: () => void } {
+  const [attempt, setAttempt] = useState(0);
+  const retry = useCallback(() => setAttempt((value) => value + 1), []);
   const [state, setState] = useState<AsyncState<T>>({ data: null, loading: true, error: null });
 
   useEffect(() => {
@@ -25,7 +27,7 @@ export function useFetch<T>(fn: () => Promise<T>, deps: unknown[]): AsyncState<T
       cancelled = true;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
+  }, [...deps, attempt]);
 
-  return state;
+  return { ...state, retry };
 }

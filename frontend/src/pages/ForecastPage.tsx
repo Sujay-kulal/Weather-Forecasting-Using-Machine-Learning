@@ -11,7 +11,7 @@ import {
 } from "recharts";
 import { ApiError, getRecentWeather, getStates, getDistricts, getLocations, predict } from "../services/api";
 import { useFetch } from "../hooks/useFetch";
-import { Card, EmptyNote, ErrorBanner, PageHead, Spinner, StatChip } from "../components/ui";
+import { Card, EmptyNote, ErrorBanner, PageHead, Spinner, Skeleton, StatChip } from "../components/ui";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
@@ -97,8 +97,7 @@ export function ForecastPage() {
 
   const canSubmit = state && date && (!hasDistricts || location);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function requestPrediction() {
     if (!canSubmit) return;
     setSubmitting(true);
     setPredictError(null);
@@ -121,6 +120,11 @@ export function ForecastPage() {
     }
   }
 
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    await requestPrediction();
+  }
+
   const locStr = location ? `${state} → ${district} → ${location}` : state;
   const dateStepNo = 1 + (hasDistricts ? 1 : 0) + (district && hasLocations ? 1 : 0) + 1;
 
@@ -128,7 +132,7 @@ export function ForecastPage() {
     <div className="page">
       <PageHead
         title="Forecast"
-        desc="Select a region and a date — the backend engineers the same 13 features used in training and the Gradient Boosting model predicts the average temperature for that day."
+        desc="Choose a region and date to generate a seven-day temperature forecast."
       />
 
       <div className="forecast-grid">
@@ -139,9 +143,9 @@ export function ForecastPage() {
                 <span className="step-number" aria-hidden="true">1</span> State
               </span>
               {states.loading ? (
-                <Spinner label="Loading states…" />
+                <Skeleton rows={2} />
               ) : states.error ? (
-                <ErrorBanner message={states.error.message} />
+                <ErrorBanner message={states.error.message} onRetry={states.retry} />
               ) : (
                 <select
                   value={state}
@@ -173,9 +177,9 @@ export function ForecastPage() {
                   <span className="step-number" aria-hidden="true">2</span> District
                 </span>
                 {districtsFetch.loading ? (
-                  <Spinner label="Loading districts…" />
+                <Skeleton rows={2} />
                 ) : districtsFetch.error ? (
-                  <ErrorBanner message={districtsFetch.error.message} />
+                <ErrorBanner message={districtsFetch.error.message} onRetry={districtsFetch.retry} />
                 ) : (
                   <select
                     value={district}
@@ -207,9 +211,9 @@ export function ForecastPage() {
                   <span className="step-number" aria-hidden="true">3</span> Location
                 </span>
                 {locationsFetch.loading ? (
-                  <Spinner label="Loading locations…" />
+                <Skeleton rows={2} />
                 ) : locationsFetch.error ? (
-                  <ErrorBanner message={locationsFetch.error.message} />
+                <ErrorBanner message={locationsFetch.error.message} onRetry={locationsFetch.retry} />
                 ) : (
                   <select
                     value={location}
@@ -266,9 +270,9 @@ export function ForecastPage() {
         </Card>
 
         <Card title="Prediction result" icon={<ThermometerIcon />}>
-          {submitting && <Spinner label="Generating forecast…" />}
+          {submitting && <Skeleton rows={4} />}
 
-          {!submitting && predictError && <ErrorBanner message={predictError} />}
+          {!submitting && predictError && <ErrorBanner message={predictError} onRetry={() => void requestPrediction()} />}
 
           {!submitting && !predictError && !result && (
             <EmptyNote
@@ -369,7 +373,7 @@ export function ForecastPage() {
         }
       >
         {recent.loading && <Spinner label="Loading weather history…" />}
-        {recent.error && <ErrorBanner message={recent.error.message} />}
+        {recent.error && <ErrorBanner message={recent.error.message} onRetry={recent.retry} />}
         {!recent.loading && !recent.error && recentRecords.length === 0 && state && (
           <EmptyNote
             title="No recent weather records"
@@ -414,10 +418,10 @@ export function ForecastPage() {
                   data={chartData(recentRecords, result)}
                   margin={{ top: 10, right: 20, bottom: 5, left: 0 }}
                 >
-                  <CartesianGrid stroke="#e7edf4" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#5a6b82" }} tickFormatter={shortDate} />
+                  <CartesianGrid stroke="rgba(148,163,184,.16)" vertical={false} />
+                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#b8c2d5" }} tickFormatter={shortDate} />
                   <YAxis
-                    tick={{ fontSize: 11, fill: "#5a6b82" }}
+                    tick={{ fontSize: 11, fill: "#b8c2d5" }}
                     domain={["dataMin - 2", "dataMax + 2"]}
                     tickFormatter={(v: number) => v.toFixed(1)}
                     unit=" °C"
@@ -428,7 +432,7 @@ export function ForecastPage() {
                     type="monotone"
                     dataKey="temp_max"
                     name="Temp Max"
-                    stroke="#f59e0b"
+                    stroke="var(--series-max)"
                     strokeWidth={1.5}
                     dot={false}
                     connectNulls
@@ -437,7 +441,7 @@ export function ForecastPage() {
                     type="monotone"
                     dataKey="temp_avg"
                     name="Temp Avg"
-                    stroke="#0f4c81"
+                    stroke="var(--series-avg)"
                     strokeWidth={2.2}
                     dot={false}
                     connectNulls
@@ -446,7 +450,7 @@ export function ForecastPage() {
                     type="monotone"
                     dataKey="temp_min"
                     name="Temp Min"
-                    stroke="#93c5fd"
+                    stroke="var(--series-min)"
                     strokeWidth={1.5}
                     dot={false}
                     connectNulls
@@ -456,10 +460,10 @@ export function ForecastPage() {
                       type="monotone"
                       dataKey="predicted"
                       name="Predicted"
-                      stroke="#0284c7"
+                      stroke="var(--series-predicted)"
                       strokeWidth={2}
                       strokeDasharray="5 4"
-                      dot={{ r: 4, fill: "#0284c7", stroke: "#ffffff", strokeWidth: 2 }}
+                      dot={{ r: 4, fill: "var(--series-predicted)", stroke: "#ffffff", strokeWidth: 2 }}
                       connectNulls
                     />
                   )}
@@ -479,7 +483,9 @@ export function ForecastPage() {
         )}
       </Card>
 
-      <Card title="How the prediction works" icon={<ChipIcon />}>
+      <Card title="Forecast details" icon={<ChipIcon />}>
+        <details className="how-result-details">
+        <summary>How the result is chosen</summary>
         <div className="pipeline" aria-label="prediction pipeline">
           <span className="pipeline-step">
             <DatabaseIcon /> Historical Weather
@@ -498,11 +504,9 @@ export function ForecastPage() {
           </span>
         </div>
         <p className="chart-note">
-          For each prediction the backend builds the same input the model was trained on:
-          lag features (temperature of the previous days), 3-day and 7-day rolling averages,
-          seasonal/monthly encoding, and the state and season identifiers. You never enter
-          weather values manually — only a location and a date.
+          Past dates use observed records when available. Future dates use the saved model when supported; otherwise the backend uses its weather-provider forecast.
         </p>
+        </details>
       </Card>
     </div>
   );

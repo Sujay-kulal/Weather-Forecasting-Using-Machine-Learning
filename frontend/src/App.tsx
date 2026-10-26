@@ -3,14 +3,16 @@ import { ForecastPage } from "./pages/ForecastPage";
 import { WeatherHistoryPage } from "./pages/WeatherHistoryPage";
 import { ModelPerformancePage } from "./pages/ModelPerformancePage";
 import { PredictionHistoryPage } from "./pages/PredictionHistoryPage";
+import { IndiaMapPage } from "./pages/IndiaMapPage";
 import { useHealth, type HealthState } from "./hooks/useHealth";
 import { ChartIcon, ChipIcon, CloudSunIcon, ListIcon } from "./components/icons";
 
 const TABS = [
   { id: "forecast", label: "Forecast", Icon: CloudSunIcon },
+  { id: "map", label: "India Map", Icon: ChartIcon },
+  { id: "model", label: "Model", Icon: ChipIcon },
   { id: "history", label: "Weather History", Icon: ChartIcon },
-  { id: "model", label: "Model Performance", Icon: ChipIcon },
-  { id: "predictions", label: "Prediction History", Icon: ListIcon },
+  { id: "predictions", label: "Predictions", Icon: ListIcon },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
@@ -24,7 +26,7 @@ const HEALTH_LABEL: Record<HealthState, string> = {
 
 export default function App() {
   const [tab, setTab] = useState<TabId>("forecast");
-  const { health, detail } = useHealth();
+  const { health, detail, waking, retry } = useHealth();
 
   return (
     <div className="app">
@@ -35,15 +37,17 @@ export default function App() {
               <CloudSunIcon />
             </span>
             <div className="brand-text">
-              <h1>Weather Forecasting System</h1>
-              <p className="subtitle">Machine Learning Based Temperature Forecasting</p>
+              <h1>WeatherCast India</h1>
+              <p className="subtitle">Machine Learning Temperature Forecasting</p>
             </div>
           </div>
           <div className={`health health-${health}`} title={detail}>
             <span className="health-dot" aria-hidden="true" />
             {HEALTH_LABEL[health]}
+            {health === "down" && <button className="health-retry" onClick={retry}>Retry</button>}
           </div>
         </div>
+        {waking && <div className="waking-banner" role="status">The weather server is waking up. First requests can take a little longer.</div>}
         <nav className="nav" aria-label="Sections">
           {TABS.map((t) => (
             <button
@@ -61,6 +65,7 @@ export default function App() {
 
       <main className="main">
         {tab === "forecast" && <ForecastPage />}
+        {tab === "map" && <IndiaMapPage />}
         {tab === "history" && <WeatherHistoryPage />}
         {tab === "model" && <ModelPerformancePage />}
         {tab === "predictions" && <PredictionHistoryPage />}
