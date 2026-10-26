@@ -73,10 +73,10 @@ def retrain_v3():
     df["lag2_humidity"] = g["Humidity"].shift(2)
     df["lag2_rainfall"] = g["Rainfall"].shift(2)
     df["temp_range"] = df["lag1_temp_max"] - df["lag1_temp_min"]
-    df["roll3_temp_avg"] = g["Temp_Avg"].shift(1).rolling(3).mean()
-    df["roll7_temp_avg"] = g["Temp_Avg"].shift(1).rolling(7).mean()
-    df["rainfall_roll3"] = g["Rainfall"].shift(1).rolling(3).sum()
-    df["rainfall_roll7"] = g["Rainfall"].shift(1).rolling(7).sum()
+    df["roll3_temp_avg"] = g["Temp_Avg"].transform(lambda s: s.shift(1).rolling(3, min_periods=3).mean())
+    df["roll7_temp_avg"] = g["Temp_Avg"].transform(lambda s: s.shift(1).rolling(7, min_periods=7).mean())
+    df["rainfall_roll3"] = g["Rainfall"].transform(lambda s: s.shift(1).rolling(3, min_periods=3).sum())
+    df["rainfall_roll7"] = g["Rainfall"].transform(lambda s: s.shift(1).rolling(7, min_periods=7).sum())
     df["month_sin"] = np.sin(2 * np.pi * df["Month"] / 12)
     df["month_cos"] = np.cos(2 * np.pi * df["Month"] / 12)
     df["day_of_year_sin"] = np.sin(2 * np.pi * df["day_of_year"] / 365)
@@ -118,13 +118,30 @@ def retrain_v3():
     joblib.dump(v3_pipeline, V3_MODEL_PATH)
     logger.info(f"Saved weather_model_v3.joblib at: {V3_MODEL_PATH}")
 
-    # Read existing model_info.json to preserve v2 held-out metrics
+    # Preserve previous scores as historical context, never as v3 scores.
     with open(MODEL_INFO_PATH) as f:
         info = json.load(f)
 
+    if info.get("metrics"):
+        info["historical_metrics"] = info["metrics"]
+    info["metrics"] = {}
+    info.pop("q", None)
+    info.pop("coverage_90", None)
+    info["metrics_status"] = "not_evaluated_for_current_artifact"
+    info["interval_status"] = "not_calibrated_for_current_artifact"
+    info["train_period"] = [
+        str(df["Date"].min().date()),
+        str(df["Date"].max().date()),
+    ]
+    info["test_period"] = []
+    info["evaluation_note"] = (
+        "This artifact has not been evaluated on a separate temporal holdout. "
+        "Run train_honest_eval.py and review results before publishing performance claims."
+    )
     info["trained_through"] = max_date_str
     info["states"] = sorted(df["State"].unique().tolist())
     info["model_v3_path"] = str(V3_MODEL_PATH)
+    info["model_path"] = str(V3_MODEL_PATH)
 
     with open(MODEL_INFO_PATH, "w") as f:
         json.dump(info, f, indent=2)

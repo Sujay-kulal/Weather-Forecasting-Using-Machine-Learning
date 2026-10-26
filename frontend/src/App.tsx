@@ -1,9 +1,4 @@
-import { useState, useEffect } from "react";
-import { ForecastPage } from "./pages/ForecastPage";
-import { WeatherHistoryPage } from "./pages/WeatherHistoryPage";
-import { ModelPerformancePage } from "./pages/ModelPerformancePage";
-import { PredictionHistoryPage } from "./pages/PredictionHistoryPage";
-import { MLDashboardPage } from "./pages/MLDashboardPage";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { useHealth, type HealthState } from "./hooks/useHealth";
 import {
   ChartIcon,
@@ -14,7 +9,25 @@ import {
   MapIcon,
 } from "./components/icons";
 import { Card, PageHead } from "./components/ui";
-import { IndiaMap } from "./components/IndiaMap";
+
+const ForecastPage = lazy(() =>
+  import("./pages/ForecastPage").then((module) => ({ default: module.ForecastPage })),
+);
+const WeatherHistoryPage = lazy(() =>
+  import("./pages/WeatherHistoryPage").then((module) => ({ default: module.WeatherHistoryPage })),
+);
+const ModelPerformancePage = lazy(() =>
+  import("./pages/ModelPerformancePage").then((module) => ({ default: module.ModelPerformancePage })),
+);
+const PredictionHistoryPage = lazy(() =>
+  import("./pages/PredictionHistoryPage").then((module) => ({ default: module.PredictionHistoryPage })),
+);
+const MLDashboardPage = lazy(() =>
+  import("./pages/MLDashboardPage").then((module) => ({ default: module.MLDashboardPage })),
+);
+const IndiaMap = lazy(() =>
+  import("./components/IndiaMap").then((module) => ({ default: module.IndiaMap })),
+);
 
 const TABS = [
   { id: "forecast", label: "Forecast", Icon: CloudSunIcon },
@@ -97,40 +110,42 @@ export default function App() {
       </header>
 
       <main className="main">
-        {tab === "forecast" && (
-          <ForecastPage
-            selectedState={selectedState}
-            onSelectState={setSelectedState}
-          />
-        )}
-        {tab === "map" && (
-          <div className="page">
-            <PageHead
-              title="India Weather Map"
-              desc="Interactive choropleth map showing predicted next-day average temperatures across Indian states and union territories. Click any state to select it and switch to its detailed forecast."
+        <Suspense fallback={<div className="page page-loading" role="status">Loading section…</div>}>
+          {tab === "forecast" && (
+            <ForecastPage
+              selectedState={selectedState}
+              onSelectState={setSelectedState}
             />
-            <Card title="Interactive Temperature Map" icon={<MapIcon />}>
-              <IndiaMap
-                selectedState={selectedState}
-                onSelectState={(s) => {
-                  setSelectedState(s);
-                  setTab("forecast");
-                }}
-                height="620px"
+          )}
+          {tab === "map" && (
+            <div className="page">
+              <PageHead
+                title="India Weather Map"
+                desc="State colors show the first daily temperature estimate from the seven-day model output for the map's target date. Click a state to open its seven-day forecast."
               />
-            </Card>
-          </div>
-        )}
-        {tab === "ml" && <MLDashboardPage />}
-        {tab === "history" && <WeatherHistoryPage />}
-        {tab === "model" && <ModelPerformancePage />}
-        {tab === "predictions" && <PredictionHistoryPage />}
+              <Card title="Interactive Temperature Map" icon={<MapIcon />}>
+                <IndiaMap
+                  selectedState={selectedState}
+                  onSelectState={(s) => {
+                    setSelectedState(s);
+                    setTab("forecast");
+                  }}
+                  height="620px"
+                />
+              </Card>
+            </div>
+          )}
+          {tab === "ml" && <MLDashboardPage />}
+          {tab === "history" && <WeatherHistoryPage />}
+          {tab === "model" && <ModelPerformancePage />}
+          {tab === "predictions" && <PredictionHistoryPage />}
+        </Suspense>
       </main>
 
       <footer className="footer">
         <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
           <span>Final-year project · ML-based temperature forecasting for Indian states</span>
-          <span style={{ opacity: 0.7 }}>FastAPI + PostgreSQL + Gradient Boosting</span>
+          <span style={{ opacity: 0.7 }}>FastAPI + PostgreSQL + LightGBM</span>
         </div>
       </footer>
     </div>

@@ -23,13 +23,21 @@
     "Season",
     "State"
   ],
-  "train_period": [
+  "historical_train_period": [
     "2015-01-08",
     "2025-10-14"
   ],
-  "test_period": [
+  "historical_test_period": [
     "2025-10-16",
     "2026-10-16"
+  ],
+  "train_period": [
+    "2015-01-08",
+    "2026-10-22"
+  ],
+  "test_period": [
+    "Not evaluated",
+    "Not evaluated"
   ],
   "metrics": {
     "LightGBM": {
@@ -85,6 +93,10 @@
   ],
   "trained_through": "2026-10-22",
   "model_v3_path": "model\\weather_model_v3.joblib",
+  "model_path": "model/weather_model_v3.joblib",
   "q": 1.8339,
-  "coverage_90": 0.8678
+  "coverage_90": 0.8678,
+  "metrics_status": "historical_not_validated_for_current_artifact",
+  "interval_status": "not_calibrated_for_current_artifact",
+  "evaluation_note": "The saved metrics and interval values are retained as historical v2 evaluation results. They are not validated for the deployed v3 artifact or the corrected training feature pipeline."
 }

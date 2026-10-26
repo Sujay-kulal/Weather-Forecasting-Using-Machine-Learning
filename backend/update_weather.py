@@ -79,6 +79,24 @@ def fetch_forecast_for_state(state: str, lat: float, lon: float, days_back: int 
                 raise
             time.sleep(2 ** attempt)
 
+
+def upsert_weather_batch(session, records: list[dict]) -> int:
+    """Idempotently upsert one batch using the model's full location key."""
+    if not records:
+        return 0
+    stmt = pg_insert(WeatherData).values(records)
+    session.execute(stmt.on_conflict_do_update(
+        constraint="uq_weather_state_dist_loc_date",
+        set_={
+            "temp_max": stmt.excluded.temp_max,
+            "temp_min": stmt.excluded.temp_min,
+            "temp_avg": stmt.excluded.temp_avg,
+            "humidity": stmt.excluded.humidity,
+            "rainfall": stmt.excluded.rainfall,
+        },
+    ))
+    return len(records)
+
 def update_weather(days_back: int = 7, session=None) -> int:
     """
     Ingest recent weather data using the Open-Meteo Forecast API (past_days)
@@ -129,18 +147,7 @@ def update_weather(days_back: int = 7, session=None) -> int:
                 })
 
             if buffer:
-                stmt = pg_insert(WeatherData).values(buffer)
-                upsert_stmt = stmt.on_conflict_do_update(
-                    constraint="uq_weather_state_date",
-                    set_={
-                        "temp_max": stmt.excluded.temp_max,
-                        "temp_min": stmt.excluded.temp_min,
-                        "temp_avg": stmt.excluded.temp_avg,
-                        "humidity": stmt.excluded.humidity,
-                        "rainfall": stmt.excluded.rainfall,
-                    }
-                )
-                session.execute(upsert_stmt)
+                upsert_weather_batch(session, buffer)
                 session.commit()
                 added_or_updated_total += len(buffer)
                 logger.info(f"[{state}] Upserted {len(buffer)} records.")

@@ -5,6 +5,9 @@ __pycache__
 *.pyo
 *.pyd
 .env
+**/.env
+backend/.env
+frontend/.env.local
 *.log
 node_modules
 frontend/node_modules

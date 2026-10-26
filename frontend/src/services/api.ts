@@ -34,11 +34,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
+    let parsedBody = false;
     try {
       const body = await response.json();
+      parsedBody = true;
       if (typeof body?.detail === "string") detail = body.detail;
     } catch {
       /* keep status text */
+    }
+    if (response.status >= 500 && BASE_URL.startsWith("/") && !parsedBody) {
+      detail = "The backend is unavailable or returned an invalid response. Check that FastAPI is running.";
     }
     throw new ApiError(response.status, detail);
   }
@@ -126,7 +131,7 @@ export function getPredictions(limit = 50, offset = 0): Promise<PredictionsRespo
 
 // ---------------- GET /model-info ----------------
 export function getModelInfo(): Promise<ModelInfoResponse> {
-  return request<ModelInfoResponse>("/model-info");
+  return request<ModelInfoResponse>("/model-info", { cache: "no-store" });
 }
 
 // ---------------- GET /forecast/all?date= ----------------

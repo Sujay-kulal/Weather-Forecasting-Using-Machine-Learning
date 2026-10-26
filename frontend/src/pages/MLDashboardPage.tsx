@@ -58,7 +58,7 @@ const FEATURE_CATEGORIES: FeatureCategory[] = [
     color: "#4a90d9",
     icon: <DropletIcon />,
     explanation:
-      "Humidity and rainfall heavily influence temperature through evaporative cooling and cloud cover. Lag-1 and lag-2 features capture their delayed impact on next-day temperatures.",
+      "Humidity and rainfall can influence temperature through cloud cover and evaporation. Lag-1 and lag-2 features describe recent conditions.",
     matcher: (f) =>
       /^lag\d+_(humidity|rainfall)/.test(f),
   },
@@ -102,9 +102,9 @@ function classifyFeatures(features: string[]) {
 /* ------------------------------------------------------------------ */
 
 const PIPELINE_STAGES = [
-  { icon: <DatabaseIcon />, label: "Raw Data", sub: "IMD / Open-Meteo" },
+  { icon: <DatabaseIcon />, label: "Raw Data", sub: "Kaggle / Open-Meteo" },
   { icon: <SlidersIcon />,  label: "Feature Engineering", sub: "20 features" },
-  { icon: <ChipIcon />,     label: "Training Pipeline", sub: "TimeSeriesSplit × 5" },
+  { icon: <ChipIcon />,     label: "Training Pipeline", sub: "Date-based evaluation" },
   { icon: <TargetIcon />,   label: "LightGBM Model", sub: "Multi-output ×7" },
   { icon: <CloudSunIcon />, label: "FastAPI", sub: "REST API" },
   { icon: <ChartIcon />,    label: "React Frontend", sub: "This dashboard" },
@@ -131,12 +131,12 @@ const TECH_STACK = [
 /* ------------------------------------------------------------------ */
 
 const API_ENDPOINTS = [
-  { method: "POST", path: "/predict",       desc: "7-day temperature forecast with conformal intervals" },
+  { method: "POST", path: "/predict",       desc: "7-day temperature forecast; calibrated bounds only when available" },
   { method: "GET",  path: "/model-info",    desc: "Model metadata, features, metrics, and training period" },
-  { method: "GET",  path: "/health",        desc: "Readiness probe — checks DB, model, and staleness" },
+  { method: "GET",  path: "/health",        desc: "Checks database connectivity and model availability" },
   { method: "GET",  path: "/states",        desc: "All Indian states the model covers" },
   { method: "GET",  path: "/weather/{state}", desc: "Historical weather records from PostgreSQL" },
-  { method: "GET",  path: "/forecast/all",  desc: "Choropleth data — next-day avg temp for every state" },
+  { method: "GET",  path: "/forecast/all",  desc: "First value from each state's seven-day forecast" },
 ];
 
 /* ------------------------------------------------------------------ */
@@ -149,20 +149,20 @@ const SAFEGUARDS = [
     detail: "Every lag and rolling feature is computed from rows strictly before the forecast date. No lookahead is possible because the SQL query and pandas code both enforce a strict date filter.",
   },
   {
-    title: "Temporal train / test split",
-    detail: "TimeSeriesSplit with 5 folds ensures training folds always precede validation folds chronologically — the model is never evaluated on dates it has already seen.",
+    title: "Horizon-aware temporal evaluation",
+    detail: "The evaluation script separates training, calibration, and test dates with a seven-day embargo for the seven-day target window. Existing saved metrics predate this corrected evaluation.",
   },
   {
     title: "Feature engineering contract",
-    detail: "The exact same feature-building function runs in the training notebook and in the FastAPI backend, guaranteeing no training-serving skew.",
+    detail: "Training rolling windows are computed within each state. The existing v3 artifact predates that correction and must be rebuilt and evaluated before its metrics can be treated as current.",
   },
   {
-    title: "Staleness check on /health",
-    detail: "The health endpoint verifies that the latest DB record is recent. If data stops flowing, the system degrades gracefully instead of silently forecasting stale data.",
+    title: "Request-time history validation",
+    detail: "The health endpoint checks database and model availability. Prediction requests separately reject stale or insufficient history.",
   },
   {
-    title: "Conformal calibration on held-out set",
-    detail: "The prediction interval width (q) is calibrated on a dedicated calibration split that is disjoint from both training and test — no double-dipping.",
+    title: "Prediction interval status",
+    detail: "The current artifact has no verified calibration. The API omits interval bounds until metadata explicitly marks an interval as calibrated for that artifact.",
   },
 ];
 
@@ -187,10 +187,45 @@ export function MLDashboardPage() {
     trained_through,
     q,
     coverage_90,
+    metrics_status,
+    interval_status,
+    evaluation_note,
   } = info.data;
 
   const selected = metrics[model_name];
   const grouped = classifyFeatures(features);
+
+  if (!selected) {
+    return (
+      <div className="page">
+        <PageHead
+          title="ML Project Dashboard"
+          desc="Model architecture, input features, and the evaluation status reported by the backend."
+        />
+        <Card title="Evaluation not available" icon={<TargetIcon />}>
+          <p className="chart-note">
+            {evaluation_note ??
+              "This model artifact has no evaluation metrics validated for the current version."}
+          </p>
+          <p className="chart-note">
+            Metrics status: <strong>{metrics_status ?? "unknown"}</strong>. Interval status:{" "}
+            <strong>{interval_status ?? "unknown"}</strong>.
+          </p>
+        </Card>
+        <Card title="Model input features" icon={<SlidersIcon />}>
+          <p>{features.length} features are built from recent weather measurements.</p>
+          <div className="feature-groups">
+            {grouped.map((group) => (
+              <div key={group.label} className="feature-group">
+                <h4>{group.label}<span className="count-badge">{group.items.length}</span></h4>
+                <ul>{group.items.map((feature) => <li key={feature}><code>{feature}</code></li>)}</ul>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
+  }
 
   /* model comparison bar-chart data */
   const comparison = Object.entries(metrics)
@@ -202,8 +237,15 @@ export function MLDashboardPage() {
       {/* ---- Page title ---- */}
       <PageHead
         title="ML Project Dashboard"
-        desc="End-to-end overview of the machine learning pipeline — from raw weather data to production-ready 7-day temperature forecasts with conformal prediction intervals."
+        desc="Overview of the seven-day temperature forecasting pipeline, its input features, and the evidence available for the currently served model."
       />
+
+      <p className="chart-note subtle" role="status">
+        {metrics_status === "validated_for_current_artifact"
+          ? "Evaluation metrics are marked as validated for the current model artifact."
+          : evaluation_note ??
+            "Displayed scores are historical metadata and are not validated for the current model artifact."}
+      </p>
 
       {/* ---- Hero stat chips ---- */}
       <div className="stat-chips">
@@ -214,12 +256,12 @@ export function MLDashboardPage() {
         />
         <StatChip
           icon={<TargetIcon />}
-          label="MAE"
+          label={metrics_status === "validated_for_current_artifact" ? "MAE" : "Historical MAE"}
           value={`${selected.MAE.toFixed(2)} °C`}
         />
         <StatChip
           icon={<ChartIcon />}
-          label="R² Score"
+          label={metrics_status === "validated_for_current_artifact" ? "R² Score" : "Historical R²"}
           value={selected.R2.toFixed(4)}
         />
         <StatChip
@@ -230,7 +272,7 @@ export function MLDashboardPage() {
         {coverage_90 !== undefined && (
           <StatChip
             icon={<TargetIcon />}
-            label="Conformal Coverage"
+          label="Historical empirical coverage"
             value={`${(coverage_90 * 100).toFixed(1)}%`}
           />
         )}
@@ -356,7 +398,7 @@ export function MLDashboardPage() {
         <Card
           title="Training Pipeline"
           icon={<ChipIcon />}
-          subtitle="How the model is trained, validated, and calibrated."
+          subtitle="Training and evaluation details reported by the project scripts."
         >
           <dl className="meta-list">
             <div>
@@ -364,8 +406,8 @@ export function MLDashboardPage() {
               <dd>Predicts 7 days of Temp_Avg simultaneously (one model, 7 outputs)</dd>
             </div>
             <div>
-              <dt>Cross-Validation</dt>
-              <dd>TimeSeriesSplit with 5 folds — no data leakage across time</dd>
+              <dt>Evaluation split</dt>
+              <dd>Date-based train, calibration, and test windows with a seven-day target embargo</dd>
             </div>
             <div>
               <dt>Preprocessing</dt>
@@ -397,15 +439,15 @@ export function MLDashboardPage() {
             </div>
           </dl>
 
-          {/* Conformal prediction callout */}
+          {/* Historical interval metadata, not an active guarantee */}
           {q !== undefined && coverage_90 !== undefined && (
             <div className="ml-conformal-box">
-              <strong>Conformal Prediction Intervals</strong>
+              <strong>Historical interval metadata</strong>
               <p>
-                Split conformal prediction with <code>q = ±{q.toFixed(2)} °C</code> achieves{" "}
-                <strong>{(coverage_90 * 100).toFixed(2)}%</strong> empirical coverage on
-                the held-out test set. This means ~87 out of 100 future observations fall within the
-                predicted interval — a distribution-free guarantee.
+                The older evaluation reports <code>q = ±{q.toFixed(2)} °C</code> and{" "}
+                <strong>{(coverage_90 * 100).toFixed(2)}%</strong> empirical coverage.
+                This calibration has not been verified for the current artifact; prediction
+                responses therefore omit interval bounds.
               </p>
             </div>
           )}
@@ -413,9 +455,9 @@ export function MLDashboardPage() {
 
         {/* Right column — Metrics & chart */}
         <Card
-          title={`Model Comparison — ${model_name} vs Baselines`}
+          title={`Historical Model Comparison — ${model_name} vs Baselines`}
           icon={<TargetIcon />}
-          subtitle="Lower RMSE is better. The highlighted bar is the deployed model."
+          subtitle="Lower RMSE is better. These saved scores are not validated for the current artifact; the highlighted row is the historical LightGBM result."
         >
           {/* Metric tiles */}
           <div className="metric-row">
@@ -434,7 +476,7 @@ export function MLDashboardPage() {
             {coverage_90 !== undefined && (
               <div className="metric">
                 <div className="metric-value">{(coverage_90 * 100).toFixed(1)}%</div>
-                <div className="metric-name">90% Coverage</div>
+                <div className="metric-name">Historical empirical coverage</div>
               </div>
             )}
           </div>
@@ -482,7 +524,11 @@ export function MLDashboardPage() {
                   <tr key={m.name} className={m.name === model_name ? "highlight-row" : ""}>
                     <td>
                       {m.name}
-                      {m.name === model_name ? " · deployed" : ""}
+                      {m.name === model_name
+                        ? metrics_status === "validated_for_current_artifact"
+                          ? " · validated current artifact"
+                          : " · historical scores"
+                        : ""}
                     </td>
                     <td className="num">{m.MAE.toFixed(4)}</td>
                     <td className="num">{m.RMSE.toFixed(4)}</td>
@@ -566,8 +612,8 @@ export function MLDashboardPage() {
           <div className="ml-deploy-card">
             <strong>Health Monitoring</strong>
             <p>
-              The <code>/health</code> endpoint checks database connectivity, model loading status,
-              and data freshness. The header pill in this UI reflects real-time backend health.
+              The <code>/health</code> endpoint checks database connectivity and model loading.
+              Prediction requests perform a separate history-freshness check.
             </p>
           </div>
         </div>

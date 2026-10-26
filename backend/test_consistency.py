@@ -1,7 +1,7 @@
 """
 CRITICAL model-consistency test (Phase 2 requirement #20).
 
-Verifies that the backend feature builder produces EXACTLY the same 13 features
+Verifies that the backend feature builder produces EXACTLY the same 20 features
 as train_model.py for the same (state, forecast date), and that both produce
 the same prediction from the saved pipeline.
 
@@ -40,8 +40,8 @@ df["lag1_temp_max"] = g["Temp_Max"].shift(1)
 df["lag1_temp_min"] = g["Temp_Min"].shift(1)
 df["lag1_humidity"] = g["Humidity"].shift(1)
 df["lag1_rainfall"] = g["Rainfall"].shift(1)
-df["roll3_temp_avg"] = g["Temp_Avg"].shift(1).rolling(3).mean()
-df["roll7_temp_avg"] = g["Temp_Avg"].shift(1).rolling(7).mean()
+df["roll3_temp_avg"] = g["Temp_Avg"].transform(lambda s: s.shift(1).rolling(3, min_periods=3).mean())
+df["roll7_temp_avg"] = g["Temp_Avg"].transform(lambda s: s.shift(1).rolling(7, min_periods=7).mean())
 df["month_sin"] = np.sin(2 * np.pi * df["Month"] / 12) if "Month" in df else np.nan
 # (Month is not in usecols above; recompute from Date like training did)
 df["month_sin"] = np.sin(2 * np.pi * df["Date"].dt.month / 12)
@@ -49,8 +49,8 @@ df["month_cos"] = np.cos(2 * np.pi * df["Date"].dt.month / 12)
 df["lag2_humidity"] = g["Humidity"].shift(2)
 df["lag2_rainfall"] = g["Rainfall"].shift(2)
 df["temp_range"] = df["lag1_temp_max"] - df["lag1_temp_min"]
-df["rainfall_roll3"] = g["Rainfall"].shift(1).rolling(3).sum()
-df["rainfall_roll7"] = g["Rainfall"].shift(1).rolling(7).sum()
+df["rainfall_roll3"] = g["Rainfall"].transform(lambda s: s.shift(1).rolling(3, min_periods=3).sum())
+df["rainfall_roll7"] = g["Rainfall"].transform(lambda s: s.shift(1).rolling(7, min_periods=7).sum())
 df["day_of_year_sin"] = np.sin(2 * np.pi * df["Date"].dt.dayofyear / 365)
 df["day_of_year_cos"] = np.cos(2 * np.pi * df["Date"].dt.dayofyear / 365)
 

@@ -21,7 +21,7 @@ from sqlalchemy import select
 # Make `app` importable when run from the backend folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app.database import Base, SessionLocal, engine, init_db  # noqa: E402
+from app.database import SessionLocal, engine  # noqa: E402
 from app.models import WeatherData  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -62,8 +62,7 @@ def main():
     print(f"      clean rows: {len(df)}, states: {df['state'].nunique()}, "
           f"dates: {df['date'].min()} -> {df['date'].max()}")
 
-    print("[3/5] Creating tables (if missing) ...")
-    init_db()
+    print("[3/5] Using the explicitly migrated database schema ...")
 
     print("[4/5] Importing into PostgreSQL (skipping existing rows) ...")
     t0 = time.time()

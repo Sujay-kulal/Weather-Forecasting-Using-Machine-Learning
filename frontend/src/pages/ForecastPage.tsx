@@ -1,15 +1,4 @@
-import { useEffect, useState } from "react";
-import {
-  Area,
-  CartesianGrid,
-  ComposedChart,
-  Legend,
-  Line,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ApiError, getRecentWeather, getStates, getDistricts, getLocations, predict } from "../services/api";
 import { useFetch } from "../hooks/useFetch";
 import { Card, EmptyNote, ErrorBanner, PageHead, Spinner, StatChip } from "../components/ui";
@@ -31,7 +20,54 @@ import {
   LocationPinIcon,
 } from "../components/icons";
 import type { PredictionResponse } from "../types/api";
-import { IndiaMap } from "../components/IndiaMap";
+import type { IndiaMapProps } from "../components/IndiaMap";
+
+const IndiaMap = lazy(() =>
+  import("../components/IndiaMap").then((module) => ({ default: module.IndiaMap })),
+);
+const ForecastWeatherChart = lazy(() =>
+  import("../components/ForecastWeatherChart").then((module) => ({ default: module.ForecastWeatherChart })),
+);
+
+function DeferredIndiaMap(props: IndiaMapProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [shouldLoad, setShouldLoad] = useState(false);
+  const height = props.height ?? 540;
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (shouldLoad || !node) return;
+    if (!("IntersectionObserver" in window)) {
+      setShouldLoad(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShouldLoad(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin: "280px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [shouldLoad]);
+
+  return (
+    <div ref={containerRef} style={{ minHeight: height }}>
+      {shouldLoad ? (
+        <Suspense fallback={<div className="deferred-map-placeholder" style={{ height }} role="status">Loading the interactive map…</div>}>
+          <IndiaMap {...props} />
+        </Suspense>
+      ) : (
+        <div className="deferred-map-placeholder" style={{ height }} role="status">
+          The interactive map loads as you scroll to it.
+        </div>
+      )}
+    </div>
+  );
+}
 
 function nextDay(iso: string): string {
   // Pure calendar arithmetic (UTC) — immune to the browser's timezone offset,
@@ -125,11 +161,19 @@ export function ForecastPage({
   const recentRecords = recent.data?.records ?? [];
   const latest = recentRecords.length > 0 ? recentRecords[recentRecords.length - 1] : null;
 
-  // Convenient default: the day after the latest available measurement.
-  // Only applied while the user has not picked a date themselves.
+  // The latest measurement usable by this model is forecast date - 2 days.
+  // Keep the default at or after today when the data feed is behind, so the
+  // untouched form never proposes a forecast for a day that has passed.
   useEffect(() => {
     if (state && recentRecords.length > 0 && !dateTouched) {
-      setDate(nextDay(recentRecords[recentRecords.length - 1].date));
+      const latestUsableDate = nextDay(nextDay(recentRecords[recentRecords.length - 1].date));
+      const now = new Date();
+      const today = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, "0"),
+        String(now.getDate()).padStart(2, "0"),
+      ].join("-");
+      setDate(latestUsableDate < today ? today : latestUsableDate);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, recent.loading]);
@@ -167,7 +211,7 @@ export function ForecastPage({
     <div className="page">
       <PageHead
         title="Temperature Forecast"
-        desc="Select a state or UT and date — our ML model predicts its average temperature from historical weather data and gradient boosting."
+        desc="Select a state or UT and target date. The saved LightGBM model returns seven consecutive daily average-temperature estimates from past weather observations."
       />
 
       <div className="forecast-grid">
@@ -288,7 +332,7 @@ export function ForecastPage({
               />
               <small className="hint">
                 {latest
-                  ? `Latest available measurement: ${latest.date}. Default: the day after the latest measurement.`
+                  ? `Latest available measurement: ${latest.date}. Default: today or two days later, whichever is later, so the model can use this measurement.`
                   : "Select a location to see available history."}{" "}
                 The backend validates the date and rejects dates without sufficient history.
               </small>
@@ -407,7 +451,11 @@ export function ForecastPage({
                 </div>
                 <div>
                   <dt>Typical error (MAE)</dt>
-                  <dd>± {result.typical_error_mae.toFixed(3)} °C</dd>
+                  <dd>
+                    {result.typical_error_mae == null
+                      ? "Not validated for this model"
+                      : `± ${result.typical_error_mae.toFixed(3)} °C`}
+                  </dd>
                 </div>
               </dl>
             </div>
@@ -464,86 +512,9 @@ export function ForecastPage({
           </div>
         )}
         {recentRecords.length > 0 && (
-          <>
-            <div className="chart-box">
-              <ResponsiveContainer width="100%" height={300}>
-                <ComposedChart
-                  data={chartData(recentRecords, result)}
-                  margin={{ top: 10, right: 20, bottom: 5, left: 0 }}
-                >
-                  <CartesianGrid stroke="#e7edf4" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#5a6b82" }} tickFormatter={shortDate} />
-                  <YAxis
-                    tick={{ fontSize: 11, fill: "#5a6b82" }}
-                    domain={["dataMin - 2", "dataMax + 2"]}
-                    tickFormatter={(v: number) => v.toFixed(1)}
-                    unit=" °C"
-                  />
-                  <Tooltip labelFormatter={fullDate} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Line
-                    type="monotone"
-                    dataKey="temp_max"
-                    name="Temp Max"
-                    stroke="#f26522"
-                    strokeWidth={1.5}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="temp_avg"
-                    name="Temp Avg"
-                    stroke="#1b1b2f"
-                    strokeWidth={2.2}
-                    dot={false}
-                    connectNulls
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="temp_min"
-                    name="Temp Min"
-                    stroke="#4a90d9"
-                    strokeWidth={1.5}
-                    dot={false}
-                    connectNulls
-                  />
-                  {result && (
-                    <Area
-                      type="monotone"
-                      dataKey="ci_band"
-                      name="90% CI"
-                      stroke="none"
-                      fill="#f26522"
-                      fillOpacity={0.15}
-                      connectNulls
-                    />
-                  )}
-                  {result && (
-                    <Line
-                      type="monotone"
-                      dataKey="predicted"
-                      name="Predicted"
-                      stroke="#f26522"
-                      strokeWidth={2}
-                      strokeDasharray="5 4"
-                      dot={{ r: 4, fill: "#f26522", stroke: "#ffffff", strokeWidth: 2 }}
-                      connectNulls
-                    />
-                  )}
-                </ComposedChart>
-              </ResponsiveContainer>
-            </div>
-            <p className="chart-note">
-              The most recent {recentRecords.length} daily measurements for {locStr} (real
-              PostgreSQL data), {result ? "with the generated forecast appended." : "from the backend."}
-            </p>
-            <p className="chart-note subtle">
-              Note: the model does not read this chart. The backend performs the actual feature
-              engineering (lag features, rolling averages, seasonal encoding) on recent
-              measurements before every prediction.
-            </p>
-          </>
+          <Suspense fallback={<div className="chart-box chart-loading" role="status">Loading the weather chart…</div>}>
+            <ForecastWeatherChart records={recentRecords} result={result} locationLabel={locStr} />
+          </Suspense>
         )}
       </Card>
 
@@ -552,7 +523,7 @@ export function ForecastPage({
         icon={<MapIcon />}
         subtitle="State/UT ML forecast overlay with a separate live-weather city layer. Click a state to view its 7-day ML forecast."
       >
-        <IndiaMap
+        <DeferredIndiaMap
           selectedState={state}
           forecastDate={date}
           onSelectState={(s) => {
@@ -579,7 +550,7 @@ export function ForecastPage({
           </span>
           <span className="arrow" aria-hidden="true">→</span>
           <span className="pipeline-step">
-            <ChipIcon /> Gradient Boosting
+            <ChipIcon /> LightGBM
           </span>
           <span className="arrow" aria-hidden="true">→</span>
           <span className="pipeline-step">
@@ -595,57 +566,4 @@ export function ForecastPage({
       </Card>
     </div>
   );
-}
-
-/** Chart rows: historical records oldest→newest, plus the predicted point. */
-interface ChartRow {
-  date: string;
-  temp_max: number | null;
-  temp_min: number | null;
-  temp_avg: number | null;
-  predicted: number | null;
-  ci_band?: [number, number] | null;
-}
-
-function chartData(
-  records: { date: string; temp_max: number; temp_min: number; temp_avg: number }[],
-  result: PredictionResponse | null,
-): ChartRow[] {
-  const rows: ChartRow[] = records.map((r) => ({
-    date: r.date,
-    temp_max: r.temp_max,
-    temp_min: r.temp_min,
-    temp_avg: r.temp_avg,
-    predicted: null,
-  }));
-  if (result && rows.length > 0) {
-    // dashed connector starts at the last known temperature
-    rows[rows.length - 1].predicted = rows[rows.length - 1].temp_avg;
-    
-    let currentDate = result.forecast_date;
-    const preds = Array.isArray(result.predicted_temp_avg) 
-        ? result.predicted_temp_avg 
-        : [result.predicted_temp_avg];
-    for (let i = 0; i < preds.length; i++) {
-      const lo = result.temp_lo && result.temp_lo[i] !== undefined ? Number(result.temp_lo[i]) : null;
-      const hi = result.temp_hi && result.temp_hi[i] !== undefined ? Number(result.temp_hi[i]) : null;
-      rows.push({
-        date: currentDate,
-        temp_max: null,
-        temp_min: null,
-        temp_avg: null,
-        predicted: Number(preds[i]),
-        ci_band: lo !== null && hi !== null ? [lo, hi] : null,
-      });
-      currentDate = nextDay(currentDate);
-    }
-  }
-  return rows;
-}
-
-function shortDate(iso: string): string {
-  return iso.slice(5); // MM-DD
-}
-function fullDate(iso: string): string {
-  return prettyDate(iso);
 }

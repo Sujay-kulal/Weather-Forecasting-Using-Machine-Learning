@@ -30,10 +30,6 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 class Base(DeclarativeBase):
     pass
 
-def init_db():
-    Base.metadata.create_all(bind=engine)
-
-
 def get_db():
     """FastAPI dependency: one database session per request."""
     db = SessionLocal()

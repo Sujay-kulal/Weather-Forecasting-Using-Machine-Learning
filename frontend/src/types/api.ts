@@ -52,12 +52,13 @@ export interface PredictionResponse {
   location?: string;
   forecast_date: string;
   predicted_temp_avg: number[];
-  temp_lo?: number[];
-  temp_hi?: number[];
+  temp_lo?: number[] | null;
+  temp_hi?: number[] | null;
+  interval_status?: string;
   unit: string;
   model: string;
-  typical_error_mae: number;
-  last_known: LastKnown;
+  typical_error_mae?: number | null;
+  last_known?: LastKnown | null;
 }
 
 export interface PredictionRecord {
@@ -91,4 +92,7 @@ export interface ModelInfoResponse {
   trained_through?: string;
   q?: number;
   coverage_90?: number;
+  metrics_status?: string;
+  interval_status?: string;
+  evaluation_note?: string;
 }

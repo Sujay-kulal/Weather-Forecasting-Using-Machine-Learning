@@ -7,8 +7,10 @@ POST /predict implements the Phase 2 pipeline:
   predictions table -> JSON response. No future data, no stale data,
   no hardcoded values.
 """
-from datetime import date as date_type, timedelta
+from datetime import date as date_type, datetime, timedelta
+import logging
 from typing import Dict, Optional
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select
@@ -24,6 +26,14 @@ from app.services.feature_service import (MAX_STALENESS_DAYS, REQUIRED_HISTORY,
 from app.services.prediction_cache import prediction_cache
 
 router = APIRouter(tags=["prediction"])
+logger = logging.getLogger("prediction")
+
+
+def default_forecast_target(latest_date: date_type, today_in_india: Optional[date_type] = None) -> date_type:
+    """Choose a non-past target while retaining the newest usable observation."""
+    today = today_in_india or datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    return max(latest_date + timedelta(days=2), today)
+
 
 def _resolve_location_predict(state: str, district: str, location: str, db: Session):
     canonical_state = state.strip().title()
@@ -84,7 +94,7 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
         )
 
     # 3. Refuse stale history: if the newest usable record is far older than
-    #    D-1, this is not a genuine next-day forecast anymore.
+    #    D-1, the requested target date is too far beyond the latest history.
     staleness = (asof - history[0].date).days
     if staleness > MAX_STALENESS_DAYS:
         raise HTTPException(
@@ -108,8 +118,9 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
             prediction_cache[cache_key] = predicted
         except feature_service.InsufficientHistoryError as exc:
             raise HTTPException(422, detail=str(exc))
-        except Exception as exc:  # model failure -> honest 500, never fake values
-            raise HTTPException(500, detail=f"Model prediction failed: {exc}")
+        except Exception:
+            logger.exception("Model prediction failed for %s at %s", loc_str, request.forecast_date)
+            raise HTTPException(500, detail="Model prediction failed. Check the server logs.")
 
     # 5. Store the prediction audit record (MUST write on every call, including cache hits)
     record = Prediction(
@@ -122,10 +133,10 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
     db.add(record)
     db.commit()
 
-    q = getattr(model_service, "MODEL_Q", 1.8339)
     preds_rounded = [round(p, 2) for p in predicted]
-    temp_lo = [round(p - q, 2) for p in preds_rounded]
-    temp_hi = [round(p + q, 2) for p in preds_rounded]
+    q = model_service.MODEL_Q
+    temp_lo = [round(p - q, 2) for p in preds_rounded] if q is not None else None
+    temp_hi = [round(p + q, 2) for p in preds_rounded] if q is not None else None
 
     return PredictionResponse(
         state=canonical,
@@ -135,6 +146,7 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
         predicted_temp_avg=preds_rounded,
         temp_lo=temp_lo,
         temp_hi=temp_hi,
+        interval_status=model_service.INTERVAL_STATUS,
         model=model_service.MODEL_NAME,
         typical_error_mae=model_service.MODEL_MAE,
         last_known={"date": str(history[0].date), "temp_avg": history[0].temp_avg},
@@ -162,7 +174,7 @@ def prediction_history(limit: int = Query(50, ge=1, le=500),
 @router.get("/model-info", response_model=ModelInfoResponse)
 def model_info(response: Response):
     """Information about the trained model (from model/model_info.json)."""
-    response.headers["Cache-Control"] = "public, max-age=300"
+    response.headers["Cache-Control"] = "no-store"
     info = model_service.model_info
     return ModelInfoResponse(
         model_name=info["best_model"],
@@ -174,13 +186,16 @@ def model_info(response: Response):
         trained_through=info.get("trained_through"),
         q=info.get("q"),
         coverage_90=info.get("coverage_90"),
+        metrics_status=model_service.MODEL_METRICS_STATUS,
+        interval_status=model_service.INTERVAL_STATUS,
+        evaluation_note=info.get("evaluation_note"),
     )
 
 
 @router.get("/forecast/all", response_model=Dict[str, float])
 def forecast_all(
     req: Request,
-    date: Optional[date_type] = Query(None, description="Target forecast date (YYYY-MM-DD). Defaults to next day after latest data."),
+    date: Optional[date_type] = Query(None, description="Target forecast date (YYYY-MM-DD). Defaults to the later of today in India and two days after the latest observation."),
     db: Session = Depends(get_db)
 ):
     """
@@ -193,7 +208,7 @@ def forecast_all(
         ).scalar()
         if not latest_date:
             raise HTTPException(404, detail="No weather data available")
-        target_date = latest_date + timedelta(days=1)
+        target_date = default_forecast_target(latest_date)
     else:
         target_date = date
 

@@ -113,6 +113,7 @@ export function IndiaMap({ onSelectState, selectedState, forecastDate, height }:
   const [cityWeather, setCityWeather] = useState<CityWeather[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   const [cityLoading, setCityLoading] = useState<boolean>(true);
+  const [cityLoadMessage, setCityLoadMessage] = useState<string | null>(null);
   const [cityQuery, setCityQuery] = useState("");
   const [citySearchLoading, setCitySearchLoading] = useState(false);
   const [citySearchMessage, setCitySearchMessage] = useState<string | null>(null);
@@ -151,12 +152,22 @@ export function IndiaMap({ onSelectState, selectedState, forecastDate, height }:
   useEffect(() => {
     setCityLoading(true);
     fetchAllCityWeather()
-      .then((data) => {
-        setCityWeather(data);
+      .then(({ cities, failedChunks, totalChunks }) => {
+        setCityWeather(cities);
+        setCityLoadMessage(
+          failedChunks > 0
+            ? `Live weather is unavailable for ${failedChunks} of ${totalChunks} city batches; showing ${cities.length} available cities.`
+            : null
+        );
         setLastUpdated(new Date().toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" }));
       })
-      .catch((err) => {
-        console.error("Failed to fetch city weather:", err);
+      .catch((err: unknown) => {
+        setCityWeather([]);
+        setCityLoadMessage(
+          err instanceof Error
+            ? err.message
+            : "Live city weather is temporarily unavailable from Open-Meteo."
+        );
       })
       .finally(() => setCityLoading(false));
   }, []);
@@ -422,7 +433,7 @@ export function IndiaMap({ onSelectState, selectedState, forecastDate, height }:
             </span>
           )}
           <span>
-            {cityWeather.length} live-weather cities · State overlay uses the ML model
+            {cityLoadMessage ?? `${cityWeather.length} live-weather cities`} · State colors show day 1 of the model's seven-day output
           </span>
         </span>
       </div>

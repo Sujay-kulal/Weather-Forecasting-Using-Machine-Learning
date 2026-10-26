@@ -362,7 +362,11 @@ export async function searchIndianCityWeather(query: string): Promise<CityWeathe
  * Open-Meteo can handle long lat/lng lists, but we batch in chunks of 50
  * to avoid excessively long URLs and improve reliability.
  */
-export async function fetchAllCityWeather(): Promise<CityWeather[]> {
+export async function fetchAllCityWeather(): Promise<{
+  cities: CityWeather[];
+  failedChunks: number;
+  totalChunks: number;
+}> {
   const CHUNK_SIZE = 50;
   const chunks: CityDef[][] = [];
 
@@ -397,10 +401,19 @@ export async function fetchAllCityWeather(): Promise<CityWeather[]> {
     });
   });
 
-  const chunkResults = await Promise.all(chunkPromises);
-  for (const chunk of chunkResults) {
-    allResults.push(...chunk);
+  const chunkResults = await Promise.allSettled(chunkPromises);
+  let failedChunks = 0;
+  for (const result of chunkResults) {
+    if (result.status === "fulfilled") {
+      allResults.push(...result.value);
+    } else {
+      failedChunks += 1;
+    }
   }
 
-  return allResults;
+  if (allResults.length === 0) {
+    throw new Error("Live city weather is temporarily unavailable from Open-Meteo.");
+  }
+
+  return { cities: allResults, failedChunks, totalChunks: chunks.length };
 }

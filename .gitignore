@@ -2,6 +2,7 @@
 .env
 *.env
 !.env.example
+.env.staging-local
 frontend/.env.local
 
 # Python

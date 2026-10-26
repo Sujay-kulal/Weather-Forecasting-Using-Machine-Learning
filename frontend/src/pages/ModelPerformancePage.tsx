@@ -17,8 +17,14 @@ import { CalendarIcon, ChipIcon, SlidersIcon, TargetIcon } from "../components/i
 function groupFeatures(features: string[]) {
   const groups: { label: string; items: string[] }[] = [
     { label: "Lag Features", items: features.filter((f) => f.startsWith("lag")) },
-    { label: "Rolling Features", items: features.filter((f) => f.startsWith("roll")) },
-    { label: "Seasonal Features", items: features.filter((f) => f.startsWith("month_")) },
+    {
+      label: "Rolling / Derived Features",
+      items: features.filter((f) => f.startsWith("roll") || f.startsWith("rainfall_roll") || f === "temp_range"),
+    },
+    {
+      label: "Seasonal Features",
+      items: features.filter((f) => /^(month|day_of_year)_/.test(f)),
+    },
     { label: "Categorical Features", items: features.filter((f) => ["Season", "State"].includes(f)) },
   ];
   return groups.filter((g) => g.items.length > 0);
@@ -31,8 +37,38 @@ export function ModelPerformancePage() {
   if (info.error) return <ErrorBanner message={info.error.message} />;
   if (!info.data) return null;
 
-  const { model_name, target, features, metrics, train_period, test_period } = info.data;
+  const {
+    model_name, target, features, metrics, train_period, test_period,
+    metrics_status, interval_status, evaluation_note,
+  } = info.data;
   const selected = metrics[model_name];
+  if (!selected) {
+    return (
+      <div className="page">
+        <PageHead title="Model Performance" desc="Evaluation metadata reported by the backend." />
+        <Card title="Evaluation not available" icon={<TargetIcon />}>
+          <p className="chart-note">
+            {evaluation_note ?? "No evaluation metrics are validated for the current model artifact."}
+          </p>
+          <p className="chart-note">
+            Metrics status: <strong>{metrics_status ?? "unknown"}</strong>. Interval status:{" "}
+            <strong>{interval_status ?? "unknown"}</strong>.
+          </p>
+        </Card>
+        <Card title="Model input features" icon={<SlidersIcon />}>
+          <p>{features.length} features are built automatically from historical measurements.</p>
+          <div className="feature-groups">
+            {groupFeatures(features).map((group) => (
+              <div key={group.label} className="feature-group">
+                <h4>{group.label}<span className="count-badge">{group.items.length}</span></h4>
+                <ul>{group.items.map((feature) => <li key={feature}><code>{feature}</code></li>)}</ul>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+    );
+  }
   const comparison = Object.entries(metrics)
     .map(([name, m]) => ({ name, RMSE: m.RMSE, MAE: m.MAE, R2: m.R2 }))
     .sort((a, b) => a.RMSE - b.RMSE);
@@ -41,8 +77,14 @@ export function ModelPerformancePage() {
     <div className="page">
       <PageHead
         title="Model Performance"
-        desc="Evaluation of the trained model on the held-out test period. Every number below comes from the backend's /model-info endpoint — nothing is hardcoded."
+        desc="Evaluation metadata returned by the backend. The status below tells you whether the reported scores apply to the current artifact."
       />
+
+      <p className="chart-note subtle" role="status">
+        {metrics_status === "validated_for_current_artifact"
+          ? "Metrics are marked as validated for the current model artifact."
+          : evaluation_note ?? "These are historical metrics and are not validated for the current model artifact."}
+      </p>
 
       <div className="stat-chips">
         <StatChip icon={<ChipIcon />} label="Model type" value={model_name} />
@@ -56,7 +98,7 @@ export function ModelPerformancePage() {
         {info.data.coverage_90 !== undefined && (
           <StatChip
             icon={<TargetIcon />}
-            label="90% Test Coverage"
+            label="Historical empirical coverage"
             value={`${(info.data.coverage_90 * 100).toFixed(1)}%`}
           />
         )}
@@ -71,7 +113,7 @@ export function ModelPerformancePage() {
             </div>
             <div>
               <dt>Target</dt>
-              <dd>{target} (next-day average temperature, °C)</dd>
+              <dd>{target}</dd>
             </div>
             <div>
               <dt>Input features</dt>
@@ -91,13 +133,19 @@ export function ModelPerformancePage() {
             </div>
           </dl>
           <p className="chart-note" style={{ marginTop: 12 }}>
-            The split is <strong>temporal</strong>: the model is trained on the earlier period and
-            evaluated on the later one, so the test metrics reflect performance on dates the
-            model has never seen.
+            This is a <strong>seven-day multi-output</strong> target. Treat the scores as current
+            only when the status above confirms validation for this artifact.
           </p>
         </Card>
 
-        <Card title={`Metrics — ${model_name} (test set)`} icon={<TargetIcon />}>
+        <Card
+          title={
+            metrics_status === "validated_for_current_artifact"
+              ? `Metrics — ${model_name} (validated test set)`
+              : `Historical metrics — ${model_name} (unvalidated)`
+          }
+          icon={<TargetIcon />}
+        >
           <div className="metric-row">
             <div className="metric">
               <div className="metric-value">{selected.MAE.toFixed(3)}</div>
@@ -114,14 +162,14 @@ export function ModelPerformancePage() {
             {info.data.coverage_90 !== undefined && (
               <div className="metric">
                 <div className="metric-value">{(info.data.coverage_90 * 100).toFixed(1)}%</div>
-                <div className="metric-name">90% Coverage (q = ±{info.data.q?.toFixed(2)} °C)</div>
+                <div className="metric-name">Historical coverage (q = ±{info.data.q?.toFixed(2)} °C)</div>
               </div>
             )}
           </div>
           <ul className="explanations">
             <li>
-              <strong>MAE</strong> — average absolute prediction error: on a typical day the
-              forecast is off by about {selected.MAE.toFixed(2)} °C.
+              <strong>MAE</strong> — average absolute error across the evaluated output cells:
+              <strong> {selected.MAE.toFixed(2)} °C</strong>.
             </li>
             <li>
               <strong>RMSE</strong> — like MAE but penalizes larger errors more strongly
@@ -133,7 +181,9 @@ export function ModelPerformancePage() {
             </li>
             {info.data.coverage_90 !== undefined && (
               <li>
-                <strong>90% Conformal Coverage</strong> — split conformal prediction interval with q = ±{info.data.q?.toFixed(2)} °C achieves {(info.data.coverage_90 * 100).toFixed(1)}% empirical coverage on the held-out test period.
+                <strong>Historical empirical coverage</strong> — the older metadata reports{" "}
+                {(info.data.coverage_90 * 100).toFixed(1)}% with q = ±{info.data.q?.toFixed(2)} °C.
+                This value is not validated for the current artifact.
               </li>
             )}
           </ul>
@@ -141,9 +191,9 @@ export function ModelPerformancePage() {
       </div>
 
       <Card
-        title="Model comparison (all candidates evaluated in Phase 1)"
+        title="Historical model comparison"
         icon={<ChipIcon />}
-        subtitle="Lower RMSE is better. The highlighted bar is the model currently deployed in the backend (selected by lowest RMSE during training)."
+        subtitle="Lower RMSE is better. These historical scores are not validated for the current artifact unless the status above says so."
       >
         <div className="chart-box">
           <ResponsiveContainer width="100%" height={280}>
@@ -171,8 +221,8 @@ export function ModelPerformancePage() {
           </ResponsiveContainer>
         </div>
         <p className="chart-note">
-          The naive baseline &ldquo;tomorrow&nbsp;=&nbsp;today&rdquo; is included to show the
-          improvement over a no-ML approach.
+          The persistence baseline repeats the most recent input temperature across all seven
+          forecast horizons.
         </p>
 
         <div className="table-wrap">
@@ -190,7 +240,11 @@ export function ModelPerformancePage() {
                 <tr key={m.name} className={m.name === model_name ? "highlight-row" : ""}>
                   <td>
                     {m.name}
-                    {m.name === model_name ? " · deployed" : ""}
+                    {m.name === model_name
+                      ? metrics_status === "validated_for_current_artifact"
+                        ? " · validated current artifact"
+                        : " · historical scores"
+                      : ""}
                   </td>
                   <td className="num">{m.MAE.toFixed(4)}</td>
                   <td className="num">{m.RMSE.toFixed(4)}</td>
