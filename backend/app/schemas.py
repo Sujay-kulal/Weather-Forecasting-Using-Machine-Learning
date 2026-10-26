@@ -5,9 +5,9 @@ These drive the automatic Swagger documentation at /docs.
 """
 from datetime import date as date_type
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 # ----------------------------- requests -----------------------------
@@ -101,3 +101,85 @@ class ModelInfoResponse(BaseModel):
     metrics_status: str = "unknown"
     interval_status: str = "unknown"
     evaluation_note: Optional[str] = None
+
+
+# ---------------------- location weather lookup ----------------------
+class LocationOption(BaseModel):
+    """A concrete India location returned by the geocoding provider.
+
+    The frontend sends this complete object back to ``/weather/lookup`` so
+    weather requests always use the coordinates the person selected, rather
+    than trying to infer a nearby city or a state-wide fallback.
+    """
+
+    name: str = Field(..., min_length=1, max_length=160)
+    district: str = Field("", max_length=160)
+    state: str = Field("", max_length=160)
+    country: str = Field("India", max_length=160)
+    country_code: str = Field("IN", min_length=2, max_length=2)
+    latitude: float = Field(..., ge=-90, le=90)
+    longitude: float = Field(..., ge=-180, le=180)
+    scope: Literal["place", "district", "state"] = "place"
+    geoname_id: Optional[int] = Field(
+        None, ge=1, description="Stable GeoNames identity from the selected geocoding result"
+    )
+
+    @field_validator("name", "district", "state", "country", mode="before")
+    @classmethod
+    def strip_location_text(cls, value: object) -> str:
+        return str(value or "").strip()
+
+    @field_validator("country_code", mode="before")
+    @classmethod
+    def normalize_country_code(cls, value: object) -> str:
+        return str(value or "").strip().upper()
+
+    @model_validator(mode="after")
+    def require_india_coordinates(self):
+        # A broad geographic envelope covers mainland India and the island
+        # territories while rejecting accidentally swapped/foreign coordinates.
+        if self.country_code != "IN":
+            raise ValueError("Only locations in India are supported.")
+        if not (6.0 <= self.latitude <= 38.5 and 68.0 <= self.longitude <= 98.5):
+            raise ValueError("Location coordinates must be within India.")
+        return self
+
+
+class LocationSearchResponse(BaseModel):
+    locations: List[LocationOption]
+
+
+class LocationWeatherRequest(BaseModel):
+    location: LocationOption
+    forecast_date: date_type = Field(..., description="Date to retrieve (YYYY-MM-DD).")
+
+
+class WeatherDay(BaseModel):
+    date: date_type
+    temperature: float
+
+
+class LocationWeatherResponse(BaseModel):
+    """Normalized result from an ML prediction or a verified provider response."""
+
+    location: LocationOption
+    forecast_date: date_type
+    source: Literal[
+        "ML Prediction",
+        "Historical Observations",
+        "Historical Reanalysis",
+        "Current Weather",
+        "Weather API Forecast",
+    ]
+    temperature: float
+    temperature_min: Optional[float] = None
+    temperature_max: Optional[float] = None
+    humidity: Optional[float] = None
+    rainfall: Optional[float] = None
+    wind_speed: Optional[float] = None
+    weather_code: Optional[int] = None
+    weather_description: Optional[str] = None
+    forecast: List[WeatherDay] = Field(default_factory=list)
+    model: Optional[str] = None
+    last_known: Optional[dict] = None
+    message: Optional[str] = None

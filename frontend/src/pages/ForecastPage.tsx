@@ -1,32 +1,29 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { ApiError, getRecentWeather, getStates, getDistricts, getLocations, predict } from "../services/api";
-import { useFetch } from "../hooks/useFetch";
+import {
+  ApiError,
+  getLocationWeather,
+  searchLocations,
+} from "../services/api";
 import { Card, EmptyNote, ErrorBanner, PageHead, Spinner, StatChip } from "../components/ui";
 import {
-  ArrowDownIcon,
-  ArrowUpIcon,
   ChipIcon,
   CloudSunIcon,
   DatabaseIcon,
   DropletIcon,
+  GaugeIcon,
+  LocationPinIcon,
   MapIcon,
-  MinusIcon,
   RainIcon,
   SlidersIcon,
   SparkIcon,
-  ThermometerIcon,
   SunIcon,
-  GaugeIcon,
-  LocationPinIcon,
+  ThermometerIcon,
 } from "../components/icons";
-import type { PredictionResponse } from "../types/api";
 import type { IndiaMapProps } from "../components/IndiaMap";
+import type { LocationOption, LocationWeatherResponse } from "../types/api";
 
 const IndiaMap = lazy(() =>
   import("../components/IndiaMap").then((module) => ({ default: module.IndiaMap })),
-);
-const ForecastWeatherChart = lazy(() =>
-  import("../components/ForecastWeatherChart").then((module) => ({ default: module.ForecastWeatherChart })),
 );
 
 function DeferredIndiaMap(props: IndiaMapProps) {
@@ -69,16 +66,25 @@ function DeferredIndiaMap(props: IndiaMapProps) {
   );
 }
 
-function nextDay(iso: string): string {
-  // Pure calendar arithmetic (UTC) — immune to the browser's timezone offset,
-  // unlike new Date(iso) + toISOString() which can shift the date by a day.
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+function indiaToday(): string {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${byType.year}-${byType.month}-${byType.day}`;
+}
+
+function indiaTomorrow(): string {
+  const [year, month, day] = indiaToday().split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day + 1)).toISOString().slice(0, 10);
 }
 
 function prettyDate(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, {
     weekday: "short",
     day: "numeric",
     month: "short",
@@ -88,8 +94,8 @@ function prettyDate(iso: string): string {
 }
 
 function shortDayName(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(undefined, {
+  const [year, month, day] = iso.split("-").map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString(undefined, {
     weekday: "short",
     timeZone: "UTC",
   });
@@ -104,464 +110,300 @@ function getWeatherEmoji(temp: number): string {
   return "🌡️";
 }
 
+function locationLabel(location: LocationOption): string {
+  return [location.name, location.district, location.state, location.country]
+    .filter(Boolean)
+    .join(", ");
+}
+
 export function ForecastPage({
   selectedState,
   onSelectState,
 }: {
   selectedState?: string;
-  onSelectState?: (s: string) => void;
+  onSelectState?: (state: string) => void;
 } = {}) {
-  const states = useFetch(getStates, []);
-  const [state, setState] = useState(selectedState || "");
-  const [district, setDistrict] = useState("");
-  const [location, setLocation] = useState("");
-  const [date, setDate] = useState("");
-  const [dateTouched, setDateTouched] = useState(false);
+  const [locationQuery, setLocationQuery] = useState("");
+  const [suggestions, setSuggestions] = useState<LocationOption[]>([]);
+  const [selectedLocation, setSelectedLocation] = useState<LocationOption | null>(null);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState<string | null>(null);
+  const [forecastDate, setForecastDate] = useState(indiaTomorrow);
   const [submitting, setSubmitting] = useState(false);
-  const [result, setResult] = useState<PredictionResponse | null>(null);
-  const [predictError, setPredictError] = useState<string | null>(null);
+  const [result, setResult] = useState<LocationWeatherResponse | null>(null);
+  const [lookupError, setLookupError] = useState<string | null>(null);
+  const resultCardRef = useRef<HTMLDivElement>(null);
 
+  // A state selected from the map is placed into the real geocoder search;
+  // it is never converted into guessed coordinates in the browser.
   useEffect(() => {
-    if (selectedState && selectedState !== state) {
-      setState(selectedState);
-      setDistrict("");
-      setLocation("");
-      setDateTouched(false);
+    if (
+      selectedState
+      && selectedState !== selectedLocation?.state
+      && selectedState !== locationQuery
+    ) {
+      setLocationQuery(selectedState);
+      setSelectedLocation(null);
       setResult(null);
-      setPredictError(null);
+      setLookupError(null);
     }
-  }, [selectedState]);
+  }, [selectedState, selectedLocation?.state, locationQuery]);
 
-  const districtsFetch = useFetch(
-    () => (state ? getDistricts(state) : Promise.resolve(null)),
-    [state]
-  );
-
-  const locationsFetch = useFetch(
-    () => (state && district ? getLocations(state, district) : Promise.resolve(null)),
-    [state, district]
-  );
-
-  const hasDistricts = (districtsFetch.data?.districts.length ?? 0) > 0;
-  const hasLocations = (locationsFetch.data?.locations.length ?? 0) > 0;
-
-  // Recent 30 records for the selected state/location (chart context + default date)
-  const recent = useFetch(
-    () => {
-      if (!state) return Promise.resolve(null);
-      if (hasDistricts) {
-        if (!district || !location) return Promise.resolve(null);
-        return getRecentWeather(state, 30, district, location);
-      }
-      return getRecentWeather(state, 30);
-    },
-    [state, district, location, hasDistricts]
-  );
-
-  const recentRecords = recent.data?.records ?? [];
-  const latest = recentRecords.length > 0 ? recentRecords[recentRecords.length - 1] : null;
-
-  // The latest measurement usable by this model is forecast date - 2 days.
-  // Keep the default at or after today when the data feed is behind, so the
-  // untouched form never proposes a forecast for a day that has passed.
+  // Debounce autocomplete and ignore stale responses while the person types.
   useEffect(() => {
-    if (state && recentRecords.length > 0 && !dateTouched) {
-      const latestUsableDate = nextDay(nextDay(recentRecords[recentRecords.length - 1].date));
-      const now = new Date();
-      const today = [
-        now.getFullYear(),
-        String(now.getMonth() + 1).padStart(2, "0"),
-        String(now.getDate()).padStart(2, "0"),
-      ].join("-");
-      setDate(latestUsableDate < today ? today : latestUsableDate);
+    const query = locationQuery.trim();
+    if (query.length < 2) {
+      setSuggestions([]);
+      setSearching(false);
+      setSearchError(null);
+      return;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, recent.loading]);
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      setSearching(true);
+      setSearchError(null);
+      searchLocations(query)
+        .then((response) => {
+          if (!cancelled) setSuggestions(response.locations);
+        })
+        .catch((error: ApiError) => {
+          if (!cancelled) {
+            setSuggestions([]);
+            setSearchError(error.message);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setSearching(false);
+        });
+    }, 300);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [locationQuery]);
 
-  const canSubmit = state && date && (!hasDistricts || location);
+  const canSubmit = Boolean(selectedLocation && forecastDate);
 
-  async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!canSubmit) return;
+  useEffect(() => {
+    if (!submitting && (result || lookupError)) {
+      resultCardRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  }, [result, lookupError, submitting]);
+
+  function chooseLocation(location: LocationOption) {
+    setSelectedLocation(location);
+    setLocationQuery(location.name);
+    setSuggestions([]);
+    setSearchError(null);
+    setResult(null);
+    setLookupError(null);
+    onSelectState?.(location.state);
+  }
+
+  async function onSubmit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!selectedLocation || !forecastDate) return;
     setSubmitting(true);
-    setPredictError(null);
+    setLookupError(null);
     setResult(null);
     try {
-      const prediction = await predict(state, date, district, location);
-      setResult(prediction);
-    } catch (err) {
-      const apiErr = err as ApiError;
-      if (apiErr.status === 422) {
-        setPredictError(
-          `This forecast date cannot currently be predicted because sufficient recent ` +
-            `historical measurements are unavailable. (${apiErr.message})`
-        );
-      } else {
-        setPredictError(apiErr.message);
-      }
+      setResult(await getLocationWeather(selectedLocation, forecastDate));
+    } catch (error) {
+      const apiError = error as ApiError;
+      setLookupError(apiError.message);
     } finally {
       setSubmitting(false);
     }
   }
 
-  const locStr = location ? `${state} → ${district} → ${location}` : state;
-  const dateStepNo = 1 + (hasDistricts ? 1 : 0) + (district && hasLocations ? 1 : 0) + 1;
+  const sourceClass = result?.source === "ML Prediction" ? "ml" : "provider";
+  const shownState = selectedLocation?.state || selectedState;
 
   return (
     <div className="page">
       <PageHead
-        title="Temperature Forecast"
-        desc="Select a state or UT and target date. The saved LightGBM model returns seven consecutive daily average-temperature estimates from past weather observations."
+        title="Weather Search"
+        desc="Search any Indian city, town, district, or state. The backend automatically uses the saved ML model only when the exact selected location has valid ML-ready history; otherwise it retrieves verified Open-Meteo weather for the selected coordinates."
       />
 
       <div className="forecast-grid">
-        <Card title="Generate Forecast" icon={<LocationPinIcon />}>
+        <Card title="Find Weather" icon={<LocationPinIcon />}>
           <form onSubmit={onSubmit} className="forecast-form">
             <label className="field">
               <span>
-                <span className="step-number" aria-hidden="true">1</span> State / UT (ML forecast)
+                <span className="step-number" aria-hidden="true">1</span> Search location in India
               </span>
-              {states.loading ? (
-                <Spinner label="Loading states…" />
-              ) : states.error ? (
-                <ErrorBanner message={states.error.message} />
-              ) : (
-                <select
-                  value={state}
-                  onChange={(e) => {
-                    setState(e.target.value);
-                    setDistrict("");
-                    setLocation("");
-                    setDateTouched(false);
+              <div className="location-autocomplete">
+                <input
+                  type="text"
+                  value={locationQuery}
+                  onChange={(event) => {
+                    setLocationQuery(event.target.value);
+                    setSelectedLocation(null);
                     setResult(null);
-                    setPredictError(null);
+                    setLookupError(null);
                   }}
-                  required
-                >
-                  <option value="" disabled>
-                    Select a state…
-                  </option>
-                  {states.data?.states.map((s) => (
-                    <option key={s} value={s}>
-                      {s}
-                    </option>
-                  ))}
-                </select>
-              )}
+                  placeholder="Try Bengaluru, Udupi, Kerala, or Pune"
+                  autoComplete="off"
+                  role="combobox"
+                  aria-expanded={suggestions.length > 0}
+                  aria-controls="location-suggestions"
+                  aria-autocomplete="list"
+                />
+                {searching && <div className="autocomplete-loading"><Spinner label="Searching locations…" /></div>}
+                {!searching && locationQuery.trim().length >= 2 && !searchError && suggestions.length === 0 && (
+                  <small className="hint">No matching Indian locations. Try a city, district, or state name.</small>
+                )}
+                {!searching && suggestions.length > 0 && (
+                  <ul id="location-suggestions" className="location-suggestions" role="listbox">
+                    {suggestions.map((location) => (
+                      <li key={`${location.name}-${location.district}-${location.state}-${location.latitude}-${location.longitude}`} role="option" aria-selected={false}>
+                        <button type="button" onClick={() => chooseLocation(location)}>
+                          <strong>{location.name}</strong>
+                          <span>{[location.district, location.state, location.country].filter(Boolean).join(" · ")}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <small className="hint">Choose one result so duplicate names retain their district, state, and exact coordinates.</small>
             </label>
 
-            {hasDistricts && (
-              <label className="field">
-                <span>
-                  <span className="step-number" aria-hidden="true">2</span> District
-                </span>
-                {districtsFetch.loading ? (
-                  <Spinner label="Loading districts…" />
-                ) : districtsFetch.error ? (
-                  <ErrorBanner message={districtsFetch.error.message} />
-                ) : (
-                  <select
-                    value={district}
-                    onChange={(e) => {
-                      setDistrict(e.target.value);
-                      setLocation("");
-                      setDateTouched(false);
-                      setResult(null);
-                      setPredictError(null);
-                    }}
-                    required
-                  >
-                    <option value="" disabled>
-                      Select a district…
-                    </option>
-                    {districtsFetch.data?.districts.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </label>
-            )}
+            {searchError && <ErrorBanner message={searchError} />}
 
-            {district && hasLocations && (
-              <label className="field">
-                <span>
-                  <span className="step-number" aria-hidden="true">3</span> Location
-                </span>
-                {locationsFetch.loading ? (
-                  <Spinner label="Loading locations…" />
-                ) : locationsFetch.error ? (
-                  <ErrorBanner message={locationsFetch.error.message} />
-                ) : (
-                  <select
-                    value={location}
-                    onChange={(e) => {
-                      setLocation(e.target.value);
-                      setDateTouched(false);
-                      setResult(null);
-                      setPredictError(null);
-                    }}
-                    required
-                  >
-                    <option value="" disabled>
-                      Select a location…
-                    </option>
-                    {locationsFetch.data?.locations.map((l) => (
-                      <option key={l} value={l}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </label>
+            {selectedLocation && (
+              <div className="selected-location" role="status">
+                <LocationPinIcon />
+                <div>
+                  <strong>{locationLabel(selectedLocation)}</strong>
+                  <span>
+                    Selected coordinates: {selectedLocation.latitude.toFixed(4)}, {selectedLocation.longitude.toFixed(4)}
+                  </span>
+                </div>
+              </div>
             )}
 
             <label className="field">
               <span>
-                <span className="step-number" aria-hidden="true">{dateStepNo}</span> Forecast date
+                <span className="step-number" aria-hidden="true">2</span> Date
               </span>
               <input
                 type="date"
-                value={date}
-                onChange={(e) => {
-                  setDate(e.target.value);
-                  setDateTouched(true);
-                }}
+                value={forecastDate}
+                onChange={(event) => setForecastDate(event.target.value)}
                 required
               />
-              <small className="hint">
-                {latest
-                  ? `Latest available measurement: ${latest.date}. Default: today or two days later, whichever is later, so the model can use this measurement.`
-                  : "Select a location to see available history."}{" "}
-                The backend validates the date and rejects dates without sufficient history.
-              </small>
+              <small className="hint">Past dates return real observations when available; today returns current conditions; future dates use ML only when supported, then the provider forecast.</small>
             </label>
 
             <button className="btn-primary" type="submit" disabled={submitting || !canSubmit}>
               <SparkIcon />
-              {submitting ? "Generating forecast…" : "Generate Forecast"}
+              {submitting ? "Getting weather…" : "Get Weather"}
             </button>
-            <small className="hint">
-              Forecasts the 7-day average temperature using historical weather data.
-              District and location choices appear only when that location has ML-ready historical data.
-            </small>
           </form>
         </Card>
 
-        <Card title="Prediction Result" icon={<ThermometerIcon />}>
-          {submitting && <Spinner label="Generating forecast…" />}
-
-          {!submitting && predictError && <ErrorBanner message={predictError} />}
-
-          {!submitting && !predictError && !result && (
+        <div ref={resultCardRef} className="weather-result-anchor">
+        <Card title="Weather Result" icon={<ThermometerIcon />}>
+          {submitting && <Spinner label="Getting weather from the best available source…" />}
+          {!submitting && lookupError && <ErrorBanner message={lookupError} />}
+          {!submitting && !lookupError && !result && (
             <EmptyNote
-              title="No forecast yet"
-              hint="Select a location and a forecast date, then generate a forecast. The result will appear here with a 7-day outlook."
+              title="No weather result yet"
+              hint="Search for a location, choose a specific result, select a date, then get weather."
             />
           )}
-
           {!submitting && result && (
             <div className="result">
-              {/* Hero temperature display */}
               <div className="result-hero">
                 <CloudSunIcon className="hero-icon" />
-                <div className="result-label">7-Day Predicted Average Temperature</div>
-
-                {/* AccuWeather-style day cards */}
-                <div className="day-forecast-grid" style={{ margin: '16px 0' }}>
-                  {(Array.isArray(result.predicted_temp_avg) ? result.predicted_temp_avg : [result.predicted_temp_avg]).map((temp, i) => {
-                    const lo = result.temp_lo && result.temp_lo[i] !== undefined ? result.temp_lo[i].toFixed(1) : null;
-                    const hi = result.temp_hi && result.temp_hi[i] !== undefined ? result.temp_hi[i].toFixed(1) : null;
-                    let dayDate = result.forecast_date;
-                    for (let j = 0; j < i; j++) dayDate = nextDay(dayDate);
-                    return (
-                      <div key={i} className="day-forecast-card" style={{ background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.12)', color: '#fff' }}>
-                        <div className="day-label" style={{ color: 'rgba(255,255,255,0.7)' }}>
-                          {shortDayName(dayDate)}
-                        </div>
-                        <div style={{ fontSize: 22, lineHeight: 1 }}>
-                          {getWeatherEmoji(Number(temp))}
-                        </div>
-                        <div className="day-temp" style={{ color: '#fff' }}>
-                          {Number(temp).toFixed(1)}°
-                        </div>
-                        {lo !== null && hi !== null && (
-                          <div className="day-range" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                            {lo}° – {hi}°
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-
+                <div className="result-label">{result.source}</div>
+                <span className={`weather-source-badge ${sourceClass}`}>{result.source}</span>
+                <div className="result-value">{result.temperature.toFixed(1)}°</div>
                 <div className="result-sub">
-                  for {result.location || result.state}
-                  {result.district && result.location ? `, ${result.district}` : ""} starting on{" "}
-                  {prettyDate(result.forecast_date)}
+                  for {locationLabel(result.location)} on {prettyDate(result.forecast_date)}
                 </div>
+                {result.weather_description && <div className="result-delta">{result.weather_description}</div>}
                 {result.last_known && (
-                  <span className="result-delta">
-                    {(() => {
-                      const first_pred = Array.isArray(result.predicted_temp_avg) 
-                        ? result.predicted_temp_avg[0] 
-                        : result.predicted_temp_avg;
-                      const delta =
-                        Math.round((Number(first_pred) - result.last_known.temp_avg) * 10) /
-                        10;
-                      const Icon =
-                        delta > 0 ? ArrowUpIcon : delta < 0 ? ArrowDownIcon : MinusIcon;
-                      return (
-                        <>
-                          <Icon />
-                          {delta > 0 ? "+" : ""}
-                          {delta.toFixed(1)} °C vs last known ({result.last_known.date}:{" "}
-                          {result.last_known.temp_avg.toFixed(1)} °C)
-                        </>
-                      );
-                    })()}
-                  </span>
+                  <div className="result-delta">
+                    Latest ML input: {result.last_known.date} · {result.last_known.temp_avg.toFixed(1)} °C
+                  </div>
+                )}
+
+                {result.forecast.length > 1 && (
+                  <div className="day-forecast-grid" style={{ margin: "16px 0 0" }}>
+                    {result.forecast.map((day) => (
+                      <div key={day.date} className="day-forecast-card" style={{ background: "rgba(255,255,255,0.08)", border: "1px solid rgba(255,255,255,0.12)", color: "#fff" }}>
+                        <div className="day-label" style={{ color: "rgba(255,255,255,0.7)" }}>{shortDayName(day.date)}</div>
+                        <div style={{ fontSize: 22, lineHeight: 1 }}>{getWeatherEmoji(day.temperature)}</div>
+                        <div className="day-temp" style={{ color: "#fff" }}>{day.temperature.toFixed(1)}°</div>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-              <dl className="result-meta">
-                <div>
-                  <dt>State</dt>
-                  <dd>{result.state}</dd>
+
+              {(result.temperature_min != null || result.temperature_max != null || result.humidity != null || result.rainfall != null || result.wind_speed != null) && (
+                <div className="stat-chips" style={{ marginTop: 16 }}>
+                  {result.temperature_min != null && result.temperature_max != null && (
+                    <StatChip icon={<GaugeIcon />} label="Temperature range" value={`${result.temperature_min.toFixed(1)}° – ${result.temperature_max.toFixed(1)}°`} />
+                  )}
+                  {result.humidity != null && <StatChip icon={<DropletIcon />} label="Humidity" value={`${result.humidity.toFixed(0)}%`} />}
+                  {result.rainfall != null && <StatChip icon={<RainIcon />} label="Rainfall" value={`${result.rainfall.toFixed(1)} mm`} />}
+                  {result.wind_speed != null && <StatChip icon={<SunIcon />} label="Wind speed" value={`${result.wind_speed.toFixed(1)} km/h`} />}
                 </div>
-                {result.district && (
-                  <div>
-                    <dt>District</dt>
-                    <dd>{result.district}</dd>
-                  </div>
-                )}
-                {result.location && (
-                  <div>
-                    <dt>Location</dt>
-                    <dd>{result.location}</dd>
-                  </div>
-                )}
-                <div>
-                  <dt>Forecast date</dt>
-                  <dd>{result.forecast_date}</dd>
-                </div>
-                <div>
-                  <dt>Model</dt>
-                  <dd>{result.model}</dd>
-                </div>
-                <div>
-                  <dt>Typical error (MAE)</dt>
-                  <dd>
-                    {result.typical_error_mae == null
-                      ? "Not validated for this model"
-                      : `± ${result.typical_error_mae.toFixed(3)} °C`}
-                  </dd>
-                </div>
+              )}
+
+              <dl className="result-meta" style={{ marginTop: 16 }}>
+                <div><dt>Location</dt><dd>{result.location.name}</dd></div>
+                {result.location.district && <div><dt>District</dt><dd>{result.location.district}</dd></div>}
+                <div><dt>State / UT</dt><dd>{result.location.state}</dd></div>
+                <div><dt>Date</dt><dd>{result.forecast_date}</dd></div>
+                <div><dt>Data source</dt><dd>{result.source}</dd></div>
+                {result.model && <div><dt>Model</dt><dd>{result.model}</dd></div>}
               </dl>
+              {result.message && <p className="chart-note">{result.message}</p>}
             </div>
           )}
         </Card>
+        </div>
       </div>
-
-      {/* Current conditions panel — AccuWeather style */}
-      <Card
-        title="Current Weather Context"
-        icon={<SunIcon />}
-        subtitle={
-          latest
-            ? `Latest measurements for ${locStr} — real-time data from PostgreSQL.`
-            : undefined
-        }
-      >
-        {recent.loading && <Spinner label="Loading weather history…" />}
-        {recent.error && <ErrorBanner message={recent.error.message} />}
-        {!recent.loading && !recent.error && recentRecords.length === 0 && state && (
-          <EmptyNote
-            title="No recent weather records"
-            hint="The backend returned no recent measurements for this selection."
-          />
-        )}
-        {!recent.loading && !recent.error && recentRecords.length === 0 && !state && (
-          <EmptyNote
-            title="Select a region first"
-            hint="Recent measurements for the selected region will appear here."
-          />
-        )}
-        {latest && (
-          <div className="stat-chips" style={{ marginBottom: 16 }}>
-            <StatChip
-              icon={<ThermometerIcon />}
-              label={`Avg Temperature · ${latest.date}`}
-              value={`${latest.temp_avg.toFixed(1)} °C`}
-            />
-            <StatChip
-              icon={<GaugeIcon />}
-              label="Day Range"
-              value={`${latest.temp_min.toFixed(0)}° – ${latest.temp_max.toFixed(0)}°`}
-            />
-            <StatChip
-              icon={<DropletIcon />}
-              label="Humidity"
-              value={`${latest.humidity.toFixed(0)}%`}
-            />
-            <StatChip
-              icon={<RainIcon />}
-              label="Rainfall"
-              value={`${latest.rainfall.toFixed(1)} mm`}
-            />
-          </div>
-        )}
-        {recentRecords.length > 0 && (
-          <Suspense fallback={<div className="chart-box chart-loading" role="status">Loading the weather chart…</div>}>
-            <ForecastWeatherChart records={recentRecords} result={result} locationLabel={locStr} />
-          </Suspense>
-        )}
-      </Card>
 
       <Card
         title="India Temperature Forecast Map"
         icon={<MapIcon />}
-        subtitle="State/UT ML forecast overlay with a separate live-weather city layer. Click a state to view its 7-day ML forecast."
+        subtitle="The map remains a separate state/UT-level ML layer. Selecting a state puts its name into the location search; choose a geocoded result before requesting weather."
       >
         <DeferredIndiaMap
-          selectedState={state}
-          forecastDate={date}
-          onSelectState={(s) => {
-            setState(s);
-            setDistrict("");
-            setLocation("");
-            setDateTouched(false);
+          selectedState={shownState}
+          forecastDate={forecastDate}
+          onSelectState={(state) => {
+            setLocationQuery(state);
+            setSelectedLocation(null);
             setResult(null);
-            setPredictError(null);
-            if (onSelectState) onSelectState(s);
+            setLookupError(null);
+            onSelectState?.(state);
           }}
           height="540px"
         />
       </Card>
 
-      <Card title="How the Prediction Works" icon={<ChipIcon />}>
-        <div className="pipeline" aria-label="prediction pipeline">
-          <span className="pipeline-step">
-            <DatabaseIcon /> Historical Weather
-          </span>
+      <Card title="How the Result Is Chosen" icon={<ChipIcon />}>
+        <div className="pipeline" aria-label="weather source selection">
+          <span className="pipeline-step"><LocationPinIcon /> Selected India location</span>
           <span className="arrow" aria-hidden="true">→</span>
-          <span className="pipeline-step">
-            <SlidersIcon /> Feature Engineering
-          </span>
+          <span className="pipeline-step"><DatabaseIcon /> Exact matching history</span>
           <span className="arrow" aria-hidden="true">→</span>
-          <span className="pipeline-step">
-            <ChipIcon /> LightGBM
-          </span>
+          <span className="pipeline-step"><SlidersIcon /> ML when supported</span>
           <span className="arrow" aria-hidden="true">→</span>
-          <span className="pipeline-step">
-            <ThermometerIcon /> 7-Day Avg Temperature
-          </span>
+          <span className="pipeline-step"><CloudSunIcon /> Open-Meteo fallback</span>
         </div>
         <p className="chart-note">
-          For each prediction the backend builds the same input the model was trained on:
-          lag features (temperature of the previous days), 3-day and 7-day rolling averages,
-          seasonal/monthly encoding, and the state and season identifiers. You never enter
-          weather values manually — only a location and a date.
+          The backend keeps the saved model’s existing feature contract unchanged. It never turns a city search into a state-average ML result: without an exact matching history, it calls Open-Meteo with the coordinates you selected and labels that result as API weather.
+        </p>
+        <p className="chart-note">
+          Historical location catalog: <a href="https://www.geonames.org/" target="_blank" rel="noreferrer">GeoNames</a> (CC BY 3.0). Historical reanalysis data: <a href="https://open-meteo.com/" target="_blank" rel="noreferrer">Open-Meteo</a> (CC BY 4.0).
         </p>
       </Card>
     </div>

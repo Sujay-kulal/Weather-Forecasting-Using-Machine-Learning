@@ -21,6 +21,49 @@ export interface LocationsResponse {
   locations: string[];
 }
 
+export type LocationScope = "place" | "district" | "state";
+
+/** A concrete India location selected from backend geocoding. */
+export interface LocationOption {
+  name: string;
+  district: string;
+  state: string;
+  country: string;
+  country_code: "IN";
+  latitude: number;
+  longitude: number;
+  scope: LocationScope;
+  geoname_id?: number | null;
+}
+
+export interface LocationSearchResponse {
+  locations: LocationOption[];
+}
+
+export interface WeatherDay {
+  date: string;
+  temperature: number;
+}
+
+/** A normalized, accurately labelled result from ML or Open-Meteo. */
+export interface LocationWeatherResponse {
+  location: LocationOption;
+  forecast_date: string;
+  source: "ML Prediction" | "Historical Observations" | "Historical Reanalysis" | "Current Weather" | "Weather API Forecast";
+  temperature: number;
+  temperature_min?: number | null;
+  temperature_max?: number | null;
+  humidity?: number | null;
+  rainfall?: number | null;
+  wind_speed?: number | null;
+  weather_code?: number | null;
+  weather_description?: string | null;
+  forecast: WeatherDay[];
+  model?: string | null;
+  last_known?: LastKnown | null;
+  message?: string | null;
+}
+
 export interface WeatherRecord {
   date: string; // YYYY-MM-DD
   state: string;

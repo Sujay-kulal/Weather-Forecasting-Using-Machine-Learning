@@ -381,6 +381,11 @@ body {
   align-items: start;
 }
 
+.weather-result-anchor {
+  min-width: 0;
+  scroll-margin-top: 20px;
+}
+
 .forecast-form {
   display: flex;
   flex-direction: column;
@@ -488,6 +493,102 @@ button:focus-visible {
 
 .forecast-form .hint:last-child {
   margin-top: 10px;
+}
+
+/* Location autocomplete — options retain their actual district/state identity. */
+.location-autocomplete {
+  position: relative;
+}
+
+.autocomplete-loading {
+  padding-top: 8px;
+}
+
+.autocomplete-loading .spinner-row {
+  padding: 0;
+}
+
+.location-suggestions {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 5px);
+  right: 0;
+  left: 0;
+  max-height: 272px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 5px;
+  list-style: none;
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+
+.location-suggestions li + li {
+  border-top: 1px solid var(--border);
+}
+
+.location-suggestions button {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 3px;
+  padding: 10px 12px;
+  color: var(--text);
+  text-align: left;
+  background: transparent;
+  border: 0;
+  border-radius: calc(var(--radius) - 2px);
+  cursor: pointer;
+}
+
+.location-suggestions button:hover,
+.location-suggestions button:focus-visible {
+  background: #fff3ed;
+}
+
+.location-suggestions strong {
+  font-size: 13px;
+}
+
+.location-suggestions span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.selected-location {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: -2px 0 14px;
+  padding: 11px 12px;
+  color: var(--text);
+  background: #fff8f5;
+  border: 1px solid #f7c6ae;
+  border-radius: var(--radius);
+}
+
+.selected-location > svg {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  color: var(--aw-orange);
+}
+
+.selected-location div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.selected-location strong {
+  font-size: 12.5px;
+}
+
+.selected-location span {
+  color: var(--text-secondary);
+  font-size: 11.5px;
 }
 
 /* ============================================================
@@ -682,6 +783,29 @@ button:focus-visible {
   text-transform: uppercase;
   letter-spacing: 0.1em;
   color: var(--aw-orange);
+}
+
+.weather-source-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 7px;
+  padding: 3px 9px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+}
+
+.weather-source-badge.ml {
+  color: #ffbf8c;
+  background: rgba(242, 101, 34, 0.16);
+}
+
+.weather-source-badge.provider {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .result-value {

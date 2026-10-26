@@ -207,6 +207,8 @@ def downgrade(conn: Connection) -> None:
     conn.execute(text("ALTER TABLE weather_data DROP COLUMN IF EXISTS district"))
     conn.execute(text("ALTER TABLE predictions DROP COLUMN IF EXISTS location"))
     conn.execute(text("ALTER TABLE predictions DROP COLUMN IF EXISTS district"))
+    conn.execute(text("DROP TABLE IF EXISTS weather_import_batches"))
+    conn.execute(text("DROP TABLE IF EXISTS weather_location_metadata"))
 
 
 def main() -> None:

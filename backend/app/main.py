@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import check_connection
-from app.routes import admin, health, prediction, weather
+from app.routes import admin, health, location_weather, prediction, weather
 from app.services.ingestion_service import run_ingestion_with_lock
 
 logging.basicConfig(level=logging.INFO,
@@ -101,6 +101,9 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(admin.router)
+# Register concrete location routes before the legacy dynamic /weather/{state}
+# route, so automatic lookup can never be interpreted as a state name.
+app.include_router(location_weather.router)
 app.include_router(weather.states_router)
 app.include_router(weather.router)
 app.include_router(prediction.router)

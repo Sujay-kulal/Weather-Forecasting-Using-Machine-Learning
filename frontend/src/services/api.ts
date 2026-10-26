@@ -9,6 +9,9 @@ import type {
   PredictionsResponse,
   StatesResponse,
   DistrictsResponse,
+  LocationOption,
+  LocationSearchResponse,
+  LocationWeatherResponse,
   LocationsResponse,
   WeatherResponse,
 } from "../types/api";
@@ -70,6 +73,23 @@ export function getLocations(state: string, district: string): Promise<Locations
   return request<LocationsResponse>(
     `/locations/${encodeURIComponent(state)}/${encodeURIComponent(district)}`
   );
+}
+
+// ---------------- Location autocomplete and automatic lookup ----------------
+export function searchLocations(query: string, limit = 8): Promise<LocationSearchResponse> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  return request<LocationSearchResponse>(`/locations/search?${params}`);
+}
+
+export function getLocationWeather(
+  location: LocationOption,
+  forecastDate: string,
+): Promise<LocationWeatherResponse> {
+  return request<LocationWeatherResponse>("/weather/lookup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ location, forecast_date: forecastDate }),
+  });
 }
 
 // ---------------- GET /weather/... ----------------
