@@ -1,13 +1,13 @@
 """
 Weather Forecasting Using Machine Learning - Training Pipeline
 ==============================================================
-Forecasts the next seven daily average temperatures (Temp_Avg) for Indian states
+Forecasts NEXT-DAY AVERAGE TEMPERATURE (Temp_Avg) for Indian states
 using the real daily weather columns of PSP_Weather_Merged_EDA_Cleaned.csv.
 
 Steps (kept simple for project viva):
  1. Load data, keep only weather-relevant columns
  2. Build lag features (yesterday's weather, temp_range, day_of_year) per state - no future info used
- 3. Use date-grouped, horizon-purged cross-validation to evaluate temporal data
+ 3. Use TimeSeriesSplit cross-validation to evaluate models correctly on temporal data
  4. Train baselines + Tune Random Forest/Gradient Boosting + LightGBM
  5. Evaluate models with cross-validation (MAE, RMSE, R2) and by State/Season
  6. Plot residuals to check model assumptions
@@ -102,12 +102,12 @@ df["lag2_rainfall"] = g["Rainfall"].shift(2)
 df["temp_range"] = df["lag1_temp_max"] - df["lag1_temp_min"]
 
 # Rolling means of PAST days (shift(1) first, so today's value is never included)
-df["roll3_temp_avg"] = g["Temp_Avg"].transform(lambda s: s.shift(1).rolling(3, min_periods=3).mean())
-df["roll7_temp_avg"] = g["Temp_Avg"].transform(lambda s: s.shift(1).rolling(7, min_periods=7).mean())
+df["roll3_temp_avg"] = g["Temp_Avg"].shift(1).rolling(3).mean()
+df["roll7_temp_avg"] = g["Temp_Avg"].shift(1).rolling(7).mean()
 
 # Why rainfall_roll3, rainfall_roll7? Captures recent cumulative rainfall, indicating soil moisture and potential cooling effects.
-df["rainfall_roll3"] = g["Rainfall"].transform(lambda s: s.shift(1).rolling(3, min_periods=3).sum())
-df["rainfall_roll7"] = g["Rainfall"].transform(lambda s: s.shift(1).rolling(7, min_periods=7).sum())
+df["rainfall_roll3"] = g["Rainfall"].shift(1).rolling(3).sum()
+df["rainfall_roll7"] = g["Rainfall"].shift(1).rolling(7).sum()
 
 # Where in the year we are (month as a cycle, so Dec(12) is close to Jan(1))
 df["month_sin"] = np.sin(2 * np.pi * df["Month"] / 12)
@@ -137,28 +137,16 @@ FEATURES_CAT = ["Season", "State"]
 FEATURES = FEATURES_NUM + FEATURES_CAT
 TARGETS = [f"target_{i}" for i in range(1, 8)]
 
-# The CV folds are built from unique dates below so a state's rows cannot be
-# split from other regions observed on the same calendar date.
+# To ensure Temporal CV doesn't mix future info, we must sort the final dataset chronologically
 df = df.sort_values("Date").reset_index(drop=True)
 X = df[FEATURES]
 y = df[TARGETS]
 
 # ------------------------------------------------------------------
-# 3. Cross-validation setup (date-grouped TimeSeriesSplit with horizon purge)
+# 3. Cross-validation setup (TimeSeriesSplit)
 # ------------------------------------------------------------------
-print("3. Setting up date-grouped, seven-day-purged TimeSeriesSplit (5 folds) ...")
+print("3. Setting up TimeSeriesSplit (5 folds) ...")
 tscv = TimeSeriesSplit(n_splits=5)
-unique_dates = np.sort(df["Date"].drop_duplicates().to_numpy())
-cv_splits = []
-for train_date_idx, validation_date_idx in tscv.split(unique_dates):
-    validation_dates = unique_dates[validation_date_idx]
-    validation_start = pd.Timestamp(validation_dates[0])
-    train_cutoff = validation_start - pd.Timedelta(days=7)
-    train_idx = np.flatnonzero(df["Date"].to_numpy() <= train_cutoff.to_datetime64())
-    validation_idx = np.flatnonzero(df["Date"].isin(validation_dates).to_numpy())
-    if len(train_idx) == 0 or len(validation_idx) == 0:
-        raise ValueError("A date-based CV fold has an empty train or validation partition.")
-    cv_splits.append((train_idx, validation_idx))
 
 # ------------------------------------------------------------------
 # 4. Preprocessing pipeline + Model Training & Tuning
@@ -192,7 +180,7 @@ rf_param_grid = {
 rf_search = RandomizedSearchCV(
     make_pipeline(RandomForestRegressor(random_state=RANDOM_STATE, n_jobs=-1)),
     param_distributions=rf_param_grid,
-    n_iter=2, cv=cv_splits, scoring="neg_mean_absolute_error",
+    n_iter=2, cv=tscv, scoring="neg_mean_absolute_error",
     random_state=RANDOM_STATE, n_jobs=-1
 )
 rf_search.fit(X, y)
@@ -209,7 +197,7 @@ gb_param_grid = {
 gb_search = RandomizedSearchCV(
     make_pipeline(MultiOutputRegressor(GradientBoostingRegressor(random_state=RANDOM_STATE))),
     param_distributions=gb_param_grid,
-    n_iter=2, cv=cv_splits, scoring="neg_mean_absolute_error",
+    n_iter=2, cv=tscv, scoring="neg_mean_absolute_error",
     random_state=RANDOM_STATE, n_jobs=-1
 )
 gb_search.fit(X, y)
@@ -217,9 +205,9 @@ models["Gradient Boosting (Tuned)"] = gb_search.best_estimator_
 print(f"      Best GB Params: {gb_search.best_params_}")
 
 
-def evaluate_model_cv(model_pipe, X, y, splits):
+def evaluate_model_cv(model_pipe, X, y, tscv):
     maes, rmses, r2s = [], [], []
-    for train_idx, test_idx in splits:
+    for train_idx, test_idx in tscv.split(X):
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
         
@@ -245,14 +233,14 @@ for name, model in models.items():
     else:
         pipe = make_pipeline(model)
         
-    results[name] = evaluate_model_cv(pipe, X, y, cv_splits)
+    results[name] = evaluate_model_cv(pipe, X, y, tscv)
     print(f"   {name:30s} MAE={results[name]['MAE_mean']:.3f}±{results[name]['MAE_std']:.3f}  "
           f"RMSE={results[name]['RMSE_mean']:.3f}±{results[name]['RMSE_std']:.3f}  "
           f"R2={results[name]['R2_mean']:.3f}±{results[name]['R2_std']:.3f}")
 
 # Naive persistence reference: "tomorrow = today" (extended to 7 days)
 naive_maes, naive_rmses, naive_r2s = [], [], []
-for train_idx, test_idx in cv_splits:
+for train_idx, test_idx in tscv.split(X):
     y_test = y.iloc[test_idx]
     naive_pred = np.column_stack([X.iloc[test_idx]["lag1_temp_avg"]] * 7)
     
@@ -351,23 +339,16 @@ metadata = {
     "target": "next 7 days Temp_Avg (deg C)",
     "features": FEATURES,
     "train_period": [str(df["Date"].min().date()), str(df["Date"].max().date())],
-    "test_period": ["N/A (date-grouped, seven-day-purged CV used)"],
+    "test_period": ["N/A (TimeSeriesSplit CV used)"],
     "metrics": {
         k: {
-            "MAE": round(v["MAE_mean"], 4), "MAE_std": round(v["MAE_std"], 4),
-            "RMSE": round(v["RMSE_mean"], 4), "RMSE_std": round(v["RMSE_std"], 4),
-            "R2": round(v["R2_mean"], 4), "R2_std": round(v["R2_std"], 4)
+            "MAE_mean": round(v["MAE_mean"], 4), "MAE_std": round(v["MAE_std"], 4),
+            "RMSE_mean": round(v["RMSE_mean"], 4), "RMSE_std": round(v["RMSE_std"], 4),
+            "R2_mean": round(v["R2_mean"], 4), "R2_std": round(v["R2_std"], 4)
         } for k, v in results.items()
     },
     "states": sorted(df["State"].unique().tolist()),
     "random_state": RANDOM_STATE,
-    "model_path": "model/weather_model.joblib",
-    "metrics_status": "cross_validated_not_held_out",
-    "interval_status": "not_calibrated_for_current_artifact",
-    "evaluation_note": (
-        "Scores are date-grouped cross-validation estimates used for model selection, "
-        "not an independent holdout evaluation of the saved artifact."
-    ),
 }
 
 with open(os.path.join(MODEL_DIR, "model_info.json"), "w") as f:

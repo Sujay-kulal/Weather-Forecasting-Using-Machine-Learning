@@ -5,8 +5,7 @@ import logging
 import argparse
 import urllib.request
 import urllib.error
-from datetime import datetime, date, timedelta
-from zoneinfo import ZoneInfo
+from datetime import datetime, date
 from pathlib import Path
 
 # Make `app` importable
@@ -79,24 +78,6 @@ def fetch_forecast_for_state(state: str, lat: float, lon: float, days_back: int 
                 raise
             time.sleep(2 ** attempt)
 
-
-def upsert_weather_batch(session, records: list[dict]) -> int:
-    """Idempotently upsert one batch using the model's full location key."""
-    if not records:
-        return 0
-    stmt = pg_insert(WeatherData).values(records)
-    session.execute(stmt.on_conflict_do_update(
-        constraint="uq_weather_state_dist_loc_date",
-        set_={
-            "temp_max": stmt.excluded.temp_max,
-            "temp_min": stmt.excluded.temp_min,
-            "temp_avg": stmt.excluded.temp_avg,
-            "humidity": stmt.excluded.humidity,
-            "rainfall": stmt.excluded.rainfall,
-        },
-    ))
-    return len(records)
-
 def update_weather(days_back: int = 7, session=None) -> int:
     """
     Ingest recent weather data using the Open-Meteo Forecast API (past_days)
@@ -109,7 +90,6 @@ def update_weather(days_back: int = 7, session=None) -> int:
 
     logger.info(f"Starting weather update (days_back={days_back}) for {len(STATE_COORDS)} states...")
     added_or_updated_total = 0
-    ist_yesterday = datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=1)
 
     try:
         for state, (lat, lon) in STATE_COORDS.items():
@@ -132,8 +112,6 @@ def update_weather(days_back: int = 7, session=None) -> int:
                     continue
 
                 d = datetime.strptime(times[i], "%Y-%m-%d").date()
-                if d > ist_yesterday:
-                    continue  # Keep only dates <= yesterday (IST); today is a forecast, not observation
                 buffer.append({
                     "state": state,
                     "district": "",
@@ -147,7 +125,18 @@ def update_weather(days_back: int = 7, session=None) -> int:
                 })
 
             if buffer:
-                upsert_weather_batch(session, buffer)
+                stmt = pg_insert(WeatherData).values(buffer)
+                upsert_stmt = stmt.on_conflict_do_update(
+                    constraint="uq_weather_state_date",
+                    set_={
+                        "temp_max": stmt.excluded.temp_max,
+                        "temp_min": stmt.excluded.temp_min,
+                        "temp_avg": stmt.excluded.temp_avg,
+                        "humidity": stmt.excluded.humidity,
+                        "rainfall": stmt.excluded.rainfall,
+                    }
+                )
+                session.execute(upsert_stmt)
                 session.commit()
                 added_or_updated_total += len(buffer)
                 logger.info(f"[{state}] Upserted {len(buffer)} records.")

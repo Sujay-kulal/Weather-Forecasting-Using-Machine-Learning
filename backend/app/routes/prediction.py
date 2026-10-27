@@ -7,10 +7,7 @@ POST /predict implements the Phase 2 pipeline:
   predictions table -> JSON response. No future data, no stale data,
   no hardcoded values.
 """
-from datetime import date as date_type, datetime, timedelta
-import logging
-from typing import Dict, Optional
-from zoneinfo import ZoneInfo
+from datetime import date as date_type, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select
@@ -19,26 +16,19 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import Prediction, WeatherData
 from app.schemas import (ModelInfoResponse, PredictionRecord, PredictionRequest,
-                         PredictionResponse, PredictionsResponse)
-from app.services import feature_service, model_service
+                         PredictionResponse, PredictionsResponse, LiveMetricsResponse)
+from app.services import feature_service, model_service, weather_forecast_service
+from app.services.metrics_service import rolling_live_metrics
+from app.services.prediction_store import upsert_prediction
+from app.services.temperature import round_temperature
 from app.services.feature_service import (MAX_STALENESS_DAYS, REQUIRED_HISTORY,
                                           build_features)
 from app.services.prediction_cache import prediction_cache
 
 router = APIRouter(tags=["prediction"])
-logger = logging.getLogger("prediction")
-
-
-def default_forecast_target(latest_date: date_type, today_in_india: Optional[date_type] = None) -> date_type:
-    """Choose a non-past target while retaining the newest usable observation."""
-    today = today_in_india or datetime.now(ZoneInfo("Asia/Kolkata")).date()
-    return max(latest_date + timedelta(days=2), today)
-
 
 def _resolve_location_predict(state: str, district: str, location: str, db: Session):
     canonical_state = state.strip().title()
-    if canonical_state == "Other":
-        raise HTTPException(404, detail="Unknown state 'Other'. Call GET /states for the available names.")
     dist = district.strip()
     loc = location.strip()
 
@@ -94,7 +84,7 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
         )
 
     # 3. Refuse stale history: if the newest usable record is far older than
-    #    D-1, the requested target date is too far beyond the latest history.
+    #    D-1, this is not a genuine next-day forecast anymore.
     staleness = (asof - history[0].date).days
     if staleness > MAX_STALENESS_DAYS:
         raise HTTPException(
@@ -104,9 +94,8 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
                    f"A forecast needs data up to ~2 days before the target date.",
         )
 
-    # 4. Check TTLCache for prediction computation. Include the full location
-    # identity so same-state districts can never share a cached forecast.
-    cache_key = (canonical, dist, loc, request.forecast_date, history[0].date)
+    # 4. Check TTLCache for prediction computation, keyed (state, target_date, latest_data_date)
+    cache_key = (canonical, request.forecast_date, history[0].date)
     if cache_key in prediction_cache:
         predicted = prediction_cache[cache_key]
     else:
@@ -118,107 +107,140 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
             prediction_cache[cache_key] = predicted
         except feature_service.InsufficientHistoryError as exc:
             raise HTTPException(422, detail=str(exc))
-        except Exception:
-            logger.exception("Model prediction failed for %s at %s", loc_str, request.forecast_date)
-            raise HTTPException(500, detail="Model prediction failed. Check the server logs.")
+        except Exception as exc:  # model failure -> honest 500, never fake values
+            raise HTTPException(500, detail=f"Model prediction failed: {exc}")
 
     # 5. Store the prediction audit record (MUST write on every call, including cache hits)
-    record = Prediction(
+    upsert_prediction(
+        db,
         state=canonical,
         district=dist,
         location=loc,
         forecast_date=request.forecast_date,
-        predicted_temp_avg=predicted
+        predicted_temp_avg=predicted,
+        model_version=model_service.MODEL_VERSION,
     )
-    db.add(record)
-    db.commit()
 
-    preds_rounded = [round(p, 2) for p in predicted]
-    q = model_service.MODEL_Q
-    temp_lo = [round(p - q, 2) for p in preds_rounded] if q is not None else None
-    temp_hi = [round(p + q, 2) for p in preds_rounded] if q is not None else None
+    daily_forecasts, weather_summary = weather_forecast_service.build_daily_forecasts(
+        history=history,
+        forecast_date=request.forecast_date,
+        predicted_temp_avg=predicted,
+    )
+
+    last_record = history[0]
+    last_known = {
+        "date": str(last_record.date),
+        "temp_avg": last_record.temp_avg,
+        "temp_min": getattr(last_record, "temp_min", None),
+        "temp_max": getattr(last_record, "temp_max", None),
+        "humidity": getattr(last_record, "humidity", None),
+        "rainfall": getattr(last_record, "rainfall", None),
+    }
 
     return PredictionResponse(
         state=canonical,
         district=dist,
         location=loc,
         forecast_date=request.forecast_date,
-        predicted_temp_avg=preds_rounded,
-        temp_lo=temp_lo,
-        temp_hi=temp_hi,
-        interval_status=model_service.INTERVAL_STATUS,
+        predicted_temp_avg=[round_temperature(p) for p in predicted],
+        unit="deg C",
         model=model_service.MODEL_NAME,
         typical_error_mae=model_service.MODEL_MAE,
-        last_known={"date": str(history[0].date), "temp_avg": history[0].temp_avg},
+        last_known=last_known,
+        daily_forecasts=daily_forecasts,
+        weather_summary=weather_summary,
     )
 
 
 @router.get("/predictions", response_model=PredictionsResponse)
-def prediction_history(limit: int = Query(50, ge=1, le=500),
-                       offset: int = Query(0, ge=0),
-                       db: Session = Depends(get_db)):
-    """Previously generated predictions, newest first."""
+def prediction_history(
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+    state: str | None = Query(None, min_length=1, max_length=100),
+    model_version: str | None = Query(None, min_length=1, max_length=100),
+    db: Session = Depends(get_db),
+):
+    """Paginated prediction history with optional state and model filters."""
+    filters = []
+    if state:
+        filters.append(func.lower(Prediction.state) == state.strip().casefold())
+    if model_version:
+        filters.append(Prediction.model_version == model_version.strip())
+
+    total = db.execute(
+        select(func.count()).select_from(Prediction).where(*filters)
+    ).scalar_one()
     rows = db.execute(
-        select(Prediction).order_by(Prediction.created_at.desc(), Prediction.id.desc())
+        select(Prediction).where(*filters)
+        .order_by(Prediction.created_at.desc(), Prediction.id.desc())
         .offset(offset).limit(limit)
     ).scalars().all()
     return PredictionsResponse(
-        count=len(rows),
+        count=total,
         predictions=[PredictionRecord(id=r.id, state=r.state, district=r.district, location=r.location,
                                       forecast_date=r.forecast_date,
                                       predicted_temp_avg=r.predicted_temp_avg,
+                                      model_version=r.model_version,
+                                      actual_temp=r.actual_temp,
                                       created_at=r.created_at) for r in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 
 @router.get("/model-info", response_model=ModelInfoResponse)
 def model_info(response: Response):
     """Information about the trained model (from model/model_info.json)."""
-    response.headers["Cache-Control"] = "no-store"
+    response.headers["Cache-Control"] = "public, max-age=300"
     info = model_service.model_info
     return ModelInfoResponse(
         model_name=info["best_model"],
+        loaded_artifact_version=model_service.MODEL_VERSION,
         target=info["target"],
         features=info["features"],
         metrics=info["metrics"],
         train_period=info["train_period"],
         test_period=info["test_period"],
-        trained_through=info.get("trained_through"),
-        q=info.get("q"),
-        coverage_90=info.get("coverage_90"),
-        metrics_status=model_service.MODEL_METRICS_STATUS,
-        interval_status=model_service.INTERVAL_STATUS,
-        evaluation_note=info.get("evaluation_note"),
+        calibration_period=info.get("calibration_period"),
+        metrics_status=info.get("metrics_status"),
+        validated_for_artifact=info.get("validated_for_artifact"),
+        evaluation=info.get("evaluation"),
     )
 
 
-@router.get("/forecast/all", response_model=Dict[str, float])
+@router.get("/metrics/live", response_model=LiveMetricsResponse)
+def live_metrics(db: Session = Depends(get_db)):
+    """Rolling 30-day MAE for saved model versions against persistence."""
+    return rolling_live_metrics(db)
+
+
+@router.get("/forecast/all", response_model=dict[str, float])
 def forecast_all(
     req: Request,
-    date: Optional[date_type] = Query(None, description="Target forecast date (YYYY-MM-DD). Defaults to the later of today in India and two days after the latest observation."),
-    db: Session = Depends(get_db)
+    day: int = Query(1, ge=1, le=7, description="Forecast horizon day, from 1 to 7"),
+    date: date_type | None = Query(None, description="Forecast start date (YYYY-MM-DD)"),
+    db: Session = Depends(get_db),
 ):
-    """
-    Returns {state: temp_avg} for all 33 states (excluding 'Other').
-    Uses existing prediction path (build_features + model_service.predict) and TTLCache.
-    """
+    """Return one selected horizon value per model-supported state."""
     if date is None:
         latest_date = db.execute(
-            select(func.max(WeatherData.date)).where(WeatherData.state != "Other")
+            select(func.max(WeatherData.date)).where(
+                WeatherData.state != "Other",
+                WeatherData.district == "",
+                WeatherData.location == "",
+            )
         ).scalar()
-        if not latest_date:
+        if latest_date is None:
             raise HTTPException(404, detail="No weather data available")
-        target_date = default_forecast_target(latest_date)
+        target_date = latest_date + timedelta(days=2)
     else:
         target_date = date
 
     asof = target_date - timedelta(days=1)
     pipeline = getattr(req.app.state, "pipeline", None)
-
-    # 33 canonical states excluding 'Other'
-    states = [s for s in model_service.model_info.get("states", []) if s != "Other"]
-
-    results: Dict[str, float] = {}
+    states = [state for state in model_service.model_info.get("states", []) if state != "Other"]
+    results: dict[str, float] = {}
     for state in states:
         history = db.execute(
             select(WeatherData)
@@ -226,27 +248,22 @@ def forecast_all(
                 WeatherData.state == state,
                 WeatherData.district == "",
                 WeatherData.location == "",
-                WeatherData.date < asof
+                WeatherData.date < asof,
             )
             .order_by(WeatherData.date.desc())
             .limit(REQUIRED_HISTORY)
         ).scalars().all()
-
-        if len(history) < REQUIRED_HISTORY:
+        if len(history) < REQUIRED_HISTORY or (asof - history[0].date).days > MAX_STALENESS_DAYS:
             continue
-
-        cache_key = (state, target_date, history[0].date)
-        if cache_key in prediction_cache:
-            predicted = prediction_cache[cache_key]
-        else:
-            try:
+        key = (state, target_date, history[0].date)
+        try:
+            predicted = prediction_cache.get(key)
+            if predicted is None:
                 features = build_features(history, state, asof)
                 predicted = model_service.predict(features, pipeline=pipeline)
-                prediction_cache[cache_key] = predicted
-            except Exception:
-                continue
-
-        results[state] = round(predicted[0], 2)
-
+                prediction_cache[key] = predicted
+            if len(predicted) >= day:
+                results[state] = round_temperature(predicted[day - 1])
+        except Exception:
+            continue
     return results
-

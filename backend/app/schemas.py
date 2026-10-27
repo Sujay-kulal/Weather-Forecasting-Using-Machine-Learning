@@ -5,9 +5,11 @@ These drive the automatic Swagger documentation at /docs.
 """
 from datetime import date as date_type
 from datetime import datetime
-from typing import List, Literal, Optional
+from typing import List, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
+
+from app.services.temperature import normalize_temperature
 
 
 # ----------------------------- requests -----------------------------
@@ -20,20 +22,54 @@ class PredictionRequest(BaseModel):
 
 
 # ----------------------------- responses -----------------------------
+class DayForecast(BaseModel):
+    day: int = Field(..., description="Horizon day index 1 to 7")
+    date: date_type = Field(..., description="Forecast date (YYYY-MM-DD)")
+    temp_avg: float = Field(..., description="Predicted average temperature in deg C")
+    temp_min: float = Field(..., description="Predicted low temperature in deg C")
+    temp_max: float = Field(..., description="Predicted high temperature in deg C")
+    feels_like: float = Field(..., description="Apparent / 'feels like' temperature in deg C")
+    humidity: float = Field(..., description="Estimated relative humidity in %")
+    rainfall: float = Field(..., description="Expected precipitation in mm")
+    rain_probability: int = Field(..., description="Chance of rain in % (0-100)")
+    condition: str = Field(..., description="Weather condition status, e.g. 'Clear & Sunny'")
+    condition_icon: str = Field(..., description="Icon identifier, e.g. 'sun', 'cloud-sun', 'rain'")
+    comfort: str = Field(..., description="Comfort category, e.g. 'Pleasant & Comfortable'")
+    dew_point: float = Field(..., description="Estimated dew point in deg C")
+    summary: str = Field(..., description="Brief day summary and advisory")
+
+    @field_validator("temp_avg", "temp_min", "temp_max", "feels_like", "dew_point", mode="before")
+    @classmethod
+    def normalize_day_temperatures(cls, value):
+        return normalize_temperature(value)
+
+
 class PredictionResponse(BaseModel):
     state: str
     district: str = ""
     location: str = ""
     forecast_date: date_type
     predicted_temp_avg: list[float] = Field(..., description="Predicted Temp_Avg for next 7 days in deg C")
-    temp_lo: Optional[list[float]] = Field(None, description="Lower bound when a calibrated interval is available")
-    temp_hi: Optional[list[float]] = Field(None, description="Upper bound when a calibrated interval is available")
-    interval_status: str = "unknown"
     unit: str = "deg C"
     model: str = Field(..., description="Model name that produced the prediction")
     typical_error_mae: Optional[float] = Field(None, description="Test-set MAE of the model")
-    last_known: Optional[dict] = Field(None, description="Most recent measurement used "
-                                                         "(date + temp_avg)")
+    last_known: Optional[dict] = Field(None, description="Most recent measurement used")
+    daily_forecasts: Optional[List[DayForecast]] = Field(None, description="Comprehensive 7-day multi-parameter forecasts")
+    weather_summary: Optional[str] = Field(None, description="Overall summary of the 7-day forecast")
+
+    @field_validator("predicted_temp_avg", mode="before")
+    @classmethod
+    def normalize_predictions(cls, values):
+        return [normalize_temperature(value) for value in values]
+
+    @field_validator("last_known", mode="before")
+    @classmethod
+    def normalize_last_known(cls, value):
+        if isinstance(value, dict):
+            for k in ("temp_avg", "temp_min", "temp_max"):
+                if k in value and value[k] is not None:
+                    value[k] = normalize_temperature(value[k])
+        return value
 
 
 class WeatherRecord(BaseModel):
@@ -46,6 +82,11 @@ class WeatherRecord(BaseModel):
     temp_avg: float
     humidity: float
     rainfall: float
+
+    @field_validator("temp_max", "temp_min", "temp_avg", mode="before")
+    @classmethod
+    def normalize_weather_temperatures(cls, value):
+        return normalize_temperature(value)
 
 
 class WeatherResponse(BaseModel):
@@ -80,106 +121,53 @@ class PredictionRecord(BaseModel):
     location: str = ""
     forecast_date: date_type
     predicted_temp_avg: list[float]
+    model_version: Optional[str] = None
+    actual_temp: Optional[float] = None
     created_at: datetime
+
+    @field_validator("predicted_temp_avg", mode="before")
+    @classmethod
+    def normalize_predictions(cls, values):
+        return [normalize_temperature(value) for value in values]
+
+    @field_validator("actual_temp", mode="before")
+    @classmethod
+    def normalize_actual(cls, value):
+        return normalize_temperature(value) if value is not None else value
 
 
 class PredictionsResponse(BaseModel):
     count: int
     predictions: List[PredictionRecord]
+    total: int
+    limit: int
+    offset: int
+
+
+class LiveModelMetrics(BaseModel):
+    model_version: str
+    sample_count: int
+    model_mae: Optional[float] = None
+    persistence_mae: Optional[float] = None
+    skill_vs_persistence: Optional[float] = None
+
+
+class LiveMetricsResponse(BaseModel):
+    rolling_days: int
+    period_start: date_type
+    period_end: date_type
+    models: List[LiveModelMetrics]
 
 
 class ModelInfoResponse(BaseModel):
     model_name: str
+    loaded_artifact_version: str
     target: str
     features: List[str]
     metrics: dict
     train_period: List[str]
     test_period: List[str]
-    trained_through: Optional[str] = None
-    q: Optional[float] = None
-    coverage_90: Optional[float] = None
-    metrics_status: str = "unknown"
-    interval_status: str = "unknown"
-    evaluation_note: Optional[str] = None
-
-
-# ---------------------- location weather lookup ----------------------
-class LocationOption(BaseModel):
-    """A concrete India location returned by the geocoding provider.
-
-    The frontend sends this complete object back to ``/weather/lookup`` so
-    weather requests always use the coordinates the person selected, rather
-    than trying to infer a nearby city or a state-wide fallback.
-    """
-
-    name: str = Field(..., min_length=1, max_length=160)
-    district: str = Field("", max_length=160)
-    state: str = Field("", max_length=160)
-    country: str = Field("India", max_length=160)
-    country_code: str = Field("IN", min_length=2, max_length=2)
-    latitude: float = Field(..., ge=-90, le=90)
-    longitude: float = Field(..., ge=-180, le=180)
-    scope: Literal["place", "district", "state"] = "place"
-    geoname_id: Optional[int] = Field(
-        None, ge=1, description="Stable GeoNames identity from the selected geocoding result"
-    )
-
-    @field_validator("name", "district", "state", "country", mode="before")
-    @classmethod
-    def strip_location_text(cls, value: object) -> str:
-        return str(value or "").strip()
-
-    @field_validator("country_code", mode="before")
-    @classmethod
-    def normalize_country_code(cls, value: object) -> str:
-        return str(value or "").strip().upper()
-
-    @model_validator(mode="after")
-    def require_india_coordinates(self):
-        # A broad geographic envelope covers mainland India and the island
-        # territories while rejecting accidentally swapped/foreign coordinates.
-        if self.country_code != "IN":
-            raise ValueError("Only locations in India are supported.")
-        if not (6.0 <= self.latitude <= 38.5 and 68.0 <= self.longitude <= 98.5):
-            raise ValueError("Location coordinates must be within India.")
-        return self
-
-
-class LocationSearchResponse(BaseModel):
-    locations: List[LocationOption]
-
-
-class LocationWeatherRequest(BaseModel):
-    location: LocationOption
-    forecast_date: date_type = Field(..., description="Date to retrieve (YYYY-MM-DD).")
-
-
-class WeatherDay(BaseModel):
-    date: date_type
-    temperature: float
-
-
-class LocationWeatherResponse(BaseModel):
-    """Normalized result from an ML prediction or a verified provider response."""
-
-    location: LocationOption
-    forecast_date: date_type
-    source: Literal[
-        "ML Prediction",
-        "Historical Observations",
-        "Historical Reanalysis",
-        "Current Weather",
-        "Weather API Forecast",
-    ]
-    temperature: float
-    temperature_min: Optional[float] = None
-    temperature_max: Optional[float] = None
-    humidity: Optional[float] = None
-    rainfall: Optional[float] = None
-    wind_speed: Optional[float] = None
-    weather_code: Optional[int] = None
-    weather_description: Optional[str] = None
-    forecast: List[WeatherDay] = Field(default_factory=list)
-    model: Optional[str] = None
-    last_known: Optional[dict] = None
-    message: Optional[str] = None
+    calibration_period: Optional[List[str]] = None
+    metrics_status: Optional[str] = None
+    validated_for_artifact: Optional[bool] = None
+    evaluation: Optional[dict] = None

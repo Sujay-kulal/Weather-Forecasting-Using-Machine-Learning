@@ -15,9 +15,10 @@ from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.database import check_connection
-from app.routes import admin, health, location_weather, prediction, weather
+from app.database import Base, check_connection, engine, init_db
+from app.routes import admin, health, prediction, weather
 from app.services.ingestion_service import run_ingestion_with_lock
+from app.services.metrics_service import fill_missing_actuals
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -26,11 +27,12 @@ logger = logging.getLogger("main")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Verify dependencies and optionally start the single-instance scheduler."""
+    """Startup: create tables if missing and verify PostgreSQL connectivity."""
+    init_db()
     if not check_connection():
         logger.error("Cannot connect to PostgreSQL - check DATABASE_URL in backend/.env")
     else:
-        logger.info("PostgreSQL connection OK; schema changes are managed by migrate_db.py")
+        logger.info("PostgreSQL connection OK, tables ready")
     logger.info("Trained model loaded: %s", prediction.model_service.MODEL_NAME)
 
     # Keep model pipeline on app.state
@@ -39,46 +41,41 @@ async def lifespan(app: FastAPI):
     app.state.model_name = prediction.model_service.MODEL_NAME
     app.state.model_mae = prediction.model_service.MODEL_MAE
 
-    # A process-local scheduler is opt-in for development and explicitly
-    # enabled by the single-worker Compose backend. PostgreSQL advisory locks
-    # in run_ingestion_with_lock prevent concurrent ingestion across replicas.
-    scheduler = None
-    if os.getenv("ENABLE_INGESTION_SCHEDULER", "false").strip().lower() in {
-        "1", "true", "yes", "on"
-    }:
-        scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
-        job = scheduler.add_job(
-            run_ingestion_with_lock,
-            trigger=CronTrigger(hour=6, minute=30, timezone="Asia/Kolkata"),
-            id="daily_weather_ingest",
-            max_instances=1,
-            coalesce=True,
-            misfire_grace_time=3600,
-            replace_existing=True,
-        )
-        scheduler.start()
-        app.state.scheduler = scheduler
-        logger.info(
-            "APScheduler started: job_id='%s', next_run_time='%s'",
-            job.id,
-            job.next_run_time,
-        )
-    else:
-        app.state.scheduler = None
-        logger.info("APScheduler is disabled (ENABLE_INGESTION_SCHEDULER is false).")
+    # Start APScheduler: Daily at 06:30 Asia/Kolkata
+    scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
+    scheduler.add_job(
+        run_ingestion_with_lock,
+        trigger=CronTrigger(hour=6, minute=30, timezone="Asia/Kolkata"),
+        id="daily_weather_ingest",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        fill_missing_actuals,
+        trigger=CronTrigger(hour=7, minute=0, timezone="Asia/Kolkata"),
+        id="fill_prediction_actuals",
+        max_instances=1,
+        coalesce=True,
+        misfire_grace_time=3600,
+        replace_existing=True,
+    )
+    scheduler.start()
+    app.state.scheduler = scheduler
+    logger.info("APScheduler BackgroundScheduler started (Daily 06:30 Asia/Kolkata).")
 
     try:
         yield
     finally:
-        if scheduler is not None:
-            scheduler.shutdown(wait=False)
-            logger.info("APScheduler shut down.")
+        scheduler.shutdown(wait=False)
+        logger.info("APScheduler BackgroundScheduler shut down.")
 
 
 app = FastAPI(
     title="Weather Forecasting API",
-    description="Seven-day average temperature forecasting for Indian states "
-                "using a saved LightGBM multi-output model.",
+    description="Next-day average temperature forecasting for Indian states "
+                "using a trained Gradient Boosting model (scikit-learn).",
     version="2.0.0",
     lifespan=lifespan,
 )
@@ -101,30 +98,6 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(admin.router)
-# Register concrete location routes before the legacy dynamic /weather/{state}
-# route, so automatic lookup can never be interpreted as a state name.
-app.include_router(location_weather.router)
 app.include_router(weather.states_router)
 app.include_router(weather.router)
 app.include_router(prediction.router)
-
-
-@app.get("/", tags=["Root"])
-async def root():
-    """API root – returns service info and available endpoints."""
-    return {
-        "service": "Weather Forecasting API",
-        "version": "2.0.0",
-        "description": "ML-powered weather forecasting for Indian states using LightGBM",
-        "docs": "/docs",
-        "endpoints": {
-            "health": "/health",
-            "states": "/states",
-            "model_info": "/model-info",
-            "forecast_all": "/forecast/all",
-            "predict": "/predict",
-            "predictions": "/predictions",
-            "swagger_docs": "/docs",
-            "redoc_docs": "/redoc",
-        },
-    }

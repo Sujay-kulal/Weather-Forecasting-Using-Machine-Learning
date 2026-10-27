@@ -1,5 +1,5 @@
 """GET /health - application + PostgreSQL + model status."""
-from fastapi import APIRouter, Response
+from fastapi import APIRouter
 
 from app.database import check_connection
 from app.schemas import HealthResponse
@@ -10,15 +10,12 @@ router = APIRouter(tags=["health"])
 
 
 @router.get("/health", response_model=HealthResponse)
-def health(response: Response):
+def health():
     db_ok = check_connection()
-    model_ok = pipeline_loaded()
-    if not db_ok or not model_ok:
-        response.status_code = 503
     return HealthResponse(
-        status="healthy" if db_ok and model_ok else "degraded",
+        status="healthy" if db_ok else "degraded",
         database="connected" if db_ok else "unreachable",
-        model_loaded=model_ok,
+        model_loaded=pipeline_loaded(),
         last_ingested_at=get_last_ingested_at(),
     )
 

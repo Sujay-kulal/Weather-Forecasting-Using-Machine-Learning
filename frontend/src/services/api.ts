@@ -155,7 +155,7 @@ export function getModelInfo(): Promise<ModelInfoResponse> {
 }
 
 // ---------------- GET /forecast/all?date= ----------------
-export function getForecastAll(date?: string): Promise<Record<string, number>> {
-  const query = date ? `?date=${encodeURIComponent(date)}` : "";
+export function getForecastAll(date?: string | number): Promise<Record<string, number>> {
+  const query = date != null ? `?date=${encodeURIComponent(String(date))}` : "";
   return request<Record<string, number>>(`/forecast/all${query}`);
 }

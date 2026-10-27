@@ -87,6 +87,27 @@ export interface WeatherResponse {
 export interface LastKnown {
   date: string;
   temp_avg: number;
+  temp_min?: number | null;
+  temp_max?: number | null;
+  humidity?: number | null;
+  rainfall?: number | null;
+}
+
+export interface DayForecast {
+  day: number;
+  date: string;
+  temp_avg: number;
+  temp_min: number;
+  temp_max: number;
+  feels_like: number;
+  humidity: number;
+  rainfall: number;
+  rain_probability: number;
+  condition: string;
+  condition_icon: string;
+  comfort: string;
+  dew_point: number;
+  summary: string;
 }
 
 export interface PredictionResponse {
@@ -102,6 +123,8 @@ export interface PredictionResponse {
   model: string;
   typical_error_mae?: number | null;
   last_known?: LastKnown | null;
+  daily_forecasts?: DayForecast[];
+  weather_summary?: string;
 }
 
 export interface PredictionRecord {

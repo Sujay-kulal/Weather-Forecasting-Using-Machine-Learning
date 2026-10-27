@@ -23,12 +23,19 @@ if not DATABASE_URL:
         "and set your database connection string."
     )
 
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"):]
+
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, echo=False)
 SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
 
 class Base(DeclarativeBase):
     pass
+
+def init_db():
+    Base.metadata.create_all(bind=engine)
+
 
 def get_db():
     """FastAPI dependency: one database session per request."""

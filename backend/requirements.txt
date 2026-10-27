@@ -1,18 +1,12 @@
-# Exact direct dependencies verified with the saved v3 joblib artifact on Python 3.11.9.
-# The model-critical versions (numpy, pandas, scikit-learn, joblib, LightGBM) are pinned
-# so a fresh deployment does not silently load the pickle with a different ML stack.
-fastapi==0.141.1
-pydantic==2.13.5
-starlette==1.6.0
-uvicorn[standard]==0.52.4
-SQLAlchemy==2.0.52
-psycopg[binary]==3.3.5
-pandas==3.0.5
-numpy==2.4.6
-scipy==1.17.1
-scikit-learn==1.9.0
-joblib==1.6.0
-python-dotenv==1.2.3
-lightgbm==4.7.0
-APScheduler==3.11.3
-cachetools==7.2.4
+fastapi
+uvicorn[standard]
+sqlalchemy>=2.0
+psycopg[binary]>=3.1
+pandas
+numpy
+scikit-learn
+joblib
+python-dotenv
+lightgbm
+apscheduler
+cachetools
