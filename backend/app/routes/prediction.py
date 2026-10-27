@@ -17,7 +17,7 @@ from app.database import get_db
 from app.models import Prediction, WeatherData
 from app.schemas import (ModelInfoResponse, PredictionRecord, PredictionRequest,
                          PredictionResponse, PredictionsResponse, LiveMetricsResponse)
-from app.services import feature_service, model_service
+from app.services import feature_service, model_service, weather_forecast_service
 from app.services.metrics_service import rolling_live_metrics
 from app.services.prediction_store import upsert_prediction
 from app.services.temperature import round_temperature
@@ -120,8 +120,22 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
         predicted_temp_avg=predicted,
         model_version=model_service.MODEL_VERSION,
     )
-    db.add(record)
-    db.commit()
+
+    daily_forecasts, weather_summary = weather_forecast_service.build_daily_forecasts(
+        history=history,
+        forecast_date=request.forecast_date,
+        predicted_temp_avg=predicted,
+    )
+
+    last_record = history[0]
+    last_known = {
+        "date": str(last_record.date),
+        "temp_avg": last_record.temp_avg,
+        "temp_min": getattr(last_record, "temp_min", None),
+        "temp_max": getattr(last_record, "temp_max", None),
+        "humidity": getattr(last_record, "humidity", None),
+        "rainfall": getattr(last_record, "rainfall", None),
+    }
 
     return PredictionResponse(
         state=canonical,
@@ -129,9 +143,12 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
         location=loc,
         forecast_date=request.forecast_date,
         predicted_temp_avg=[round_temperature(p) for p in predicted],
+        unit="deg C",
         model=model_service.MODEL_NAME,
         typical_error_mae=model_service.MODEL_MAE,
-        last_known={"date": str(history[0].date), "temp_avg": history[0].temp_avg},
+        last_known=last_known,
+        daily_forecasts=daily_forecasts,
+        weather_summary=weather_summary,
     )
 
 

@@ -57,25 +57,32 @@ export function Spinner(props: { label: string }) {
   );
 }
 
-export function ErrorBanner(props: { message: string; onRetry?: () => void }) {
+export function Skeleton(props: { rows?: number }) {
+  const count = props.rows ?? 3;
   return (
-    <div className="error-banner" role="alert">
-      <AlertIcon />
-      <div>
-        <strong>Something went wrong.</strong>
-        {props.message}
-        {props.onRetry && <button className="retry-button" onClick={props.onRetry}>Try again</button>}
-      </div>
+    <div className="skeleton-box" style={{ display: "flex", flexDirection: "column", gap: 8, padding: "8px 0" }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} style={{ height: 18, background: "rgba(148,163,184,0.18)", borderRadius: 4, width: i === 0 ? "80%" : i === count - 1 ? "60%" : "100%" }} />
+      ))}
     </div>
   );
 }
 
-export function Skeleton(props: { rows?: number }) {
+export function ErrorBanner(props: { message: string; onRetry?: () => void }) {
   return (
-    <div className="skeleton-stack" role="status" aria-label="Loading content">
-      {Array.from({ length: props.rows ?? 3 }, (_, index) => (
-        <span className="skeleton-line" key={index} />
-      ))}
+    <div className="error-banner" role="alert" style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <AlertIcon />
+        <div>
+          <strong>Something went wrong.</strong>
+          {props.message}
+        </div>
+      </div>
+      {props.onRetry && (
+        <button type="button" className="health-retry" onClick={props.onRetry} style={{ flexShrink: 0 }}>
+          Retry
+        </button>
+      )}
     </div>
   );
 }

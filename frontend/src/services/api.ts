@@ -9,13 +9,15 @@ import type {
   PredictionsResponse,
   StatesResponse,
   DistrictsResponse,
+  LocationOption,
+  LocationSearchResponse,
+  LocationWeatherResponse,
   LocationsResponse,
   WeatherResponse,
-  LiveMetricsResponse,
 } from "../types/api";
 
 const BASE_URL: string =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://localhost:8000";
+  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://127.0.0.1:8000";
 
 /** Error carrying the backend's HTTP status and message (or a network failure). */
 export class ApiError extends Error {
@@ -35,11 +37,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
+    let parsedBody = false;
     try {
       const body = await response.json();
+      parsedBody = true;
       if (typeof body?.detail === "string") detail = body.detail;
     } catch {
       /* keep status text */
+    }
+    if (response.status >= 500 && BASE_URL.startsWith("/") && !parsedBody) {
+      detail = "The backend is unavailable or returned an invalid response. Check that FastAPI is running.";
     }
     throw new ApiError(response.status, detail);
   }
@@ -66,6 +73,23 @@ export function getLocations(state: string, district: string): Promise<Locations
   return request<LocationsResponse>(
     `/locations/${encodeURIComponent(state)}/${encodeURIComponent(district)}`
   );
+}
+
+// ---------------- Location autocomplete and automatic lookup ----------------
+export function searchLocations(query: string, limit = 8): Promise<LocationSearchResponse> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  return request<LocationSearchResponse>(`/locations/search?${params}`);
+}
+
+export function getLocationWeather(
+  location: LocationOption,
+  forecastDate: string,
+): Promise<LocationWeatherResponse> {
+  return request<LocationWeatherResponse>("/weather/lookup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ location, forecast_date: forecastDate }),
+  });
 }
 
 // ---------------- GET /weather/... ----------------
@@ -108,10 +132,7 @@ export function predict(
   district?: string,
   location?: string
 ): Promise<PredictionResponse> {
-  const body: { state: string; forecast_date: string; district?: string; location?: string } = {
-    state,
-    forecast_date: forecastDate,
-  };
+  const body: any = { state, forecast_date: forecastDate };
   if (district) body.district = district;
   if (location) body.location = location;
 
@@ -123,29 +144,18 @@ export function predict(
 }
 
 // ---------------- GET /predictions?limit=&offset= ----------------
-export function getPredictions(
-  limit = 50,
-  offset = 0,
-  state?: string,
-  modelVersion?: string,
-): Promise<PredictionsResponse> {
+export function getPredictions(limit = 50, offset = 0): Promise<PredictionsResponse> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-  if (state) params.set("state", state);
-  if (modelVersion) params.set("model_version", modelVersion);
   return request<PredictionsResponse>(`/predictions?${params}`);
-}
-
-// ---------------- GET /forecast/all?day=1..7 ----------------
-export function getForecastAll(day: number): Promise<Record<string, number>> {
-  return request<Record<string, number>>(`/forecast/all?day=${day}`);
 }
 
 // ---------------- GET /model-info ----------------
 export function getModelInfo(): Promise<ModelInfoResponse> {
-  return request<ModelInfoResponse>("/model-info");
+  return request<ModelInfoResponse>("/model-info", { cache: "no-store" });
 }
 
-// ---------------- GET /metrics/live ----------------
-export function getLiveMetrics(): Promise<LiveMetricsResponse> {
-  return request<LiveMetricsResponse>("/metrics/live");
+// ---------------- GET /forecast/all?date= ----------------
+export function getForecastAll(date?: string | number): Promise<Record<string, number>> {
+  const query = date != null ? `?date=${encodeURIComponent(String(date))}` : "";
+  return request<Record<string, number>>(`/forecast/all${query}`);
 }

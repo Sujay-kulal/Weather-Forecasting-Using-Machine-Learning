@@ -22,6 +22,28 @@ class PredictionRequest(BaseModel):
 
 
 # ----------------------------- responses -----------------------------
+class DayForecast(BaseModel):
+    day: int = Field(..., description="Horizon day index 1 to 7")
+    date: date_type = Field(..., description="Forecast date (YYYY-MM-DD)")
+    temp_avg: float = Field(..., description="Predicted average temperature in deg C")
+    temp_min: float = Field(..., description="Predicted low temperature in deg C")
+    temp_max: float = Field(..., description="Predicted high temperature in deg C")
+    feels_like: float = Field(..., description="Apparent / 'feels like' temperature in deg C")
+    humidity: float = Field(..., description="Estimated relative humidity in %")
+    rainfall: float = Field(..., description="Expected precipitation in mm")
+    rain_probability: int = Field(..., description="Chance of rain in % (0-100)")
+    condition: str = Field(..., description="Weather condition status, e.g. 'Clear & Sunny'")
+    condition_icon: str = Field(..., description="Icon identifier, e.g. 'sun', 'cloud-sun', 'rain'")
+    comfort: str = Field(..., description="Comfort category, e.g. 'Pleasant & Comfortable'")
+    dew_point: float = Field(..., description="Estimated dew point in deg C")
+    summary: str = Field(..., description="Brief day summary and advisory")
+
+    @field_validator("temp_avg", "temp_min", "temp_max", "feels_like", "dew_point", mode="before")
+    @classmethod
+    def normalize_day_temperatures(cls, value):
+        return normalize_temperature(value)
+
+
 class PredictionResponse(BaseModel):
     state: str
     district: str = ""
@@ -31,8 +53,9 @@ class PredictionResponse(BaseModel):
     unit: str = "deg C"
     model: str = Field(..., description="Model name that produced the prediction")
     typical_error_mae: Optional[float] = Field(None, description="Test-set MAE of the model")
-    last_known: Optional[dict] = Field(None, description="Most recent measurement used "
-                                                         "(date + temp_avg)")
+    last_known: Optional[dict] = Field(None, description="Most recent measurement used")
+    daily_forecasts: Optional[List[DayForecast]] = Field(None, description="Comprehensive 7-day multi-parameter forecasts")
+    weather_summary: Optional[str] = Field(None, description="Overall summary of the 7-day forecast")
 
     @field_validator("predicted_temp_avg", mode="before")
     @classmethod
@@ -42,8 +65,10 @@ class PredictionResponse(BaseModel):
     @field_validator("last_known", mode="before")
     @classmethod
     def normalize_last_known(cls, value):
-        if isinstance(value, dict) and "temp_avg" in value:
-            value = {**value, "temp_avg": normalize_temperature(value["temp_avg"])}
+        if isinstance(value, dict):
+            for k in ("temp_avg", "temp_min", "temp_max"):
+                if k in value and value[k] is not None:
+                    value[k] = normalize_temperature(value[k])
         return value
 
 

@@ -31,3 +31,7 @@ data/
 
 # Kaggle credentials - NEVER commit
 .kaggle/
+
+
+# Extracted zip archives
+Weather-Forecasting-Using-Machine-Learning-main/

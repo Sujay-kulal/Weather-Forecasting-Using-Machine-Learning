@@ -237,3 +237,76 @@ export function TargetIcon(props: IconProps) {
     </svg>
   );
 }
+
+
+export function SunIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <circle cx="12" cy="12" r="4" />
+      <path d="M12 2v2" />
+      <path d="M12 20v2" />
+      <path d="m4.93 4.93 1.41 1.41" />
+      <path d="m17.66 17.66 1.41 1.41" />
+      <path d="M2 12h2" />
+      <path d="M20 12h2" />
+      <path d="m6.34 17.66-1.41 1.41" />
+      <path d="m19.07 4.93-1.41 1.41" />
+    </svg>
+  );
+}
+
+export function CloudIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
+    </svg>
+  );
+}
+
+export function SnowflakeIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="m10 20-1.25-2.5L6 18" />
+      <path d="M10 4 8.75 6.5 6 6" />
+      <path d="m14 20 1.25-2.5L18 18" />
+      <path d="m14 4 1.25 2.5L18 6" />
+      <path d="m17 21-3-6h-4" />
+      <path d="m17 3-3 6 1.5 3" />
+      <path d="M2 12h20" />
+      <path d="m20 10-4 2 4 2" />
+      <path d="m4 10 4 2-4 2" />
+      <path d="m7 21 3-6-1.5-3" />
+      <path d="m7 3 3 6h4" />
+    </svg>
+  );
+}
+
+export function WeatherIcon({ name, ...props }: { name?: string } & IconProps) {
+  switch (name) {
+    case "sun":
+    case "sun-hot":
+      return <SunIcon {...props} />;
+    case "cloud":
+      return <CloudIcon {...props} />;
+    case "rain":
+    case "rain-light":
+    case "rain-storm":
+      return <RainIcon {...props} />;
+    case "snowflake":
+      return <SnowflakeIcon {...props} />;
+    case "cloud-sun":
+    default:
+      return <CloudSunIcon {...props} />;
+  }
+}
+
+
+export function MapIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <polygon points="3 6 9 3 15 6 21 3 21 18 15 21 9 18 3 21" />
+      <line x1="9" x2="9" y1="3" y2="18" />
+      <line x1="15" x2="15" y1="6" y2="21" />
+    </svg>
+  );
+}

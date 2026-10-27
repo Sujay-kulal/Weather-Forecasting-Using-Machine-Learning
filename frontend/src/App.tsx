@@ -1,32 +1,77 @@
-import { useState } from "react";
-import { ForecastPage } from "./pages/ForecastPage";
-import { WeatherHistoryPage } from "./pages/WeatherHistoryPage";
-import { ModelPerformancePage } from "./pages/ModelPerformancePage";
-import { PredictionHistoryPage } from "./pages/PredictionHistoryPage";
-import { IndiaMapPage } from "./pages/IndiaMapPage";
+import { lazy, Suspense, useState, useEffect } from "react";
 import { useHealth, type HealthState } from "./hooks/useHealth";
-import { ChartIcon, ChipIcon, CloudSunIcon, ListIcon } from "./components/icons";
+import {
+  ChartIcon,
+  ChipIcon,
+  CloudSunIcon,
+  DatabaseIcon,
+  ListIcon,
+  MapIcon,
+} from "./components/icons";
+import { Card, PageHead } from "./components/ui";
+
+const ForecastPage = lazy(() =>
+  import("./pages/ForecastPage").then((module) => ({ default: module.ForecastPage })),
+);
+const WeatherHistoryPage = lazy(() =>
+  import("./pages/WeatherHistoryPage").then((module) => ({ default: module.WeatherHistoryPage })),
+);
+const ModelPerformancePage = lazy(() =>
+  import("./pages/ModelPerformancePage").then((module) => ({ default: module.ModelPerformancePage })),
+);
+const PredictionHistoryPage = lazy(() =>
+  import("./pages/PredictionHistoryPage").then((module) => ({ default: module.PredictionHistoryPage })),
+);
+const MLDashboardPage = lazy(() =>
+  import("./pages/MLDashboardPage").then((module) => ({ default: module.MLDashboardPage })),
+);
+const IndiaMap = lazy(() =>
+  import("./components/IndiaMap").then((module) => ({ default: module.IndiaMap })),
+);
 
 const TABS = [
   { id: "forecast", label: "Forecast", Icon: CloudSunIcon },
-  { id: "map", label: "India Map", Icon: ChartIcon },
-  { id: "model", label: "Model", Icon: ChipIcon },
+  { id: "map", label: "India Map", Icon: MapIcon },
+  { id: "ml", label: "ML Project", Icon: DatabaseIcon },
   { id: "history", label: "Weather History", Icon: ChartIcon },
+  { id: "model", label: "Model Metrics", Icon: ChipIcon },
   { id: "predictions", label: "Predictions", Icon: ListIcon },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
 
 const HEALTH_LABEL: Record<HealthState, string> = {
-  checking: "Checking backend…",
-  ok: "Backend online",
-  degraded: "Backend degraded",
-  down: "Backend offline",
+  checking: "Connecting…",
+  ok: "Live",
+  degraded: "Degraded",
+  down: "Offline",
 };
+
+function CurrentTime() {
+  const [time, setTime] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  return (
+    <span style={{
+      fontSize: 12,
+      color: 'rgba(255,255,255,0.5)',
+      fontWeight: 500,
+      fontVariantNumeric: 'tabular-nums',
+      letterSpacing: '0.02em'
+    }}>
+      {time.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' })}
+      {' · '}
+      {time.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}
+    </span>
+  );
+}
 
 export default function App() {
   const [tab, setTab] = useState<TabId>("forecast");
-  const { health, detail, waking, retry } = useHealth();
+  const [selectedState, setSelectedState] = useState<string>("");
+  const { health, detail } = useHealth();
 
   return (
     <div className="app">
@@ -38,16 +83,17 @@ export default function App() {
             </span>
             <div className="brand-text">
               <h1>WeatherCast India</h1>
-              <p className="subtitle">Machine Learning Temperature Forecasting</p>
+              <p className="subtitle">ML-Powered Temperature Forecasting</p>
             </div>
           </div>
-          <div className={`health health-${health}`} title={detail}>
-            <span className="health-dot" aria-hidden="true" />
-            {HEALTH_LABEL[health]}
-            {health === "down" && <button className="health-retry" onClick={retry}>Retry</button>}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <CurrentTime />
+            <div className={`health health-${health}`} title={detail}>
+              <span className="health-dot" aria-hidden="true" />
+              {HEALTH_LABEL[health]}
+            </div>
           </div>
         </div>
-        {waking && <div className="waking-banner" role="status">The weather server is waking up. First requests can take a little longer.</div>}
         <nav className="nav" aria-label="Sections">
           {TABS.map((t) => (
             <button
@@ -64,16 +110,43 @@ export default function App() {
       </header>
 
       <main className="main">
-        {tab === "forecast" && <ForecastPage />}
-        {tab === "map" && <IndiaMapPage />}
-        {tab === "history" && <WeatherHistoryPage />}
-        {tab === "model" && <ModelPerformancePage />}
-        {tab === "predictions" && <PredictionHistoryPage />}
+        <Suspense fallback={<div className="page page-loading" role="status">Loading section…</div>}>
+          {tab === "forecast" && (
+            <ForecastPage
+              selectedState={selectedState}
+              onSelectState={setSelectedState}
+            />
+          )}
+          {tab === "map" && (
+            <div className="page">
+              <PageHead
+                title="India Weather Map"
+                desc="State colors show the first daily temperature estimate from the seven-day model output for the map's target date. Click a state to open its seven-day forecast."
+              />
+              <Card title="Interactive Temperature Map" icon={<MapIcon />}>
+                <IndiaMap
+                  selectedState={selectedState}
+                  onSelectState={(s) => {
+                    setSelectedState(s);
+                    setTab("forecast");
+                  }}
+                  height="620px"
+                />
+              </Card>
+            </div>
+          )}
+          {tab === "ml" && <MLDashboardPage />}
+          {tab === "history" && <WeatherHistoryPage />}
+          {tab === "model" && <ModelPerformancePage />}
+          {tab === "predictions" && <PredictionHistoryPage />}
+        </Suspense>
       </main>
 
       <footer className="footer">
-        Final-year project · Next-day average temperature (Temp_Avg) forecasting for Indian
-        states · Model served by FastAPI + PostgreSQL
+        <div style={{ maxWidth: 1280, margin: '0 auto', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+          <span>Final-year project · ML-based temperature forecasting for Indian states</span>
+          <span style={{ opacity: 0.7 }}>FastAPI + PostgreSQL + LightGBM</span>
+        </div>
       </footer>
     </div>
   );

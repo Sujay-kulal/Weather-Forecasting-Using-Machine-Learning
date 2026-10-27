@@ -11,11 +11,11 @@ import {
 } from "recharts";
 import { getStates, getDistricts, getLocations, getWeatherHistory } from "../services/api";
 import { useFetch } from "../hooks/useFetch";
-import { Card, EmptyNote, ErrorBanner, PageHead, Spinner, Skeleton, StatChip } from "../components/ui";
+import { Card, EmptyNote, ErrorBanner, PageHead, Spinner, StatChip } from "../components/ui";
 import { ChartIcon, DatabaseIcon, DropletIcon, RainIcon, ThermometerIcon } from "../components/icons";
 import type { WeatherRecord } from "../types/api";
 
-const PAGE_SIZE = 1000;
+const PAGE_SIZE = 60;
 
 function prettyDate(iso: string): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -32,8 +32,6 @@ export function WeatherHistoryPage() {
   const [state, setState] = useState("");
   const [district, setDistrict] = useState("");
   const [location, setLocation] = useState("");
-  const [fromDate, setFromDate] = useState("");
-  const [toDate, setToDate] = useState("");
 
   const [records, setRecords] = useState<WeatherRecord[]>([]);
   const [total, setTotal] = useState(0);
@@ -105,23 +103,22 @@ export function WeatherHistoryPage() {
 
   const canLoad = state && (!hasDistricts || location);
 
-  // The API returns newest-first; reverse only for chronological chart order.
-  const filteredRecords = records.filter((record) => (!fromDate || record.date >= fromDate) && (!toDate || record.date <= toDate));
-  const filteredChronological = [...filteredRecords].reverse();
-  const firstDate = filteredChronological[0]?.date;
-  const lastDate = filteredChronological[filteredChronological.length - 1]?.date;
+  // newest-first from API → oldest-first for chart + table
+  const chronological = [...records].reverse();
+  const firstDate = chronological[0]?.date;
+  const lastDate = chronological[chronological.length - 1]?.date;
   const avgTempLoaded =
-    filteredRecords.length > 0
-      ? filteredRecords.reduce((sum, r) => sum + r.temp_avg, 0) / filteredRecords.length
+    records.length > 0
+      ? records.reduce((sum, r) => sum + r.temp_avg, 0) / records.length
       : null;
   const avgHumidityLoaded =
-    filteredRecords.length > 0 ? filteredRecords.reduce((sum, r) => sum + r.humidity, 0) / filteredRecords.length : null;
+    records.length > 0 ? records.reduce((sum, r) => sum + r.humidity, 0) / records.length : null;
 
   return (
     <div className="page">
       <PageHead
         title="Weather History"
-        desc="Browse measured daily temperatures and weather conditions."
+        desc="Browse the daily measurements stored in PostgreSQL — the same data the model's features are engineered from."
       />
 
       <Card title="Historical records" icon={<DatabaseIcon />}>
@@ -131,7 +128,7 @@ export function WeatherHistoryPage() {
             {states.loading ? (
               <Spinner label="Loading states…" />
             ) : states.error ? (
-              <ErrorBanner message={states.error.message} onRetry={states.retry} />
+              <ErrorBanner message={states.error.message} />
             ) : (
               <select value={state} onChange={(e) => onStateChange(e.target.value)}>
                 <option value="" disabled>
@@ -151,8 +148,6 @@ export function WeatherHistoryPage() {
               <span>District</span>
               {districtsFetch.loading ? (
                 <Spinner label="Loading districts…" />
-              ) : districtsFetch.error ? (
-                <ErrorBanner message={districtsFetch.error.message} onRetry={districtsFetch.retry} />
               ) : (
                 <select value={district} onChange={(e) => onDistrictChange(e.target.value)}>
                   <option value="" disabled>
@@ -173,8 +168,6 @@ export function WeatherHistoryPage() {
               <span>Location</span>
               {locationsFetch.loading ? (
                 <Spinner label="Loading locations…" />
-              ) : locationsFetch.error ? (
-                <ErrorBanner message={locationsFetch.error.message} onRetry={locationsFetch.retry} />
               ) : (
                 <select value={location} onChange={(e) => onLocationChange(e.target.value)}>
                   <option value="" disabled>
@@ -191,14 +184,8 @@ export function WeatherHistoryPage() {
           )}
         </div>
 
-        <div className="date-range-filter">
-          <label className="field inline"><span>From</span><input type="date" value={fromDate} onChange={(event) => setFromDate(event.target.value)} /></label>
-          <label className="field inline"><span>To</span><input type="date" value={toDate} onChange={(event) => setToDate(event.target.value)} /></label>
-          {(fromDate || toDate) && <button className="btn-secondary" onClick={() => { setFromDate(""); setToDate(""); }}>Clear dates</button>}
-        </div>
-
-        {loading && <Skeleton rows={5} />}
-        {error && <ErrorBanner message={error} onRetry={() => void load(state, district, location, records.length === 0)} />}
+        {loading && <Spinner label="Loading weather history…" />}
+        {error && <ErrorBanner message={error} />}
         {!loading && !error && canLoad && records.length === 0 && (
           <EmptyNote
             title="No weather records"
@@ -212,8 +199,7 @@ export function WeatherHistoryPage() {
           />
         )}
 
-        {records.length > 0 && filteredRecords.length === 0 && (fromDate || toDate) && <EmptyNote title="No records in this date range" hint="Clear or widen the dates. Date filters apply to records loaded so far." />}
-        {records.length > 0 && filteredRecords.length > 0 && (
+        {records.length > 0 && (
           <>
             <div className="stat-chips" style={{ marginBottom: 16 }}>
               <StatChip
@@ -224,7 +210,7 @@ export function WeatherHistoryPage() {
               <StatChip
                 icon={<ChartIcon />}
                 label="Loaded (newest first)"
-                value={filteredRecords.length.toLocaleString()}
+                value={records.length.toLocaleString()}
               />
               <StatChip
                 icon={<ThermometerIcon />}
@@ -240,27 +226,22 @@ export function WeatherHistoryPage() {
                 <StatChip
                   icon={<RainIcon />}
                   label="Loaded date range"
-                  value={`${prettyDate(firstDate)} → ${prettyDate(lastDate)}`}
+                  value={`${firstDate} → ${lastDate}`}
                 />
               )}
             </div>
 
             <div className="chart-box">
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={filteredChronological} margin={{ top: 10, right: 20, bottom: 58, left: 0 }}>
+                <LineChart data={chronological} margin={{ top: 10, right: 20, bottom: 5, left: 0 }}>
                   <CartesianGrid stroke="#e7edf4" vertical={false} />
                   <XAxis
                     dataKey="date"
-                    tick={{ fontSize: 10, fill: "#b8c2d5" }}
-                    tickFormatter={(value: string) => value}
-                    interval="preserveStartEnd"
-                    angle={-28}
-                    textAnchor="end"
-                    height={58}
+                    tick={{ fontSize: 11, fill: "#5a6b82" }}
+                    tickFormatter={(d) => d.slice(5)}
                   />
                   <YAxis
-                    tick={{ fontSize: 11, fill: "#b8c2d5" }}
-                    domain={["dataMin - 1", "dataMax + 1"]}
+                    tick={{ fontSize: 11, fill: "#5a6b82" }}
                     tickFormatter={(v: number) => v.toFixed(1)}
                     unit=" °C"
                   />
@@ -270,7 +251,7 @@ export function WeatherHistoryPage() {
                     type="monotone"
                     dataKey="temp_max"
                     name="Temp Max"
-                    stroke="var(--series-max)"
+                    stroke="#f59e0b"
                     strokeWidth={1.5}
                     dot={false}
                   />
@@ -278,7 +259,7 @@ export function WeatherHistoryPage() {
                     type="monotone"
                     dataKey="temp_avg"
                     name="Temp Avg"
-                    stroke="var(--series-avg)"
+                    stroke="#0f4c81"
                     strokeWidth={2.2}
                     dot={false}
                   />
@@ -286,7 +267,7 @@ export function WeatherHistoryPage() {
                     type="monotone"
                     dataKey="temp_min"
                     name="Temp Min"
-                    stroke="var(--series-min)"
+                    stroke="#93c5fd"
                     strokeWidth={1.5}
                     dot={false}
                   />
@@ -307,7 +288,7 @@ export function WeatherHistoryPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRecords.map((r) => (
+                  {[...records].map((r) => (
                     <tr key={`${r.date}-${r.state}-${r.district}-${r.location}`}>
                       <td title={r.date}>{prettyDate(r.date)}</td>
                       <td className="num">{r.temp_max.toFixed(1)}</td>

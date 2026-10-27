@@ -1,0 +1,3 @@
+# Install from the repository root for train_model.py's plotting dependency.
+-r backend/requirements.txt
+matplotlib==3.11.1

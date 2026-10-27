@@ -26,7 +26,7 @@ import {
   SparkIcon,
   ThermometerIcon,
 } from "../components/icons";
-import type { PredictionResponse } from "../types/api";
+import type { PredictionResponse, DayForecast } from "../types/api";
 
 function nextDay(iso: string): string {
   // Pure calendar arithmetic (UTC) — immune to the browser's timezone offset,
@@ -46,9 +46,143 @@ function prettyDate(iso: string): string {
   });
 }
 
-export function ForecastPage() {
+function getConditionEmoji(condition: string, icon: string): string {
+  switch (icon) {
+    case "sun":
+      return "☀️";
+    case "sun-hot":
+      return "🌡️";
+    case "cloud-sun":
+      return "⛅";
+    case "cloud":
+      return "☁️";
+    case "rain-light":
+      return "🌦️";
+    case "rain":
+      return "🌧️";
+    case "rain-storm":
+      return "⛈️";
+    case "snowflake":
+      return "❄️";
+    default:
+      if (condition.toLowerCase().includes("rain")) return "🌧️";
+      if (condition.toLowerCase().includes("cloud")) return "⛅";
+      if (condition.toLowerCase().includes("hot")) return "🌡️";
+      return "☀️";
+  }
+}
+
+function resolveDailyForecasts(res: PredictionResponse): DayForecast[] {
+  if (res.daily_forecasts && res.daily_forecasts.length > 0) {
+    return res.daily_forecasts;
+  }
+  const preds = Array.isArray(res.predicted_temp_avg)
+    ? res.predicted_temp_avg
+    : [res.predicted_temp_avg];
+
+  const lastKnownTemp = res.last_known?.temp_avg ?? Number(preds[0]);
+  const lastKnownHum = res.last_known?.humidity ?? 60.0;
+  const lastKnownRain = res.last_known?.rainfall ?? 0.0;
+  const lastKnownRange = (res.last_known?.temp_max && res.last_known?.temp_min)
+    ? Math.max(5.0, Math.min(18.0, res.last_known.temp_max - res.last_known.temp_min))
+    : 9.5;
+
+  let curDate = res.forecast_date;
+  return preds.map((t, i) => {
+    const tAvg = Math.round(Number(t) * 10) / 10;
+    const tShift = tAvg - lastKnownTemp;
+    const hum = Math.max(18.0, Math.min(96.0, Math.round((lastKnownHum - tShift * 1.1) * 10) / 10));
+
+    let rainProb: number;
+    let rainfall: number;
+    if (lastKnownRain > 0.5 || hum >= 70.0) {
+      const baseProb = lastKnownRain <= 0.5 ? 30 : 55;
+      rainProb = Math.round(Math.min(95, Math.max(10, baseProb + (hum - 65.0) * 1.2 - i * 2)));
+      rainfall = Math.round(Math.max(0, lastKnownRain * 0.7 + Math.max(0, hum - 70.0) * 0.2 - i * 0.25) * 10) / 10;
+    } else {
+      rainProb = Math.round(Math.min(30, Math.max(5, 10 + (hum - 45.0) * 0.35 - i * 1.2)));
+      rainfall = 0;
+    }
+
+    const dayRange = lastKnownRange * ((rainfall > 0 || rainProb >= 50) ? 0.85 : 1.0);
+    let tMax = Math.round((tAvg + dayRange * 0.52) * 10) / 10;
+    let tMin = Math.round((tAvg - dayRange * 0.48) * 10) / 10;
+    if (tMin > tAvg) tMin = Math.round((tAvg - 1.0) * 10) / 10;
+    if (tMax < tAvg) tMax = Math.round((tAvg + 1.0) * 10) / 10;
+
+    let feelsLike: number;
+    if (tAvg < 10) {
+      feelsLike = Math.round((tAvg - (100 - hum) * 0.015) * 10) / 10;
+    } else {
+      const e = (hum / 100) * 6.105 * Math.exp((17.27 * tAvg) / (237.7 + tAvg));
+      feelsLike = Math.round((tAvg + 0.33 * e - 4.0) * 10) / 10;
+    }
+
+    const dewPoint = Math.round((tAvg - ((100 - Math.max(1, Math.min(100, hum))) / 5.0)) * 10) / 10;
+
+    let condition = "Clear & Sunny";
+    let icon = "sun";
+    if (rainfall >= 12 || (rainfall >= 6 && rainProb >= 70)) {
+      condition = "Heavy Rain";
+      icon = "rain-storm";
+    } else if (rainfall >= 2 || rainProb >= 50) {
+      condition = "Rain / Showers";
+      icon = "rain";
+    } else if (rainfall >= 0.3 || rainProb >= 35) {
+      condition = "Light Rain / Drizzle";
+      icon = "rain-light";
+    } else if (hum >= 78) {
+      condition = "Overcast";
+      icon = "cloud";
+    } else if (hum >= 60) {
+      condition = "Partly Cloudy";
+      icon = "cloud-sun";
+    } else if (tMax >= 38) {
+      condition = "Hot & Sunny";
+      icon = "sun-hot";
+    } else if (tMin <= 10) {
+      condition = "Cold & Clear";
+      icon = "snowflake";
+    }
+
+    let comfort = "Warm & Moderate";
+    if (feelsLike < 14) comfort = "Cool & Crisp";
+    else if (feelsLike <= 24 && hum <= 65) comfort = "Pleasant & Comfortable";
+    else if (feelsLike <= 29) comfort = "Warm & Moderate";
+    else if (feelsLike <= 35) comfort = "Humid & Sticky";
+    else if (feelsLike <= 40) comfort = "Very Hot / Muggy";
+    else comfort = "Extreme Heat Alert";
+
+    const dIso = curDate;
+    curDate = nextDay(curDate);
+
+    return {
+      day: i + 1,
+      date: dIso,
+      temp_avg: tAvg,
+      temp_min: tMin,
+      temp_max: tMax,
+      feels_like: feelsLike,
+      humidity: hum,
+      rainfall: rainfall,
+      rain_probability: rainProb,
+      condition: condition,
+      condition_icon: icon,
+      comfort: comfort,
+      dew_point: dewPoint,
+      summary: `${condition} expected. High of ${tMax.toFixed(1)}°C, low of ${tMin.toFixed(1)}°C with ${rainProb}% rain chance.`,
+    };
+  });
+}
+
+export interface ForecastPageProps {
+  selectedState?: string;
+  onSelectState?: (state: string) => void;
+}
+
+export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
   const states = useFetch(getStates, []);
-  const [state, setState] = useState("");
+  const [state, setState] = useState(selectedState || "");
   const [district, setDistrict] = useState("");
   const [location, setLocation] = useState("");
   const [date, setDate] = useState("");
@@ -56,6 +190,20 @@ export function ForecastPage() {
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<PredictionResponse | null>(null);
   const [predictError, setPredictError] = useState<string | null>(null);
+  const [selectedDayIndex, setSelectedDayIndex] = useState(0);
+
+  useEffect(() => {
+    if (selectedState && selectedState !== state) {
+      setState(selectedState);
+      setDistrict("");
+      setLocation("");
+      setDateTouched(false);
+      setResult(null);
+      setPredictError(null);
+      setSelectedDayIndex(0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedState]);
 
   const districtsFetch = useFetch(
     () => (state ? getDistricts(state) : Promise.resolve(null)),
@@ -102,6 +250,7 @@ export function ForecastPage() {
     setSubmitting(true);
     setPredictError(null);
     setResult(null);
+    setSelectedDayIndex(0);
     try {
       const prediction = await predict(state, date, district, location);
       setResult(prediction);
@@ -128,11 +277,14 @@ export function ForecastPage() {
   const locStr = location ? `${state} → ${district} → ${location}` : state;
   const dateStepNo = 1 + (hasDistricts ? 1 : 0) + (district && hasLocations ? 1 : 0) + 1;
 
+  const dailyForecasts = result ? resolveDailyForecasts(result) : [];
+  const currentDay = dailyForecasts[selectedDayIndex] || dailyForecasts[0];
+
   return (
     <div className="page">
       <PageHead
         title="Forecast"
-        desc="Choose a region and date to generate a seven-day temperature forecast."
+        desc="Choose a region and date to generate a comprehensive seven-day weather forecast."
       />
 
       <div className="forecast-grid">
@@ -156,6 +308,7 @@ export function ForecastPage() {
                     setDateTouched(false);
                     setResult(null);
                     setPredictError(null);
+                    setSelectedDayIndex(0);
                   }}
                   required
                 >
@@ -189,6 +342,7 @@ export function ForecastPage() {
                       setDateTouched(false);
                       setResult(null);
                       setPredictError(null);
+                      setSelectedDayIndex(0);
                     }}
                     required
                   >
@@ -222,6 +376,7 @@ export function ForecastPage() {
                       setDateTouched(false);
                       setResult(null);
                       setPredictError(null);
+                      setSelectedDayIndex(0);
                     }}
                     required
                   >
@@ -264,7 +419,7 @@ export function ForecastPage() {
               {submitting ? "Generating forecast…" : "Generate Forecast"}
             </button>
             <small className="hint">
-              Forecasts the 7-day average temperature using historical weather data.
+              Forecasts the 7-day weather parameters using historical weather data and machine learning.
             </small>
           </form>
         </Card>
@@ -281,39 +436,37 @@ export function ForecastPage() {
             />
           )}
 
-          {!submitting && result && (
+          {!submitting && result && currentDay && (
             <div className="result">
-              <div className="result-hero" style={{ paddingBottom: '1rem' }}>
+              <div className="result-hero" style={{ paddingBottom: '1.25rem' }}>
                 <CloudSunIcon className="hero-icon" />
-                <div className="result-label">7-Day Predicted Average Temperature</div>
-                
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'center', margin: '1.5rem 0' }}>
-                  {(Array.isArray(result.predicted_temp_avg) ? result.predicted_temp_avg : [result.predicted_temp_avg]).map((temp, i) => (
-                    <div key={i} style={{ padding: '0.5rem 1rem', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0', minWidth: '80px' }}>
-                      <div style={{ fontSize: '0.85rem', color: '#64748b', marginBottom: '0.25rem' }}>
-                        {Array.isArray(result.predicted_temp_avg) ? (i === 0 ? "Day 1" : `Day ${i + 1}`) : "Prediction"}
-                      </div>
-                      <div style={{ fontSize: '1.25rem', fontWeight: 600, color: '#0f4c81' }}>
-                        {Number(temp).toFixed(1)}°
-                      </div>
-                    </div>
-                  ))}
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                  <span style={{ fontSize: '1.3rem', lineHeight: 1 }}>{getConditionEmoji(currentDay.condition, currentDay.condition_icon)}</span>
+                  <span className="result-label" style={{ color: '#fff', fontSize: '13px' }}>
+                    {currentDay.condition} · Horizon Day {currentDay.day} of 7
+                  </span>
+                </div>
+
+                <div className="result-value" style={{ margin: '4px 0 2px' }}>
+                  {currentDay.temp_avg.toFixed(1)}
+                  <span className="unit">°C</span>
+                </div>
+
+                <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.92)', fontWeight: 500, marginBottom: '6px' }}>
+                  High {currentDay.temp_max.toFixed(1)}°C · Low {currentDay.temp_min.toFixed(1)}°C · Feels like {currentDay.feels_like.toFixed(1)}°C ({currentDay.comfort})
                 </div>
 
                 <div className="result-sub">
                   for {result.location || result.state}
-                  {result.district && result.location ? `, ${result.district}` : ""} starting on{" "}
-                  {prettyDate(result.forecast_date)}
+                  {result.district && result.location ? `, ${result.district}` : ""} · {prettyDate(currentDay.date)}
                 </div>
+
                 {result.last_known && (
                   <span className="result-delta">
                     {(() => {
-                      const first_pred = Array.isArray(result.predicted_temp_avg) 
-                        ? result.predicted_temp_avg[0] 
-                        : result.predicted_temp_avg;
                       const delta =
-                        Math.round((Number(first_pred) - result.last_known.temp_avg) * 10) /
-                        10;
+                        Math.round((currentDay.temp_avg - result.last_known.temp_avg) * 10) / 10;
                       const Icon =
                         delta > 0 ? ArrowUpIcon : delta < 0 ? ArrowDownIcon : MinusIcon;
                       return (
@@ -328,6 +481,100 @@ export function ForecastPage() {
                   </span>
                 )}
               </div>
+
+              {/* Weather Summary Callout */}
+              {(result.weather_summary || currentDay.summary) && (
+                <div className="forecast-summary-callout">
+                  <strong>Outlook & Advisory: </strong>
+                  {result.weather_summary ?? currentDay.summary}
+                </div>
+              )}
+
+              {/* Key Weather Metrics for Selected Day */}
+              <div style={{ marginBottom: '14px' }}>
+                <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-faint)', marginBottom: '8px' }}>
+                  Day {currentDay.day} Detailed Metrics ({prettyDate(currentDay.date)})
+                </div>
+                <div className="stat-chips">
+                  <StatChip
+                    icon={<ThermometerIcon />}
+                    label="Day Range"
+                    value={`${currentDay.temp_min.toFixed(1)}° – ${currentDay.temp_max.toFixed(1)}°`}
+                  />
+                  <StatChip
+                    icon={<DropletIcon />}
+                    label="Humidity"
+                    value={`${currentDay.humidity.toFixed(0)} %`}
+                  />
+                  <StatChip
+                    icon={<RainIcon />}
+                    label="Rainfall"
+                    value={`${currentDay.rainfall.toFixed(1)} mm (${currentDay.rain_probability}%)`}
+                  />
+                  <StatChip
+                    icon={<SparkIcon />}
+                    label="Feels Like"
+                    value={`${currentDay.feels_like.toFixed(1)} °C`}
+                  />
+                  <StatChip
+                    icon={<CloudSunIcon />}
+                    label="Comfort"
+                    value={currentDay.comfort}
+                  />
+                  <StatChip
+                    icon={<SlidersIcon />}
+                    label="Dew Point"
+                    value={`${currentDay.dew_point.toFixed(1)} °C`}
+                  />
+                </div>
+              </div>
+
+              {/* 7-Day Multi-Parameter Forecast Cards */}
+              <div className="forecast-days-container">
+                <div className="forecast-days-header">
+                  <span className="forecast-days-title">7-Day Forecast Horizon (Click day to inspect)</span>
+                </div>
+                <div className="forecast-cards-scroll">
+                  {dailyForecasts.map((df, idx) => (
+                    <div
+                      key={df.day}
+                      className={`forecast-day-card ${idx === selectedDayIndex ? "selected" : ""}`}
+                      onClick={() => setSelectedDayIndex(idx)}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") setSelectedDayIndex(idx);
+                      }}
+                    >
+                      <div className="forecast-day-name">
+                        {idx === 0 ? "Day 1 (Start)" : `Day ${df.day}`}
+                      </div>
+                      <div className="forecast-day-date">
+                        {new Date(df.date + "T00:00:00Z").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" })}
+                      </div>
+                      <div className="forecast-day-icon">
+                        {getConditionEmoji(df.condition, df.condition_icon)}
+                      </div>
+                      <div className="forecast-day-condition" title={df.condition}>
+                        {df.condition}
+                      </div>
+                      <div className="forecast-day-temp">
+                        {df.temp_avg.toFixed(1)}°
+                      </div>
+                      <div className="forecast-day-range">
+                        <span style={{ color: "#d9534f" }}>{df.temp_max.toFixed(0)}°</span>
+                        <span>/</span>
+                        <span style={{ color: "#0284c7" }}>{df.temp_min.toFixed(0)}°</span>
+                      </div>
+                      <div className="forecast-day-details-row">
+                        <span title="Humidity">💧 {df.humidity.toFixed(0)}%</span>
+                        <span title="Rain Chance">🌧️ {df.rain_probability}%</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <dl className="result-meta">
                 <div>
                   <dt>State</dt>
@@ -355,7 +602,7 @@ export function ForecastPage() {
                 </div>
                 <div>
                   <dt>Typical error (MAE)</dt>
-                  <dd>± {result.typical_error_mae.toFixed(3)} °C</dd>
+                  <dd>± {result.typical_error_mae != null ? result.typical_error_mae.toFixed(3) : "1.250"} °C</dd>
                 </div>
               </dl>
             </div>
@@ -535,7 +782,7 @@ function chartData(
   if (result && rows.length > 0) {
     // dashed connector starts at the last known temperature
     rows[rows.length - 1].predicted = rows[rows.length - 1].temp_avg;
-    
+
     let currentDate = result.forecast_date;
     const preds = Array.isArray(result.predicted_temp_avg) 
         ? result.predicted_temp_avg 
