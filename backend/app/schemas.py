@@ -171,3 +171,64 @@ class ModelInfoResponse(BaseModel):
     metrics_status: Optional[str] = None
     validated_for_artifact: Optional[bool] = None
     evaluation: Optional[dict] = None
+
+
+# -------------------- location weather --------------------
+class LocationOption(BaseModel):
+    """A geocoded India location returned by Open-Meteo or matched from state centres."""
+    name: str
+    district: str = ""
+    state: str = ""
+    country: str = "India"
+    country_code: str = "IN"
+    latitude: float
+    longitude: float
+    scope: str = "place"  # "state" | "district" | "place"
+    geoname_id: Optional[int] = None
+
+
+class LocationSearchResponse(BaseModel):
+    locations: List[LocationOption]
+
+
+class WeatherDay(BaseModel):
+    """One day inside a multi-day ML forecast."""
+    date: date_type
+    temperature: float
+
+    @field_validator("temperature", mode="before")
+    @classmethod
+    def normalize_weather_day_temp(cls, value):
+        return normalize_temperature(value)
+
+
+class LocationWeatherRequest(BaseModel):
+    location: LocationOption
+    forecast_date: date_type
+
+
+class LocationWeatherResponse(BaseModel):
+    location: LocationOption
+    forecast_date: date_type
+    source: str = Field(
+        ...,
+        description="Data provenance label, e.g. 'ML Prediction', 'Current Weather', "
+                    "'Historical Observations', 'Historical Reanalysis', 'Weather API Forecast'",
+    )
+    temperature: float
+    temperature_min: Optional[float] = None
+    temperature_max: Optional[float] = None
+    humidity: Optional[float] = None
+    rainfall: Optional[float] = None
+    wind_speed: Optional[float] = None
+    weather_code: Optional[int] = None
+    weather_description: Optional[str] = None
+    forecast: Optional[List[WeatherDay]] = None
+    model: Optional[str] = None
+    last_known: Optional[dict] = None
+    message: Optional[str] = None
+
+    @field_validator("temperature", "temperature_min", "temperature_max", mode="before")
+    @classmethod
+    def normalize_location_temps(cls, value):
+        return normalize_temperature(value) if value is not None else value

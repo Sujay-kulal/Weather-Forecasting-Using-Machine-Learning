@@ -16,7 +16,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.database import Base, check_connection, engine, init_db
-from app.routes import admin, health, prediction, weather
+from app.routes import admin, health, location_weather, prediction, weather
 from app.services.ingestion_service import run_ingestion_with_lock
 from app.services.metrics_service import fill_missing_actuals
 
@@ -101,3 +101,4 @@ app.include_router(admin.router)
 app.include_router(weather.states_router)
 app.include_router(weather.router)
 app.include_router(prediction.router)
+app.include_router(location_weather.router)

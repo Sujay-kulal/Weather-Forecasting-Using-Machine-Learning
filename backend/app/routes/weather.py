@@ -6,34 +6,11 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models import WeatherData
 from app.schemas import StatesResponse, DistrictsResponse, LocationsResponse, WeatherRecord, WeatherResponse
+from app.services.resolve_location import resolve_location
 
 router = APIRouter(prefix="/weather", tags=["weather"])
 states_router = APIRouter(tags=["weather"])  # GET /states lives at the root
 
-
-def _resolve_location(state: str, district: str, location: str, db: Session):
-    """Validate that the exact state/district/location combination exists."""
-    canonical_state = state.strip().title()
-    dist = district.strip()
-    loc = location.strip()
-
-    exists = db.execute(
-        select(func.count()).select_from(WeatherData).where(
-            WeatherData.state == canonical_state,
-            WeatherData.district == dist,
-            WeatherData.location == loc
-        )
-    ).scalar_one()
-
-    if not exists:
-        if dist == "" and loc == "":
-            raise HTTPException(404, detail=f"Unknown state '{state}'. Call GET /states for the available names.")
-        elif loc == "":
-            raise HTTPException(404, detail=f"Unknown district '{district}' in state '{state}'.")
-        else:
-            raise HTTPException(404, detail=f"Unknown location '{location}' in district '{district}', state '{state}'.")
-
-    return canonical_state, dist, loc
 
 
 @states_router.get("/states", response_model=StatesResponse)
@@ -73,7 +50,7 @@ def state_history(state: str,
                   offset: int = Query(0, ge=0),
                   db: Session = Depends(get_db)):
     """Historical weather for a state, newest first, paginated."""
-    canonical, _, _ = _resolve_location(state, "", "", db)
+    canonical, _, _ = resolve_location(state, "", "", db)
     rows = db.execute(
         select(WeatherData)
         .where(WeatherData.state == canonical, WeatherData.district == "", WeatherData.location == "")
@@ -102,7 +79,7 @@ def recent(state: str,
            days: int = Query(14, ge=1, le=60),
            db: Session = Depends(get_db)):
     """The most recent `days` measurements - the current weather context."""
-    canonical, _, _ = _resolve_location(state, "", "", db)
+    canonical, _, _ = resolve_location(state, "", "", db)
     rows = db.execute(
         select(WeatherData)
         .where(WeatherData.state == canonical, WeatherData.district == "", WeatherData.location == "")
@@ -127,7 +104,7 @@ def location_history(state: str, district: str, location: str,
                      offset: int = Query(0, ge=0),
                      db: Session = Depends(get_db)):
     """Historical weather for a location, newest first, paginated."""
-    canonical, dist, loc = _resolve_location(state, district, location, db)
+    canonical, dist, loc = resolve_location(state, district, location, db)
     rows = db.execute(
         select(WeatherData)
         .where(WeatherData.state == canonical, WeatherData.district == dist, WeatherData.location == loc)
@@ -155,7 +132,7 @@ def location_recent(state: str, district: str, location: str,
                     days: int = Query(14, ge=1, le=60),
                     db: Session = Depends(get_db)):
     """The most recent `days` measurements for a location."""
-    canonical, dist, loc = _resolve_location(state, district, location, db)
+    canonical, dist, loc = resolve_location(state, district, location, db)
     rows = db.execute(
         select(WeatherData)
         .where(WeatherData.state == canonical, WeatherData.district == dist, WeatherData.location == loc)

@@ -127,7 +127,7 @@ def update_weather(days_back: int = 7, session=None) -> int:
             if buffer:
                 stmt = pg_insert(WeatherData).values(buffer)
                 upsert_stmt = stmt.on_conflict_do_update(
-                    constraint="uq_weather_state_date",
+                    constraint="uq_weather_state_dist_loc_date",
                     set_={
                         "temp_max": stmt.excluded.temp_max,
                         "temp_min": stmt.excluded.temp_min,

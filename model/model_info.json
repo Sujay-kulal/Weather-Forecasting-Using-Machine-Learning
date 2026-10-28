@@ -208,7 +208,6 @@
     "Mizoram",
     "Nagaland",
     "Odisha",
-    "Other",
     "Puducherry",
     "Punjab",
     "Rajasthan",
@@ -410,5 +409,7 @@
   "interval_status": "not_calibrated_for_current_artifact",
   "evaluation_artifact": "weather_model_v3.joblib",
   "evaluation_artifact_sha256": "844fdadfbe2786d859cdfc55c2e7dc14eb0b2f420b339f3e877fa6856aa37adf",
-  "evaluation_note": "The exact v3 artifact completed evaluation, but its recorded training cutoff overlaps the test window. These are diagnostic artifact scores, not independent validation."
+  "evaluation_note": "The exact v3 artifact completed evaluation, but its recorded training cutoff overlaps the test window. These are diagnostic artifact scores, not independent validation.",
+  "model_path": "model/weather_model_v3.joblib",
+  "random_state": 42
 }

@@ -1454,14 +1454,14 @@ tbody tr:hover { background: #222e3f; }
 
 .forecast-day-card:hover {
   border-color: var(--accent);
-  box-shadow: 0 4px 12px rgba(2, 132, 199, 0.12);
+  box-shadow: 0 4px 12px rgba(255, 107, 53, 0.18);
   transform: translateY(-2px);
 }
 
 .forecast-day-card.selected {
-  background: #f0f7ff;
+  background: rgba(255, 107, 53, 0.12);
   border-color: var(--accent);
-  box-shadow: 0 0 0 2px var(--accent-ring), 0 4px 12px rgba(2, 132, 199, 0.18);
+  box-shadow: 0 0 0 2px var(--accent-ring), 0 4px 14px rgba(0, 0, 0, 0.3);
 }
 
 .forecast-day-name {
@@ -1472,7 +1472,7 @@ tbody tr:hover { background: #222e3f; }
 }
 
 .forecast-day-card.selected .forecast-day-name {
-  color: var(--primary);
+  color: #ff9a70;
 }
 
 .forecast-day-date {
@@ -1528,13 +1528,13 @@ tbody tr:hover { background: #222e3f; }
 }
 
 .forecast-summary-callout {
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-left: 4px solid var(--accent);
   border-radius: var(--radius-sm);
   padding: 10px 14px;
   margin: 12px 0 16px;
   font-size: 13px;
-  color: var(--text);
+  color: rgba(255, 255, 255, 0.88);
   line-height: 1.5;
 }

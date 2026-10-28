@@ -54,3 +54,25 @@ class Prediction(Base):
     created_at: Mapped[object] = mapped_column(
         DateTime(timezone=True), nullable=False, server_default=func.now()
     )
+
+
+
+class WeatherLocationMetadata(Base):
+    """Links a geocoding catalog record (e.g. GeoNames ID) to the exact
+    (state, district, location) triple used in ``weather_data``.
+
+    This allows the location-weather service to resolve an Open-Meteo
+    geocoder result to the correct database series without guessing.
+    """
+    __tablename__ = "weather_location_metadata"
+    __table_args__ = (
+        UniqueConstraint("catalog_source", "catalog_record_id", "state",
+                         name="uq_wlm_catalog_state"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    catalog_source: Mapped[str] = mapped_column(String(50), nullable=False, index=True)
+    catalog_record_id: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    state: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    district: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")
+    location: Mapped[str] = mapped_column(String(100), nullable=False, default="", server_default="")

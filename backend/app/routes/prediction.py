@@ -20,6 +20,7 @@ from app.schemas import (ModelInfoResponse, PredictionRecord, PredictionRequest,
 from app.services import feature_service, model_service, weather_forecast_service
 from app.services.metrics_service import rolling_live_metrics
 from app.services.prediction_store import upsert_prediction
+from app.services.resolve_location import resolve_location
 from app.services.temperature import round_temperature
 from app.services.feature_service import (MAX_STALENESS_DAYS, REQUIRED_HISTORY,
                                           build_features)
@@ -27,33 +28,10 @@ from app.services.prediction_cache import prediction_cache
 
 router = APIRouter(tags=["prediction"])
 
-def _resolve_location_predict(state: str, district: str, location: str, db: Session):
-    canonical_state = state.strip().title()
-    dist = district.strip()
-    loc = location.strip()
-
-    exists = db.execute(
-        select(func.count()).select_from(WeatherData).where(
-            WeatherData.state == canonical_state,
-            WeatherData.district == dist,
-            WeatherData.location == loc
-        )
-    ).scalar_one()
-
-    if not exists:
-        if dist == "" and loc == "":
-            raise HTTPException(404, detail=f"Unknown state '{state}'. Call GET /states for the available names.")
-        elif loc == "":
-            raise HTTPException(404, detail=f"Unknown district '{district}' in state '{state}'.")
-        else:
-            raise HTTPException(404, detail=f"Unknown location '{location}' in district '{district}', state '{state}'.")
-
-    return canonical_state, dist, loc
-
 @router.post("/predict", response_model=PredictionResponse)
 def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_db)):
     # 1. Validate the state/district/location against the database
-    canonical, dist, loc = _resolve_location_predict(
+    canonical, dist, loc = resolve_location(
         request.state, request.district or "", request.location or "", db
     )
 
