@@ -84,6 +84,7 @@ def run_isolated_demonstration() -> None:
     os.environ["DATABASE_URL"] = demo_url.render_as_string(hide_password=False)
     os.environ["ENABLE_INGESTION_SCHEDULER"] = "true"
 
+    import app.database as database_module
     from app.database import Base
     from app.main import lifespan
     from app.services import ingestion_service
@@ -100,6 +101,7 @@ def run_isolated_demonstration() -> None:
     schema_created = False
     original_session_local = ingestion_service.SessionLocal
     original_coords = update_weather.STATE_COORDS
+    original_app_engine = database_module.engine
 
     try:
         with engine.begin() as conn:
@@ -108,6 +110,11 @@ def run_isolated_demonstration() -> None:
                 raise RuntimeError("Connected database name does not match the validated disposable database.")
             conn.execute(sa.text(f'CREATE SCHEMA "{schema_name}"'))
             schema_created = True
+
+        # Route the application's own lifespan/init_db engine to the same
+        # disposable schema. Without this assignment, init_db() would use the
+        # default engine and could create tables in public.
+        database_module.engine = engine
 
         # Build tables from the repository's ORM metadata inside the unique
         # schema. No production tables are copied or referenced.
@@ -181,6 +188,7 @@ def run_isolated_demonstration() -> None:
     finally:
         ingestion_service.SessionLocal = original_session_local
         update_weather.STATE_COORDS = original_coords
+        database_module.engine = original_app_engine
         engine.dispose()
         if schema_created:
             # Only the UUID schema created by this invocation is dropped.
