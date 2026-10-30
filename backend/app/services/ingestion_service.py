@@ -35,7 +35,14 @@ def run_ingestion_with_lock(days_back: int = 7) -> update_weather.IngestionSumma
             session = SessionLocal(bind=conn)
         else:
             session = SessionLocal()
-    except Exception:
+    except Exception as init_exc:
+        logger.warning("Failed to bind session to dedicated connection: %s", init_exc)
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+            conn = None
         session = SessionLocal()
 
     locked = False
@@ -45,7 +52,20 @@ def run_ingestion_with_lock(days_back: int = 7) -> update_weather.IngestionSumma
         res = session.execute(text(f"SELECT pg_try_advisory_lock({ADVISORY_LOCK_ID})")).scalar()
         if not res:
             logger.warning("Ingestion job skipped: advisory lock currently held by another job.")
-            return update_weather.IngestionSummary({"status": "skipped", "reason": "advisory_lock_held", "records_upserted": 0})
+            return update_weather.IngestionSummary({
+                "status": "skipped",
+                "reason": "advisory_lock_held",
+                "records_upserted": 0,
+                "records_inserted_or_updated": 0,
+                "total_states": len(update_weather.STATE_COORDS),
+                "successful_states": [],
+                "failed_states": [],
+                "successful_count": 0,
+                "failed_count": 0,
+                "failed_state_errors": {},
+                "errors": {},
+                "last_ingested_at": _last_ingested_at.isoformat() if _last_ingested_at else None,
+            })
 
         locked = True
         logger.info(f"Acquired advisory lock ({ADVISORY_LOCK_ID}). Starting ingestion (days_back={days_back})...")
@@ -99,8 +119,11 @@ def run_ingestion_with_lock(days_back: int = 7) -> update_weather.IngestionSumma
                 except Exception as rb_exc:
                     logger.debug("Pre-unlock rollback error: %s", rb_exc)
 
-                session.execute(text(f"SELECT pg_advisory_unlock({ADVISORY_LOCK_ID})"))
-                logger.info(f"Released advisory lock ({ADVISORY_LOCK_ID}).")
+                unlocked = session.execute(text(f"SELECT pg_advisory_unlock({ADVISORY_LOCK_ID})")).scalar()
+                if unlocked:
+                    logger.info(f"Released advisory lock ({ADVISORY_LOCK_ID}).")
+                else:
+                    logger.warning(f"Advisory lock ({ADVISORY_LOCK_ID}) was not held when unlock was attempted.")
             except Exception as e:
                 logger.error(f"Failed to release advisory lock: {e}")
                 # If releasing the lock on the connection fails, invalidate it so
