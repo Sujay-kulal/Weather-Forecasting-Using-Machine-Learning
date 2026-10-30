@@ -33,7 +33,7 @@ def month_to_season(month: int) -> str:
 
 
 class InsufficientHistoryError(Exception):
-    """Not enough (or not recent enough) history to build the 13 model features."""
+    """Not enough (or not recent enough) history to build the model features."""
 
 
 def build_features(history: list, state: str, asof_date) -> pd.DataFrame:
@@ -41,7 +41,7 @@ def build_features(history: list, state: str, asof_date) -> pd.DataFrame:
     history : the 7 most recent WeatherData rows STRICTLY BEFORE (D - 1),
               ordered most-recent-first -> history[0] = measurement at D-2.
     asof_date : the training-row date t = D-1 (drives month_sin/cos and Season).
-    Returns a one-row DataFrame with the model's 18 feature columns.
+    Returns a one-row DataFrame with the model's 20 feature columns.
     """
     if len(history) < REQUIRED_HISTORY:
         raise InsufficientHistoryError(
