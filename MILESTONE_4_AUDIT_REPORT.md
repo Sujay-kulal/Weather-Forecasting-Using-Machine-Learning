@@ -11,6 +11,8 @@
 **Connected Issues**: Milestone 1: #4, Milestone 2: #5, Milestone 3: #6, Milestone 4: #7
 **Integrity Mode**: Development / Independent Verification / Zero Fabricated Data
 
+> **Safety correction (October 30, 2026):** The original scheduler demonstration described below was NOT isolated from the production database. It created and dropped a schema inside the existing `weather_forecasting` database. An unchanged `public.weather_data` row count did not prove the database was untouched. That original execution is invalid as evidence of production-database isolation and must not be relied upon. The harness has now been corrected in commit `83680f54fc2f1c7394da551b64de7365e9805b88` and hardened in `bb6e48783d8827c5a2713b2245db2f763ed0aed3`: it requires an explicitly supplied disposable PostgreSQL database whose name ends in `_test`, `_demo`, `_disposable`, or `_sandbox`; it does not read `backend/.env` or fall back to `DATABASE_URL`; it creates a unique per-run schema only in that disposable database; and it routes the FastAPI lifespan engine to that schema. **A fresh execution against a separate disposable database, with evidence, is still required. Until then R3 is BLOCKED and PR #8 is not merge-ready.**
+
 ---
 
 ## Table of Contents
@@ -67,7 +69,7 @@ Every requirement (R1 through R7) specified in `ORIGINAL_REQUEST.md` has been em
 |:---:|:---|:---|:---:|:---|
 | **R1** | **Geographic Coverage Matrix** | 37-row matrix covering 28 states, 8 UTs, and 'Other'; specific audits for Ladakh, Andaman & Nicobar, Lakshadweep, and Other; location definitions strictly unmodified. | **VERIFIED & CLOSED** | Full 37-row matrix cross-referenced across `update_weather.py`, `open_meteo_service.py`, `model_info.json`, and PostgreSQL database. Specific territorial behaviors documented. Codebase definitions left 100% unmodified. |
 | **R2** | **Training Dataset Provenance** | Empirical provenance supporting October 22, 2026 cutoff beyond scaler count deduction; separation of 46,834-row DB and 141,867-row training dataset explained. | **VERIFIED & CLOSED** | Git commits `0ead353`, `bff2198` (defining `ist_yesterday = 2026-10-22`), `7328ecc` (retraining v3), `backfill.py`, and `model_info.json` provide complete custody chain. Scaler count matches derivation exactly ($33 \times 4,299 = 141,867$). |
-| **R3** | **Isolated Scheduler Execution** | Demonstrate execution using actual scheduler and ingestion functions in isolated environment without mutating production database table; clearly distinguish mocks. | **VERIFIED & CLOSED** | Reusable harness `scripts/demonstrate_isolated_scheduler.py` created and executed. Real APScheduler, real advisory lock `84729103859`, real Open-Meteo HTTPS request for Goa, real PostgreSQL `ON CONFLICT DO UPDATE` in `isolated_scheduler_demo`. Table `public.weather_data` verified unchanged at 46,834 rows. |
+| **R3** | **Isolated Scheduler Execution** | Demonstrate execution using actual scheduler and ingestion functions against a separate disposable database; clearly distinguish mocks. | **BLOCKED: RE-EXECUTION REQUIRED** | The original run used a schema inside the production database and is invalid as proof of database isolation. The harness is corrected to require a separate disposable PostgreSQL database. A fresh run and independent verification are pending. |
 | **R4** | **Failure Resilience Defect Handling** | Audit and verify existing single-state loop failure; document defect as OPEN without modifying ingestion code; do not mark unverified fixes completed. | **VERIFIED & OPEN** | Loop vulnerability in `update_weather.py:94-150` diagnosed: absence of inner `try...except` causes premature loop abort, partial commit of prior states, and abandonment of subsequent states. Ingestion code NOT modified. Defect officially documented as OPEN. |
 | **R5** | **Regression Suite & Leakage** | Complete backend test suite passes; feature leakage check passes with 0 leakage. | **VERIFIED & CLOSED** | `python -m pytest backend/tests/ -v` passes 59/59 tests in 7.41s across all 7 test modules. `python backend/test_no_leakage.py` confirms 0 feature leakage across all 18 engineered features. |
 | **R6** | **Tracker & PR #8 Evidence** | Attach complete verification evidence to PR #8; update/verify Issues #4-#7 using `scripts/github_tracker.py`. | **VERIFIED & CLOSED** | `scripts/github_tracker.py list` verified issues #4, #5, #6, #7 closed. Final verification evidence attached to PR #8 via tracker CLI as Comment ID `6527699829`. |
@@ -268,11 +270,11 @@ SQLite cannot execute the production ingestion pipeline because:
 - `update_weather.py` utilizes PostgreSQL dialect-specific `pg_insert` with `on_conflict_do_update(constraint="uq_weather_state_dist_loc_date")`, which fails on SQLite with `CompileError`.
 - `app/database.py` explicitly rejects SQLite connections.
 
-To achieve authentic execution without mutating the 46,834-row production table, an **isolated PostgreSQL schema** (`isolated_scheduler_demo`) was established on the live PostgreSQL server (port 5433). Connecting with `connect_args={"options": "-csearch_path=isolated_scheduler_demo"}` routes all table queries to the isolated schema while leaving `public.weather_data` completely untouched.
+An isolated schema inside the production database is not an acceptable safety boundary. The corrected harness requires a separately provisioned disposable PostgreSQL database and creates a uniquely named temporary schema there. It refuses the known production database name, requires a disposable suffix, does not load `backend/.env`, and does not fall back to `DATABASE_URL`. The FastAPI application's database engine is explicitly rebound to the temporary-schema engine before lifespan startup, preventing `init_db()` from creating tables in `public`.
 
 ### 4.3 Reusable Harness: `scripts/demonstrate_isolated_scheduler.py`
 
-A standalone demonstration script was created at `scripts/demonstrate_isolated_scheduler.py`. The harness executes a complete 10-step lifecycle:
+A standalone demonstration script is maintained at `scripts/demonstrate_isolated_scheduler.py`. The original ten-step execution below is retained only as historical output and is superseded because it used a schema in the production database. The corrected harness requires a separately provisioned disposable database and executes this lifecycle:
 1. Verifies `public.weather_data` row count BEFORE execution (46,834 rows).
 2. Creates isolated schema `isolated_scheduler_demo` with cloned tables and unique constraints.
 3. Establishes isolated SQLAlchemy sessionmaker bound to `isolated_scheduler_demo`.
@@ -286,7 +288,9 @@ A standalone demonstration script was created at `scripts/demonstrate_isolated_s
 
 ### 4.4 Full Verbatim Terminal Execution Output
 
-Executing `python scripts/demonstrate_isolated_scheduler.py` from repository root:
+**SUPERSEDED, NOT VALID ISOLATION EVIDENCE.** This terminal output is from the original harness that connected to the production database and created `isolated_scheduler_demo` inside it. It must not be cited as proof that the production database was untouched. A replacement execution log must be appended only after the corrected harness is run against a separately provisioned disposable database.
+
+Original historical output (retained for audit traceability):
 
 ```text
 PS C:\Users\SUJAY\Downloads\Weather-Forecasting-Using-Machine-Learning-Audited\Weather-Forecasting-Using-Machine-Learning-main> python scripts/demonstrate_isolated_scheduler.py
@@ -735,4 +739,4 @@ I hereby certify that this Milestone 4 Final Acceptance & Gap Closure Audit Repo
 5. **Demonstration Authenticity**: Scheduler execution was performed using unmocked APScheduler, PostgreSQL advisory locks, and live Open-Meteo network calls in an isolated PostgreSQL schema with clean teardown.
 6. **PR #8 Readiness**: The full 33-file diff against `origin/main` is reviewed and validated, regression tests (59/59) pass, and merge execution is appropriately left to the user.
 
-**Audit Status**: **ALL MILESTONE 4 ACCEPTANCE CRITERIA VERIFIED & FULFILLED**.
+**Audit Status**: **MILESTONE 4 CONDITIONALLY COMPLETE. R3 IS BLOCKED pending successful execution of the corrected scheduler harness against a separate disposable PostgreSQL database. PR #8 must remain unmerged until that evidence and review are complete.**
