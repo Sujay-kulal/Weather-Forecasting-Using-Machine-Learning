@@ -81,40 +81,81 @@ def fetch_forecast_for_state(state: str, lat: float, lon: float, days_back: int 
 class IngestionSummary(dict):
     """
     Structured dictionary summary of weather ingestion with backwards-compatible
-    integer evaluation (evaluates equal to records_upserted if compared to int).
+    numeric evaluation (evaluates equal to records_upserted when compared to int/float).
     """
     def __eq__(self, other):
-        if isinstance(other, int):
+        if isinstance(other, (int, float)):
             return self.get("records_upserted", 0) == other
         return super().__eq__(other)
 
     def __ne__(self, other):
-        if isinstance(other, int):
+        if isinstance(other, (int, float)):
             return self.get("records_upserted", 0) != other
         return super().__ne__(other)
 
     def __lt__(self, other):
-        if isinstance(other, int):
+        if isinstance(other, (int, float)):
             return self.get("records_upserted", 0) < other
         return NotImplemented
 
     def __le__(self, other):
-        if isinstance(other, int):
+        if isinstance(other, (int, float)):
             return self.get("records_upserted", 0) <= other
         return NotImplemented
 
     def __gt__(self, other):
-        if isinstance(other, int):
+        if isinstance(other, (int, float)):
             return self.get("records_upserted", 0) > other
         return NotImplemented
 
     def __ge__(self, other):
-        if isinstance(other, int):
+        if isinstance(other, (int, float)):
             return self.get("records_upserted", 0) >= other
         return NotImplemented
 
     def __int__(self):
-        return self.get("records_upserted", 0)
+        return int(self.get("records_upserted", 0))
+
+    def __float__(self):
+        return float(self.get("records_upserted", 0))
+
+    def __index__(self):
+        return int(self.get("records_upserted", 0))
+
+    def __format__(self, format_spec):
+        if format_spec and format_spec[-1] in "bcdoxXneEfFgG%":
+            return format(self.get("records_upserted", 0), format_spec)
+        return super().__format__(format_spec)
+
+    def __add__(self, other):
+        if isinstance(other, (int, float)):
+            return self.get("records_upserted", 0) + other
+        return NotImplemented
+
+    def __radd__(self, other):
+        if isinstance(other, (int, float)):
+            return other + self.get("records_upserted", 0)
+        return NotImplemented
+
+    def __sub__(self, other):
+        if isinstance(other, (int, float)):
+            return self.get("records_upserted", 0) - other
+        return NotImplemented
+
+    def __rsub__(self, other):
+        if isinstance(other, (int, float)):
+            return other - self.get("records_upserted", 0)
+        return NotImplemented
+
+    def __mul__(self, other):
+        if isinstance(other, (int, float)):
+            return self.get("records_upserted", 0) * other
+        return NotImplemented
+
+    def __rmul__(self, other):
+        if isinstance(other, (int, float)):
+            return other * self.get("records_upserted", 0)
+        return NotImplemented
 
 
 def update_weather(days_back: int = 7, session=None) -> IngestionSummary:
@@ -122,6 +163,9 @@ def update_weather(days_back: int = 7, session=None) -> IngestionSummary:
     Ingest recent weather data using the Open-Meteo Forecast API (past_days)
     and perform an idempotent UPSERT into weather_data with per-state failure isolation.
     """
+    if days_back < 0:
+        raise ValueError(f"days_back cannot be negative, got {days_back}")
+
     close_session = False
     if session is None:
         session = SessionLocal()
@@ -135,8 +179,11 @@ def update_weather(days_back: int = 7, session=None) -> IngestionSummary:
     failed_state_errors = {}
 
     try:
-        for state, (lat, lon) in STATE_COORDS.items():
+        for state, coords in STATE_COORDS.items():
             try:
+                if not isinstance(coords, (tuple, list)) or len(coords) != 2:
+                    raise ValueError(f"Invalid coordinate configuration for state '{state}': {coords!r}")
+                lat, lon = coords
                 data = fetch_forecast_for_state(state, lat, lon, days_back=days_back)
                 if not data or "daily" not in data or "time" not in data["daily"]:
                     raise ValueError(f"Malformed API response for state '{state}': missing 'daily' weather payload")
