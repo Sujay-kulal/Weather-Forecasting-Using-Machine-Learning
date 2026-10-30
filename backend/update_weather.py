@@ -78,75 +78,208 @@ def fetch_forecast_for_state(state: str, lat: float, lon: float, days_back: int 
                 raise
             time.sleep(2 ** attempt)
 
-def update_weather(days_back: int = 7, session=None) -> int:
+class IngestionSummary(dict):
+    """
+    Structured dictionary summary of weather ingestion with backwards-compatible
+    numeric evaluation (evaluates equal to records_upserted when compared to int/float).
+    """
+    def __eq__(self, other):
+        if isinstance(other, (int, float)):
+            return self.get("records_upserted", 0) == other
+        return super().__eq__(other)
+
+    def __ne__(self, other):
+        if isinstance(other, (int, float)):
+            return self.get("records_upserted", 0) != other
+        return super().__ne__(other)
+
+    def __lt__(self, other):
+        if isinstance(other, (int, float)):
+            return self.get("records_upserted", 0) < other
+        return NotImplemented
+
+    def __le__(self, other):
+        if isinstance(other, (int, float)):
+            return self.get("records_upserted", 0) <= other
+        return NotImplemented
+
+    def __gt__(self, other):
+        if isinstance(other, (int, float)):
+            return self.get("records_upserted", 0) > other
+        return NotImplemented
+
+    def __ge__(self, other):
+        if isinstance(other, (int, float)):
+            return self.get("records_upserted", 0) >= other
+        return NotImplemented
+
+    def __int__(self):
+        return int(self.get("records_upserted", 0))
+
+    def __float__(self):
+        return float(self.get("records_upserted", 0))
+
+    def __index__(self):
+        return int(self.get("records_upserted", 0))
+
+    def __format__(self, format_spec):
+        if format_spec and format_spec[-1] in "bcdoxXneEfFgG%":
+            return format(self.get("records_upserted", 0), format_spec)
+        return super().__format__(format_spec)
+
+    def __add__(self, other):
+        if isinstance(other, (int, float)):
+            return self.get("records_upserted", 0) + other
+        return NotImplemented
+
+    def __radd__(self, other):
+        if isinstance(other, (int, float)):
+            return other + self.get("records_upserted", 0)
+        return NotImplemented
+
+    def __sub__(self, other):
+        if isinstance(other, (int, float)):
+            return self.get("records_upserted", 0) - other
+        return NotImplemented
+
+    def __rsub__(self, other):
+        if isinstance(other, (int, float)):
+            return other - self.get("records_upserted", 0)
+        return NotImplemented
+
+    def __mul__(self, other):
+        if isinstance(other, (int, float)):
+            return self.get("records_upserted", 0) * other
+        return NotImplemented
+
+    def __rmul__(self, other):
+        if isinstance(other, (int, float)):
+            return other * self.get("records_upserted", 0)
+        return NotImplemented
+
+
+def update_weather(days_back: int = 7, session=None) -> IngestionSummary:
     """
     Ingest recent weather data using the Open-Meteo Forecast API (past_days)
-    and perform an idempotent UPSERT into weather_data.
+    and perform an idempotent UPSERT into weather_data with per-state failure isolation.
     """
+    if days_back < 0:
+        raise ValueError(f"days_back cannot be negative, got {days_back}")
+
     close_session = False
     if session is None:
         session = SessionLocal()
         close_session = True
 
-    logger.info(f"Starting weather update (days_back={days_back}) for {len(STATE_COORDS)} states...")
+    total_states = len(STATE_COORDS)
+    logger.info(f"Starting weather update (days_back={days_back}) for {total_states} states...")
     added_or_updated_total = 0
+    successful_states = []
+    failed_states = []
+    failed_state_errors = {}
 
     try:
-        for state, (lat, lon) in STATE_COORDS.items():
-            data = fetch_forecast_for_state(state, lat, lon, days_back=days_back)
-            if not data or "daily" not in data or "time" not in data["daily"]:
-                logger.warning(f"[{state}] No daily data in response")
-                continue
+        for state, coords in STATE_COORDS.items():
+            try:
+                if not isinstance(coords, (tuple, list)) or len(coords) != 2:
+                    raise ValueError(f"Invalid coordinate configuration for state '{state}': {coords!r}")
+                lat, lon = coords
+                data = fetch_forecast_for_state(state, lat, lon, days_back=days_back)
+                if not data or "daily" not in data or "time" not in data["daily"]:
+                    raise ValueError(f"Malformed API response for state '{state}': missing 'daily' weather payload")
 
-            daily = data["daily"]
-            times = daily["time"]
-            t_max = daily["temperature_2m_max"]
-            t_min = daily["temperature_2m_min"]
-            t_mean = daily["temperature_2m_mean"]
-            precip = daily["precipitation_sum"]
-            humid = daily["relative_humidity_2m_mean"]
+                daily = data["daily"]
+                times = daily["time"]
+                t_max = daily.get("temperature_2m_max", [])
+                t_min = daily.get("temperature_2m_min", [])
+                t_mean = daily.get("temperature_2m_mean", [])
+                precip = daily.get("precipitation_sum", [])
+                humid = daily.get("relative_humidity_2m_mean", [])
 
-            buffer = []
-            for i in range(len(times)):
-                if t_max[i] is None or t_min[i] is None or t_mean[i] is None or precip[i] is None or humid[i] is None:
-                    continue
+                buffer = []
+                for i in range(len(times)):
+                    if (
+                        i >= len(t_max) or t_max[i] is None or
+                        i >= len(t_min) or t_min[i] is None or
+                        i >= len(t_mean) or t_mean[i] is None or
+                        i >= len(precip) or precip[i] is None or
+                        i >= len(humid) or humid[i] is None
+                    ):
+                        continue
 
-                d = datetime.strptime(times[i], "%Y-%m-%d").date()
-                buffer.append({
-                    "state": state,
-                    "district": "",
-                    "location": "",
-                    "date": d,
-                    "temp_max": float(t_max[i]),
-                    "temp_min": float(t_min[i]),
-                    "temp_avg": float(t_mean[i]),
-                    "humidity": float(humid[i]),
-                    "rainfall": float(precip[i]),
-                })
+                    d = datetime.strptime(times[i], "%Y-%m-%d").date()
+                    buffer.append({
+                        "state": state,
+                        "district": "",
+                        "location": "",
+                        "date": d,
+                        "temp_max": float(t_max[i]),
+                        "temp_min": float(t_min[i]),
+                        "temp_avg": float(t_mean[i]),
+                        "humidity": float(humid[i]),
+                        "rainfall": float(precip[i]),
+                    })
 
-            if buffer:
-                stmt = pg_insert(WeatherData).values(buffer)
-                upsert_stmt = stmt.on_conflict_do_update(
-                    constraint="uq_weather_state_dist_loc_date",
-                    set_={
-                        "temp_max": stmt.excluded.temp_max,
-                        "temp_min": stmt.excluded.temp_min,
-                        "temp_avg": stmt.excluded.temp_avg,
-                        "humidity": stmt.excluded.humidity,
-                        "rainfall": stmt.excluded.rainfall,
-                    }
-                )
-                session.execute(upsert_stmt)
-                session.commit()
-                added_or_updated_total += len(buffer)
-                logger.info(f"[{state}] Upserted {len(buffer)} records.")
-            else:
-                logger.info(f"[{state}] No valid records to upsert.")
+                if buffer:
+                    stmt = pg_insert(WeatherData).values(buffer)
+                    upsert_stmt = stmt.on_conflict_do_update(
+                        constraint="uq_weather_state_dist_loc_date",
+                        set_={
+                            "temp_max": stmt.excluded.temp_max,
+                            "temp_min": stmt.excluded.temp_min,
+                            "temp_avg": stmt.excluded.temp_avg,
+                            "humidity": stmt.excluded.humidity,
+                            "rainfall": stmt.excluded.rainfall,
+                        }
+                    )
+                    session.execute(upsert_stmt)
+                    session.commit()
+                    added_or_updated_total += len(buffer)
+                    logger.info(f"[{state}] Upserted {len(buffer)} records.")
+                else:
+                    logger.info(f"[{state}] No valid records to upsert.")
 
-            time.sleep(0.5)
+                successful_states.append(state)
 
-        logger.info(f"Weather update completed. Total upserted records: {added_or_updated_total}")
-        return added_or_updated_total
+            except Exception as exc:
+                try:
+                    session.rollback()
+                except Exception as rb_exc:
+                    logger.warning(f"[{state}] Session rollback encountered error: {rb_exc}")
+
+                error_detail = f"{type(exc).__name__}: {str(exc)}"
+                logger.error(f"[{state}] Ingestion failed: {error_detail}. Continuing to next state.")
+                failed_states.append(state)
+                failed_state_errors[state] = error_detail
+
+            finally:
+                time.sleep(0.5)
+
+        if not failed_states and successful_states:
+            status = "success"
+        elif not successful_states:
+            status = "failed"
+        else:
+            status = "partial_success"
+
+        summary = IngestionSummary({
+            "status": status,
+            "total_states": total_states,
+            "successful_states": successful_states,
+            "failed_states": failed_states,
+            "successful_count": len(successful_states),
+            "failed_count": len(failed_states),
+            "records_upserted": added_or_updated_total,
+            "records_inserted_or_updated": added_or_updated_total,
+            "failed_state_errors": failed_state_errors,
+            "errors": failed_state_errors,
+        })
+        logger.info(
+            f"Weather update completed with status '{status}': "
+            f"{len(successful_states)} succeeded, {len(failed_states)} failed, "
+            f"{added_or_updated_total} records upserted."
+        )
+        return summary
     finally:
         if close_session:
             session.close()
@@ -155,7 +288,8 @@ def main():
     parser = argparse.ArgumentParser(description="Update weather data from Open-Meteo Forecast API.")
     parser.add_argument("--days-back", type=int, default=7, help="Number of past days to fetch (default: 7)")
     args = parser.parse_args()
-    update_weather(days_back=args.days_back)
+    summary = update_weather(days_back=args.days_back)
+    print(json.dumps(summary, indent=2))
 
 if __name__ == "__main__":
     main()
