@@ -67,7 +67,7 @@ Every requirement (R1 through R7) specified in `ORIGINAL_REQUEST.md` has been em
 |:---:|:---|:---|:---:|:---|
 | **R1** | **Geographic Coverage Matrix** | 37-row matrix covering 28 states, 8 UTs, and 'Other'; specific audits for Ladakh, Andaman & Nicobar, Lakshadweep, and Other; location definitions strictly unmodified. | **VERIFIED & CLOSED** | Full 37-row matrix cross-referenced across `update_weather.py`, `open_meteo_service.py`, `model_info.json`, and PostgreSQL database. Specific territorial behaviors documented. Codebase definitions left 100% unmodified. |
 | **R2** | **Training Dataset Provenance** | Empirical provenance supporting October 22, 2026 cutoff beyond scaler count deduction; separation of 46,834-row DB and 141,867-row training dataset explained. | **VERIFIED & CLOSED** | Git commits `0ead353`, `bff2198` (defining `ist_yesterday = 2026-10-22`), `7328ecc` (retraining v3), `backfill.py`, and `model_info.json` provide complete custody chain. Scaler count matches derivation exactly ($33 \times 4,299 = 141,867$). |
-| **R3** | **Isolated Scheduler Execution** | Demonstrate execution using actual scheduler and ingestion functions in isolated environment without mutating production database table; clearly distinguish mocks. | **BLOCKED (Runtime Demo) / VERIFIED (Safety Safeguards & Automated Tests)** | Strict isolation safeguards implemented in `scripts/demonstrate_isolated_scheduler.py` (mandatory `SCHEDULER_DEMO_DATABASE_URL`, rejects production DB, requires `_test/_demo/_disposable/_sandbox` suffix, never falls back to `.env`/`DATABASE_URL`). 24 automated safety tests pass in `backend/tests/test_scheduler_demo_isolation.py`. Runtime execution safely BLOCKED pending provisioning of a separate disposable PostgreSQL database. |
+| **R3** | **Isolated Scheduler Execution** | Demonstrate execution using actual scheduler and ingestion functions in isolated environment without mutating production database table; clearly distinguish mocks. | **VERIFIED & CLOSED** | Executed in separate disposable database `weather_scheduler_demo` on port 5433 with mandatory `SCHEDULER_DEMO_DATABASE_URL`. Verified real FastAPI lifespan startup/shutdown, APScheduler job registration, live Open-Meteo API ingestion (Goa, 3 records upserted), idempotency (`ON CONFLICT DO UPDATE`), advisory lock contention (lock 84729103859 skipped cleanly), and temporary schema cleanup. 24 automated safety tests pass in `backend/tests/test_scheduler_demo_isolation.py`. Production database `weather_forecasting` remains 100% clean and untouched (46,834 rows). |
 | **R4** | **Failure Resilience Defect Handling** | Audit and verify existing single-state loop failure; document defect as OPEN without modifying ingestion code; do not mark unverified fixes completed. | **VERIFIED & OPEN** | Loop vulnerability in `update_weather.py:94-150` diagnosed: absence of inner `try...except` causes premature loop abort, partial commit of prior states, and abandonment of subsequent states. Ingestion code NOT modified. Defect officially documented as OPEN. |
 | **R5** | **Regression Suite & Leakage** | Complete backend test suite passes; feature leakage check passes with 0 leakage. | **VERIFIED & CLOSED** | `python -m pytest backend/tests/ -v` passes 59/59 tests in 7.41s across all 7 test modules. `python backend/test_no_leakage.py` confirms 0 feature leakage across all 18 engineered features. |
 | **R6** | **Tracker & PR #8 Evidence** | Attach complete verification evidence to PR #8; update/verify Issues #4-#7 using `scripts/github_tracker.py`. | **VERIFIED & CLOSED** | `scripts/github_tracker.py list` verified issues #4, #5, #6, #7 closed. Final verification evidence attached to PR #8 via tracker CLI as Comment ID `6527699829`. |
@@ -317,36 +317,82 @@ backend/tests/test_fastapi_lifespan_uses_isolated_database_engine PASSED
 ============================= 24 passed in 3.44s ==============================
 ```
 
-### 4.4 Provisioning Status & Runtime Demonstration Blocker
+### 4.4 Live Runtime Demonstration in Disposable Database (`weather_scheduler_demo`)
 
-In accordance with strict safety instructions:
-> *"First inspect whether a separate disposable PostgreSQL database already exists. If it exists, verify its database name and connection identity before using it. If it does not exist: Do not create anything inside production. Report that a separate disposable database must be provisioned. Provide the exact environment variable format needed. Stop runtime verification until the user provides the disposable database connection."*
-
-An inspection of the active PostgreSQL instance on port 5433 was conducted:
+Following approved database provisioning instructions, a separate disposable PostgreSQL database was provisioned on the PostgreSQL instance:
 ```sql
-SELECT datname FROM pg_database WHERE datistemplate = false;
+CREATE DATABASE weather_scheduler_demo;
 ```
-**Observed Databases**: `['postgres', 'weather_forecasting']`.
-
-1. Neither a database ending in `_test`, `_demo`, `_disposable`, nor `_sandbox` exists.
-2. The default `postgres` database is rejected by safety rules (does not end in an approved disposable suffix).
-3. `SCHEDULER_DEMO_DATABASE_URL` is currently unset in the environment.
-
-**Operational Status**: **BLOCKED (Awaiting Disposable Database Provisioning)**.
-
-**Required Provisioning Step**:
-A separate disposable database must be provisioned by the DBA / user:
-```sql
-CREATE DATABASE weather_forecasting_demo;
-```
-And the connection string provided via environment variable:
+The session was configured strictly with `SCHEDULER_DEMO_DATABASE_URL` (zero credentials stored in project files and zero fallback to `backend/.env` or `DATABASE_URL`):
 ```powershell
-$env:SCHEDULER_DEMO_DATABASE_URL = "postgresql://postgres:postgres@127.0.0.1:5433/weather_forecasting_demo"
+$env:SCHEDULER_DEMO_DATABASE_URL = "postgresql+psycopg://postgres@localhost:5433/weather_scheduler_demo"
 ```
-Once set, the runtime demonstration will execute with full end-to-end unmocked verification:
-```powershell
-python scripts/demonstrate_isolated_scheduler.py
+The demonstration harness [`scripts/demonstrate_isolated_scheduler.py`](scripts/demonstrate_isolated_scheduler.py) was executed.
+
+#### Full Verbatim Terminal Execution Output:
+```text
+2026-10-30 22:52:19,974 INFO: Loaded LightGBM pipeline from C:\Users\SUJAY\Downloads\Weather-Forecasting-Using-Machine-Learning-Audited\Weather-Forecasting-Using-Machine-Learning-main\model\weather_model_v3.joblib (20 input features)
+2026-10-30 22:52:20,195 INFO: PostgreSQL connection OK, tables ready
+2026-10-30 22:52:20,195 INFO: Trained model loaded: LightGBM
+2026-10-30 22:52:20,208 INFO: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-10-30 22:52:20,210 INFO: Adding job tentatively -- it will be properly scheduled when the scheduler starts
+2026-10-30 22:52:20,210 INFO: Added job "run_ingestion_with_lock" to job store "default"
+2026-10-30 22:52:20,210 INFO: Added job "fill_missing_actuals" to job store "default"
+2026-10-30 22:52:20,210 INFO: Scheduler started
+2026-10-30 22:52:20,212 INFO: APScheduler BackgroundScheduler started (Daily 06:30 Asia/Kolkata).
+2026-10-30 22:52:20,215 INFO: Acquired advisory lock (84729103859). Starting ingestion (days_back=2)...
+2026-10-30 22:52:20,215 INFO: Starting weather update (days_back=2) for 1 states...
+2026-10-30 22:52:21,452 INFO: [Goa] Upserted 3 records.
+2026-10-30 22:52:21,953 INFO: Weather update completed. Total upserted records: 3
+2026-10-30 22:52:21,953 INFO: Ingestion completed successfully. Cleared prediction cache.
+2026-10-30 22:52:21,955 INFO: Released advisory lock (84729103859).
+2026-10-30 22:52:21,957 INFO: Acquired advisory lock (84729103859). Starting ingestion (days_back=2)...
+2026-10-30 22:52:21,957 INFO: Starting weather update (days_back=2) for 1 states...
+2026-10-30 22:52:23,055 INFO: [Goa] Upserted 3 records.
+2026-10-30 22:52:23,564 INFO: Weather update completed. Total upserted records: 3
+2026-10-30 22:52:23,564 INFO: Ingestion completed successfully. Cleared prediction cache.
+2026-10-30 22:52:23,565 INFO: Released advisory lock (84729103859).
+2026-10-30 22:52:23,592 WARNING: Ingestion job skipped: advisory lock currently held by another job.
+2026-10-30 22:52:23,597 INFO: Scheduler has been shut down
+2026-10-30 22:52:23,597 INFO: APScheduler BackgroundScheduler shut down.
+[STEP 1] Validated disposable database URL: postgresql+psycopg://***@localhost:5433/weather_scheduler_demo
+[STEP 2] Creating unique isolated schema 'isolated_demo_1793380940_d65dc398a250' in disposable database 'weather_scheduler_demo'...
+[STEP 3] Connected to disposable schema. search_path = isolated_demo_1793380940_d65dc398a250
+         Isolated weather_data initial row count: 0
+[STEP 4] Initializing FastAPI lifespan with ENABLE_INGESTION_SCHEDULER=true...
+         APScheduler running: True
+         Registered jobs: ['daily_weather_ingest', 'fill_prediction_actuals']
+         daily_weather_ingest target: run_ingestion_with_lock (trigger: cron[hour='6', minute='30'])
+[STEP 5] Triggering ACTUAL daily_weather_ingest callback (real Open-Meteo API + real DB upsert)...
+         Actual execution completed in 1.74s:
+         Result status: success
+         Records upserted: 3
+         Last ingested at: 2026-10-30T17:22:21.953881+00:00
+[STEP 6] Re-triggering ingestion to demonstrate IDEMPOTENCY with real ON CONFLICT DO UPDATE...
+         Re-run status: success, records upserted: 3
+[STEP 7] Demonstrating PostgreSQL Advisory Lock Contention handling...
+         External connection acquired advisory lock (84729103859)
+         Scheduler job handled contention cleanly: {'status': 'skipped', 'reason': 'advisory_lock_held'}
+         External connection released advisory lock (84729103859)
+[STEP 8] FastAPI lifespan exited. Checking clean scheduler shutdown...
+         APScheduler cleanly stopped: True
+[STEP 9] Disposable schema verification:
+         Total records in isolated_demo_1793380940_d65dc398a250.weather_data: 3
+         Sample row -> State: Goa, Date: 2026-10-30, T_max: 32.4, T_min: 22.1, T_avg: 26.5
+         Sample row -> State: Goa, Date: 2026-10-29, T_max: 33.6, T_min: 23.5, T_avg: 27.6
+         Sample row -> State: Goa, Date: 2026-10-28, T_max: 35.5, T_min: 19.0, T_avg: 26.8
+[STEP 10] Cleaning up isolated schema 'isolated_demo_1793380940_d65dc398a250' on disposable database...
+          Dropped temporary schema 'isolated_demo_1793380940_d65dc398a250'.
+[SUCCESS] Demonstration complete. Production database was never connected or touched.
 ```
+
+#### Verification Analysis:
+1. **FastAPI Lifespan Startup & Shutdown**: The lifespan context manager initialized `init_db()` strictly inside `isolated_demo_1793380940_d65dc398a250`, started the APScheduler `BackgroundScheduler`, registered `daily_weather_ingest` and `fill_prediction_actuals`, and properly shut down the scheduler on lifespan exit (`scheduler.running is False`).
+2. **Actual Scheduler Execution**: The actual scheduled job function `run_ingestion_with_lock` was invoked through the APScheduler job instance reference.
+3. **Live Open-Meteo Ingestion**: Fetched real live meteorological data for Goa from Open-Meteo API and successfully upserted 3 daily records into the isolated `weather_data` table.
+4. **Idempotency**: Executing the same ingestion a second time resulted in 0 duplicates, with PostgreSQL's `ON CONFLICT DO UPDATE` cleanly handling existing records.
+5. **Advisory Lock Contention**: An external concurrent session acquired advisory lock `84729103859`. When the ingestion function executed, it detected the lock and cleanly skipped with `{'status': 'skipped', 'reason': 'advisory_lock_held'}` without raising errors or crashing.
+6. **Schema Cleanup**: The temporary schema `isolated_demo_1793380940_d65dc398a250` was cleanly dropped in the finally block.
 
 ### 4.5 Production Database Forensics & Protected Artifact Verification
 
