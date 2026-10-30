@@ -42,20 +42,39 @@ def run_ingestion_with_lock(days_back: int = 7) -> dict:
         logger.info(f"Acquired advisory lock ({ADVISORY_LOCK_ID}). Starting ingestion (days_back={days_back})...")
 
         # Run upsert ingestion
-        records_upserted = update_weather.update_weather(days_back=days_back, session=session)
+        raw_result = update_weather.update_weather(days_back=days_back, session=session)
 
-        # Update last ingested timestamp
-        _last_ingested_at = datetime.now(timezone.utc)
+        # Normalize result to dict
+        if isinstance(raw_result, dict):
+            summary = dict(raw_result)
+        else:
+            records = int(raw_result)
+            summary = {
+                "status": "success",
+                "total_states": len(update_weather.STATE_COORDS),
+                "successful_states": list(update_weather.STATE_COORDS.keys()),
+                "failed_states": [],
+                "successful_count": len(update_weather.STATE_COORDS),
+                "failed_count": 0,
+                "records_upserted": records,
+                "records_inserted_or_updated": records,
+                "failed_state_errors": {},
+                "errors": {},
+            }
 
-        # Clear prediction / forecast cache after successful ingestion
-        clear_forecast_cache()
-        logger.info("Ingestion completed successfully. Cleared prediction cache.")
+        status = summary.get("status", "success")
 
-        return {
-            "status": "success",
-            "records_upserted": records_upserted,
-            "last_ingested_at": _last_ingested_at.isoformat()
-        }
+        # Update last ingested timestamp and clear forecast cache when at least one state succeeded
+        if status in ("success", "partial_success") and (summary.get("successful_count", 0) > 0 or summary.get("records_upserted", 0) > 0):
+            _last_ingested_at = datetime.now(timezone.utc)
+            clear_forecast_cache()
+            logger.info(f"Ingestion completed with status '{status}'. Cleared prediction cache.")
+            summary["last_ingested_at"] = _last_ingested_at.isoformat()
+        else:
+            logger.warning(f"Ingestion completed with status '{status}'. Prediction cache was not cleared.")
+            summary["last_ingested_at"] = _last_ingested_at.isoformat() if _last_ingested_at else None
+
+        return summary
 
     except Exception as exc:
         logger.exception("Error during weather ingestion job: %s", exc)
