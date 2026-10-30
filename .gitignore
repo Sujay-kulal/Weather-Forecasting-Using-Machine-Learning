@@ -23,6 +23,11 @@ build/
 .DS_Store
 Thumbs.db
 
+# Agent traces and caches
+.agents/
+.pytest_cache/
+
+
 # Generated outputs (re-created by train_model.py)
 results/
 

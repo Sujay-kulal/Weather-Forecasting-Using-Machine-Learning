@@ -1,21 +1,25 @@
 # Weather Forecasting API — Backend (Phase 2)
 
-FastAPI + PostgreSQL backend that serves next-day average temperature
-(`Temp_Avg`) forecasts for 34 Indian states using the Gradient Boosting model
-trained in Phase 1 (`model/weather_model.joblib`).
+FastAPI + PostgreSQL backend that serves seven-day average temperature
+(`Temp_Avg`) forecasts using the saved multi-output model configured by
+`model/model_info.json` (currently identified there as LightGBM). The model
+metadata defines 20 input features: 18 numeric features plus `Season` and
+`State`.
 
 ```
-Frontend (later)  →  POST /predict {state, forecast_date}
-                          ↓
-                    FastAPI (this backend)
-                          ↓
-        PostgreSQL: 7 historical records before D-1   (weather_data)
-                          ↓
-        Feature Builder: exact 13 training features   (app/services/feature_service.py)
-                          ↓
-        weather_model.joblib → predicted Temp_Avg
-                          ↓
-        predictions table + JSON response
+React frontend  →  POST /predict {state, forecast_date}
+                         ↓
+                   FastAPI backend
+                         ↓
+       PostgreSQL: 7 records strictly before D-1
+                         ↓
+       Feature builder: 20 ordered model inputs
+                         ↓
+       Configured saved multi-output model
+                         ↓
+       Seven daily Temp_Avg forecast values
+                         ↓
+       predictions audit record + JSON response
 ```
 
 ## 1. PostgreSQL setup
@@ -30,23 +34,25 @@ Start the server (if not running):
 C:\Users\SUJAY\pgsql\bin\pg_ctl.exe -D C:\Users\SUJAY\pgdata -l C:\Users\SUJAY\pgdata\server.log -o "-p 5433" start
 ```
 
-Create the database (already done):
+Create the database (standard database name is `weather_db`):
 
 ```bat
-C:\Users\SUJAY\pgsql\bin\createdb.exe -U postgres -p 5433 weather_forecasting
+C:\Users\SUJAY\pgsql\bin\createdb.exe -U postgres -p 5432 weather_db
 ```
 
 ## 2. Environment variables
 
-Copy `.env.example` to `.env` (already done for this machine):
+Copy `.env.example` to `.env`:
 
 ```ini
-DATABASE_URL=postgresql+psycopg://postgres@localhost:5433/weather_forecasting
-CORS_ORIGINS=http://localhost:3000,http://localhost:5173
+DATABASE_URL=postgresql+psycopg://postgres:your_password@localhost:5432/weather_db
+ADMIN_TOKEN=your_admin_secret_token_here
+ENABLE_INGESTION_SCHEDULER=false
+CORS_ORIGINS=http://localhost:3000,http://localhost:5173,http://localhost:8080
 ```
 
 No credentials are hardcoded — for a password-protected server use
-`postgresql+psycopg://user:password@host:5432/weather_forecasting`.
+`postgresql+psycopg://user:password@host:5432/weather_db`.
 
 ## 3. Install dependencies
 
@@ -114,7 +120,7 @@ uvicorn app.main:app --reload
 | GET | `/states` | States available in the database |
 | GET | `/weather/{state}?limit=&offset=` | Historical weather (paginated) |
 | GET | `/weather/{state}/recent?days=` | Recent measurements |
-| POST | `/predict` | Next-day Temp_Avg forecast |
+| POST | `/predict` | Seven-day Temp_Avg forecast |
 | GET | `/predictions?limit=&offset=&state=&model_version=` | Filtered prediction history with total count |
 | GET | `/model-info` | Model features, train/calibration/test periods, per-horizon metrics, validation status |
 | GET | `/forecast/all?date=&day=1..7` | Selected forecast horizon for each model-supported state |
@@ -127,19 +133,13 @@ curl -X POST http://localhost:8000/predict -H "Content-Type: application/json" ^
   -d "{\"state\": \"Karnataka\", \"forecast_date\": \"2025-10-06\"}"
 ```
 
-## 10. Example response
+## 10. Response shape
 
-```json
-{
-  "state": "Karnataka",
-  "forecast_date": "2025-10-06",
-  "predicted_temp_avg": 23.68,
-  "unit": "deg C",
-  "model": "Gradient Boosting",
-  "typical_error_mae": 0.876,
-  "last_known": { "date": "2025-10-04", "temp_avg": 23.71666666666667 }
-}
-```
+A successful `/predict` response includes the requested state and forecast date,
+`predicted_temp_avg` as a seven-value array in degrees Celsius, the model name,
+the artifact-valid typical MAE when available, and the latest historical
+measurement used. Exact values depend on the selected location, date, database
+history, and loaded model artifact.
 
 ## 10. How a prediction works (and why it is leakage-free)
 
@@ -177,7 +177,7 @@ backend/
 │   │   ├── weather.py          # GET /states, /weather/{state}, .../recent
 │   │   └── prediction.py       # POST /predict, GET /predictions, /model-info
 │   └── services/
-│       ├── model_service.py    # loads weather_model.joblib once at startup
+│       ├── model_service.py    # loads the artifact configured by model/model_info.json once at startup
 │       └── feature_service.py  # exact training feature engineering
 ├── import_data.py              # CSV → PostgreSQL import (idempotent)
 ├── test_consistency.py         # backend-vs-training feature consistency test

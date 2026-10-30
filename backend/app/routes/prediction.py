@@ -2,8 +2,8 @@
 Prediction endpoints.
 
 POST /predict implements the Phase 2 pipeline:
-  PostgreSQL -> 7 records before D-1 (training row for target D) -> exact 13
-  training features -> weather_model.joblib -> predicted Temp_Avg ->
+  PostgreSQL -> 7 records before D-1 (training row for target D) -> exact 20
+  model features -> configured saved artifact -> seven Temp_Avg horizons ->
   predictions table -> JSON response. No future data, no stale data,
   no hardcoded values.
 """

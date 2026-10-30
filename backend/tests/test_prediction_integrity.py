@@ -211,3 +211,62 @@ def test_negative_zero_is_normalized_before_api_output():
     assert round_temperature(-0.004, 2) == 0.0
     assert math.copysign(1.0, round_temperature(-0.004, 2)) == 1.0
     assert normalize_temperature(-0.04) == 0.0
+
+
+def test_predict_route_excludes_asof_and_future_weather_rows(monkeypatch):
+    """The real POST /predict query must only use observations dated before D-1."""
+    session = make_session()
+    try:
+        target_date = date(2025, 1, 10)
+        # Include valid historical rows plus measurements on/after D-1.
+        for offset in range(-10, 3):
+            observed = target_date + timedelta(days=offset)
+            value = float(100 + offset)
+            session.add(WeatherData(
+                date=observed,
+                state="Karnataka",
+                district="",
+                location="",
+                temp_max=value + 2,
+                temp_min=value - 2,
+                temp_avg=value,
+                humidity=60.0 + offset,
+                rainfall=float(offset + 11),
+            ))
+        session.commit()
+
+        captured = {}
+
+        def fake_predict(features, pipeline=None):
+            captured["features"] = features.copy()
+            return [24.0, 24.1, 24.2, 24.3, 24.4, 24.5, 24.6]
+
+        monkeypatch.setattr(prediction_routes.model_service, "predict", fake_predict)
+        monkeypatch.setattr(
+            prediction_routes.weather_forecast_service,
+            "build_daily_forecasts",
+            lambda history, forecast_date, predicted_temp_avg: ([], None),
+        )
+
+        app = FastAPI()
+        app.include_router(prediction_routes.router)
+        app.state.pipeline = object()
+
+        def override_db():
+            yield session
+
+        app.dependency_overrides[get_db] = override_db
+        with TestClient(app) as client:
+            response = client.post(
+                "/predict",
+                json={"state": "Karnataka", "forecast_date": target_date.isoformat()},
+            )
+
+        assert response.status_code == 200, response.text
+        # asof = D-1 (Jan 9); the SQL predicate is date < asof,
+        # so the newest usable observation is D-2 (Jan 8), value 98.
+        assert captured["features"].iloc[0]["lag1_temp_avg"] == 98.0
+        assert response.json()["last_known"]["date"] == "2025-01-08"
+        assert response.json()["predicted_temp_avg"] == [24.0, 24.1, 24.2, 24.3, 24.4, 24.5, 24.6]
+    finally:
+        session.close()

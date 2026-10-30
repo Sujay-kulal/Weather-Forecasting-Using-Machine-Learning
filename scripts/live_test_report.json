@@ -1,0 +1,59 @@
+{
+  "live_api_test": {
+    "target_state": "Delhi",
+    "coordinates": [
+      28.7041,
+      77.1025
+    ],
+    "request_url": "https://api.open-meteo.com/v1/forecast?latitude=28.7041&longitude=77.1025&past_days=1&forecast_days=1&daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,relative_humidity_2m_mean&timezone=auto",
+    "status_code": 200,
+    "latency_ms": 1266.4,
+    "content_length": 574,
+    "units": {
+      "time": "iso8601",
+      "temperature_2m_max": "\u00b0C",
+      "temperature_2m_min": "\u00b0C",
+      "temperature_2m_mean": "\u00b0C",
+      "precipitation_sum": "mm",
+      "relative_humidity_2m_mean": "%"
+    },
+    "times": [
+      "2026-10-29",
+      "2026-10-30"
+    ],
+    "observation_count": 2,
+    "parsed_observation": {
+      "state": "Delhi",
+      "district": "",
+      "location": "",
+      "date": "2026-10-29",
+      "temp_max": 23.2,
+      "temp_min": 19.0,
+      "temp_avg": 20.9,
+      "humidity": 82.0,
+      "rainfall": 41.2
+    }
+  },
+  "database_rollback_test": {
+    "tested_constraint": "uq_weather_state_dist_loc_date",
+    "target_date": "2026-10-29",
+    "existed_prior_to_test": false,
+    "baseline_row": null,
+    "upserted_in_transaction": {
+      "id": 58191,
+      "state": "Delhi",
+      "district": "",
+      "location": "",
+      "date": "2026-10-29",
+      "temp_max": 23.2,
+      "temp_min": 19.0,
+      "temp_avg": 20.9,
+      "humidity": 82.0,
+      "rainfall": 41.2
+    },
+    "post_rollback_row": null,
+    "rollback_verified_clean": true,
+    "historical_data_polluted": false
+  },
+  "all_tests_passed": true
+}

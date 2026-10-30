@@ -19,8 +19,10 @@ logger = logging.getLogger("model_service")
 PROJECT_ROOT = Path(__file__).resolve().parents[3]   # backend/app/services -> project root
 MODEL_INFO_PATH = PROJECT_ROOT / "model" / "model_info.json"
 
+MODEL_PATH = MODEL_INFO_PATH.parent / "<unresolved-model-artifact>"
+
 try:
-    with open(MODEL_INFO_PATH) as f:
+    with open(MODEL_INFO_PATH, encoding="utf-8") as f:
         model_info = json.load(f)
     configured_path = model_info.get("model_path") or model_info.get("model_v3_path")
     evaluation_path = model_info.get("evaluation_artifact")

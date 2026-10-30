@@ -30,7 +30,7 @@ docker compose up --build -d
 Services started:
 - `db`: PostgreSQL 16 on `127.0.0.1:5432`
 - `migrate`: one-shot schema migration against the Compose database
-- `backend`: FastAPI with LightGBM model on `127.0.0.1:8000`; ingestion scheduling is disabled by default and must be explicitly enabled
+- `backend`: FastAPI with LightGBM model exposed on host `127.0.0.1:8001` (container port `8000`); ingestion scheduling is disabled by default and must be explicitly enabled
 - `frontend`: Nginx serving the React SPA and proxying `/api/` to backend on `127.0.0.1:8080`
 
 ### 3. Populate the Database (Initial Backfill)

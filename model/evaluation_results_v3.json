@@ -1,0 +1,30 @@
+{
+  "status": "insufficient_post_cutoff_data",
+  "validated_for_artifact": false,
+  "artifact_name": "weather_model_v3.joblib",
+  "artifact_sha256": "844fdadfbe2786d859cdfc55c2e7dc14eb0b2f420b339f3e877fa6856aa37adf",
+  "artifact_trained_through": "2026-10-22",
+  "embargo_days": 8,
+  "embargo_offset_days": 9,
+  "first_eligible_origin": "2026-10-31",
+  "test_window_origins": 30,
+  "test_period": [
+    "2026-10-31",
+    "2026-11-29"
+  ],
+  "required_target_end": "2026-12-06",
+  "latest_available_date": "2026-10-22",
+  "required_additional_days": 45,
+  "sample_counts": {
+    "test_origins": 0,
+    "total_predictions": 0
+  },
+  "metrics": {},
+  "data_integrity": {
+    "consecutive_calendar_dates_verified": true,
+    "missing_dates_excluded": true,
+    "training_overlap_checked": true,
+    "independent": false
+  },
+  "note": "Sufficient post-cutoff observations do not exist. Evaluation of a 30-day window requires verified observations through 2026-12-06, but dataset only reaches 2026-10-22. Exactly 45 additional days of observations are required."
+}
