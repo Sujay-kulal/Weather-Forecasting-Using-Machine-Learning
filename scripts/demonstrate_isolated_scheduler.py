@@ -1,177 +1,196 @@
 """
-Demonstration Harness for Actual Scheduler and Ingestion Execution in an Isolated Environment.
-=============================================================================================
-This harness executes the REAL APScheduler lifespan, the REAL run_ingestion_with_lock,
-the REAL PostgreSQL advisory lock mechanism, the REAL update_weather upsert pipeline,
-and REAL Open-Meteo HTTP data ingestion inside an ISOLATED PostgreSQL SCHEMA.
+Run the real scheduler/ingestion path against a separate disposable PostgreSQL database.
 
-Zero mutations occur in the production table public.weather_data (locked at 46,834 rows).
+Required environment variable:
+    SCHEDULER_DEMO_DATABASE_URL=postgresql+psycopg://.../weather_scheduler_demo
+
+The database name MUST end in _test, _demo, _disposable, or _sandbox.
+This script never reads backend/.env, never falls back to DATABASE_URL, and
+never connects to the production database. It creates a unique temporary
+schema only inside the explicitly supplied disposable database.
 """
+from __future__ import annotations
+
+import asyncio
 import os
 import sys
 import time
-from datetime import datetime, timezone
+import uuid
 from pathlib import Path
-from dotenv import load_dotenv
+
 import sqlalchemy as sa
+from sqlalchemy.engine import URL, make_url
 from sqlalchemy.orm import sessionmaker
 
-# Setup path relative to repository root
+
 ROOT_DIR = Path(__file__).resolve().parent.parent
-backend_dir = ROOT_DIR / "backend"
-if str(backend_dir) not in sys.path:
-    sys.path.insert(0, str(backend_dir))
+BACKEND_DIR = ROOT_DIR / "backend"
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
-load_dotenv(backend_dir / ".env")
-
-import update_weather
-from app.database import Base
-from app.models import WeatherData, Prediction
-from app.services import ingestion_service
-from app.services.ingestion_service import ADVISORY_LOCK_ID, run_ingestion_with_lock
-from app.services.metrics_service import fill_missing_actuals
-from app.main import lifespan
-from fastapi import FastAPI
-import asyncio
+ALLOWED_DB_SUFFIXES = ("_test", "_demo", "_disposable", "_sandbox")
+PRODUCTION_DATABASE_NAMES = {"weather_forecasting"}
 
 
-def run_isolated_demonstration():
-    db_url = os.environ.get("DATABASE_URL")
-    if not db_url:
-        raise RuntimeError("DATABASE_URL not found in backend/.env")
+def _database_identity(url: URL) -> tuple[str | None, int | None, str | None]:
+    return (url.host, url.port, url.database)
 
-    main_engine = sa.create_engine(db_url)
 
-    # Step 1: Pre-execution verification of production database table
-    with main_engine.connect() as conn:
-        prod_count_initial = conn.execute(sa.text("SELECT count(*) FROM public.weather_data")).scalar()
-        print(f"[STEP 1] Production public.weather_data row count BEFORE execution: {prod_count_initial}")
-        assert prod_count_initial == 46834, f"CRITICAL: Production rows altered! Expected 46834, found {prod_count_initial}"
-
-        # Step 2: Create isolated schema and duplicate table structures
-        schema_name = "isolated_scheduler_demo"
-        print(f"[STEP 2] Creating isolated PostgreSQL schema: {schema_name}...")
-        conn.execute(sa.text(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE;"))
-        conn.execute(sa.text(f"CREATE SCHEMA IF NOT EXISTS {schema_name};"))
-        conn.commit()
-
-        # Create schema tables with exact constraints
-        conn.execute(sa.text(f"CREATE TABLE IF NOT EXISTS {schema_name}.weather_data (LIKE public.weather_data INCLUDING ALL);"))
-        conn.execute(sa.text(f"CREATE TABLE IF NOT EXISTS {schema_name}.predictions (LIKE public.predictions INCLUDING ALL);"))
-        conn.execute(sa.text(f"ALTER TABLE {schema_name}.weather_data ADD CONSTRAINT uq_weather_state_dist_loc_date UNIQUE (state, district, location, date);"))
-        conn.commit()
-
-    # Step 3: Create isolated engine and sessionmaker bound to isolated schema
-    isolated_engine = sa.create_engine(
-        db_url,
-        connect_args={"options": f"-csearch_path={schema_name}"}
-    )
-    IsolatedSessionLocal = sessionmaker(bind=isolated_engine)
+def validate_demo_database_url(raw_url: str | None, production_url: str | None = None) -> URL:
+    """Fail closed unless an explicitly named disposable database is supplied."""
+    if not raw_url:
+        raise RuntimeError(
+            "Set SCHEDULER_DEMO_DATABASE_URL to a separate disposable PostgreSQL database. "
+            "There is deliberately no DATABASE_URL or backend/.env fallback."
+        )
 
     try:
-        # Step 4: Verify isolated table is initially empty
-        with isolated_engine.connect() as iconn:
-            iso_count_initial = iconn.execute(sa.text("SELECT count(*) FROM weather_data")).scalar()
-            current_search_path = iconn.execute(sa.text("SHOW search_path")).scalar()
-            print(f"[STEP 3] Connected to isolated schema. search_path = {current_search_path}")
-            print(f"         Isolated weather_data initial row count: {iso_count_initial}")
-            assert iso_count_initial == 0, "Isolated table should be empty initially"
+        demo_url = make_url(raw_url)
+    except Exception as exc:
+        raise RuntimeError("SCHEDULER_DEMO_DATABASE_URL is not a valid SQLAlchemy URL.") from exc
 
-        # Step 5: Test Actual APScheduler Lifespan Startup & Job Registration
-        print("[STEP 4] Initializing FastAPI lifespan with ENABLE_INGESTION_SCHEDULER=true...")
-        os.environ["ENABLE_INGESTION_SCHEDULER"] = "true"
-        test_app = FastAPI()
+    if not demo_url.drivername.startswith("postgresql"):
+        raise RuntimeError("Scheduler demonstration requires PostgreSQL; SQLite is not supported.")
 
-        async def _test_scheduler_lifecycle():
-            # Patch SessionLocal in ingestion_service to point to our isolated sessionmaker
-            original_session_local = ingestion_service.SessionLocal
-            ingestion_service.SessionLocal = IsolatedSessionLocal
+    database_name = (demo_url.database or "").lower()
+    if database_name in PRODUCTION_DATABASE_NAMES:
+        raise RuntimeError("Refusing to run against the protected production database.")
+    if not database_name.endswith(ALLOWED_DB_SUFFIXES):
+        raise RuntimeError(
+            "Refusing database name without an explicit disposable suffix. "
+            "Use a database ending in _test, _demo, _disposable, or _sandbox."
+        )
 
-            try:
-                # We limit STATE_COORDS to 1 state (Goa) for fast, deterministic end-to-end execution
-                test_coords = {"Goa": (15.2993, 74.1240)}
-                orig_coords = update_weather.STATE_COORDS
-                update_weather.STATE_COORDS = test_coords
+    if production_url:
+        try:
+            production_identity = _database_identity(make_url(production_url))
+        except Exception:
+            production_identity = None
+        if production_identity and _database_identity(demo_url) == production_identity:
+            raise RuntimeError("Refusing to run against the configured application database.")
 
-                async with lifespan(test_app):
-                    scheduler = getattr(test_app.state, "scheduler", None)
-                    assert scheduler is not None, "Scheduler failed to initialize on app.state"
-                    assert scheduler.running is True, "BackgroundScheduler is not running"
-                    print(f"         APScheduler running: {scheduler.running}")
+    return demo_url
 
-                    jobs = {j.id: j for j in scheduler.get_jobs()}
-                    print(f"         Registered jobs: {list(jobs.keys())}")
-                    assert "daily_weather_ingest" in jobs, "Missing daily_weather_ingest"
-                    assert "fill_prediction_actuals" in jobs, "Missing fill_prediction_actuals"
 
-                    ingest_job = jobs["daily_weather_ingest"]
-                    print(f"         daily_weather_ingest target: {ingest_job.func.__name__} (trigger: {ingest_job.trigger})")
+def run_isolated_demonstration() -> None:
+    original_database_url = os.environ.get("DATABASE_URL")
+    demo_url = validate_demo_database_url(
+        os.environ.get("SCHEDULER_DEMO_DATABASE_URL"),
+        production_url=original_database_url,
+    )
 
-                    # Step 6: Execute the ACTUAL scheduled function via the job reference
-                    print("[STEP 5] Triggering ACTUAL daily_weather_ingest callback (real Open-Meteo API + real DB upsert)...")
-                    start_t = time.time()
-                    result = ingest_job.func(days_back=2)
-                    duration = time.time() - start_t
-                    print(f"         Actual execution completed in {duration:.2f}s:")
-                    print(f"         Result status: {result['status']}")
-                    print(f"         Records upserted: {result['records_upserted']}")
-                    print(f"         Last ingested at: {result['last_ingested_at']}")
-                    assert result["status"] == "success", f"Ingestion failed: {result}"
-                    assert result["records_upserted"] > 0, "No records were upserted"
+    # Set this BEFORE importing app modules. app.database loads backend/.env
+    # with override=False, so this explicit disposable URL remains authoritative.
+    os.environ["DATABASE_URL"] = demo_url.render_as_string(hide_password=False)
+    os.environ["ENABLE_INGESTION_SCHEDULER"] = "true"
 
-                    # Step 7: Test Idempotency (re-trigger same ingestion job)
-                    print("[STEP 6] Re-triggering ingestion to demonstrate IDEMPOTENCY with real ON CONFLICT DO UPDATE...")
-                    result_idempotent = ingest_job.func(days_back=2)
-                    print(f"         Re-run status: {result_idempotent['status']}, records upserted: {result_idempotent['records_upserted']}")
-                    assert result_idempotent["status"] == "success"
+    from app.database import Base
+    from app.main import lifespan
+    from app.services import ingestion_service
+    from app.services.ingestion_service import ADVISORY_LOCK_ID
+    import update_weather
+    from fastapi import FastAPI
 
-                    # Step 8: Test Advisory Lock Contention
-                    print("[STEP 7] Demonstrating PostgreSQL Advisory Lock Contention handling...")
-                    with isolated_engine.connect() as lock_conn:
-                        # Artificially hold the advisory lock in a separate connection
-                        lock_conn.execute(sa.text(f"SELECT pg_advisory_lock({ADVISORY_LOCK_ID})"))
-                        print(f"         External connection acquired advisory lock ({ADVISORY_LOCK_ID})")
-                        try:
-                            contention_result = ingest_job.func(days_back=1)
-                            print(f"         Scheduler job handled contention cleanly: {contention_result}")
-                            assert contention_result["status"] == "skipped"
-                            assert contention_result["reason"] == "advisory_lock_held"
-                        finally:
-                            lock_conn.execute(sa.text(f"SELECT pg_advisory_unlock({ADVISORY_LOCK_ID})"))
-                            print(f"         External connection released advisory lock ({ADVISORY_LOCK_ID})")
+    schema_name = f"scheduler_demo_{uuid.uuid4().hex}"
+    engine = sa.create_engine(
+        demo_url,
+        pool_pre_ping=True,
+        connect_args={"options": f"-csearch_path={schema_name},public"},
+    )
+    schema_created = False
+    original_session_local = ingestion_service.SessionLocal
+    original_coords = update_weather.STATE_COORDS
 
-                print("[STEP 8] FastAPI lifespan exited. Checking clean scheduler shutdown...")
-                assert scheduler.running is False, "Scheduler should be stopped after lifespan exit"
-                print(f"         APScheduler cleanly stopped: {not scheduler.running}")
+    try:
+        with engine.begin() as conn:
+            actual_db = conn.execute(sa.text("SELECT current_database()")).scalar_one()
+            if actual_db != demo_url.database:
+                raise RuntimeError("Connected database name does not match the validated disposable database.")
+            conn.execute(sa.text(f'CREATE SCHEMA "{schema_name}"'))
+            schema_created = True
 
-            finally:
-                ingestion_service.SessionLocal = original_session_local
-                update_weather.STATE_COORDS = orig_coords
+        # Build tables from the repository's ORM metadata inside the unique
+        # schema. No production tables are copied or referenced.
+        Base.metadata.create_all(bind=engine)
+        isolated_session_local = sessionmaker(bind=engine, autocommit=False, autoflush=False)
 
-        asyncio.run(_test_scheduler_lifecycle())
+        with engine.connect() as conn:
+            initial_count = conn.execute(sa.text("SELECT count(*) FROM weather_data")).scalar_one()
+            search_path = conn.execute(sa.text("SHOW search_path")).scalar_one()
+            print(f"[1] Disposable database: {actual_db}")
+            print(f"[2] Unique temporary schema: {schema_name}")
+            print(f"[3] search_path: {search_path}; initial weather_data rows: {initial_count}")
+            assert initial_count == 0, "Temporary weather_data table must start empty."
 
-        # Step 9: Verify rows in isolated schema vs production schema
-        with isolated_engine.connect() as iconn:
-            iso_count_final = iconn.execute(sa.text("SELECT count(*) FROM weather_data")).scalar()
-            rows = iconn.execute(sa.text("SELECT state, date, temp_max, temp_min, temp_avg FROM weather_data ORDER BY date DESC")).fetchall()
-            print(f"[STEP 9] Isolated schema verification:")
-            print(f"         Total records in isolated_scheduler_demo.weather_data: {iso_count_final}")
-            for r in rows:
-                print(f"         Sample row -> State: {r[0]}, Date: {r[1]}, T_max: {r[2]}, T_min: {r[3]}, T_avg: {r[4]}")
-            assert iso_count_final > 0, "Expected inserted rows in isolated schema"
+        async def execute_lifecycle() -> None:
+            nonlocal original_session_local, original_coords
+            ingestion_service.SessionLocal = isolated_session_local
+            update_weather.STATE_COORDS = {"Goa": (15.2993, 74.1240)}
+            app = FastAPI()
+
+            async with lifespan(app):
+                scheduler = getattr(app.state, "scheduler", None)
+                assert scheduler is not None and scheduler.running
+                jobs = {job.id: job for job in scheduler.get_jobs()}
+                assert "daily_weather_ingest" in jobs
+                assert "fill_prediction_actuals" in jobs
+                ingest_job = jobs["daily_weather_ingest"]
+
+                print("[4] FastAPI lifespan and APScheduler started.")
+                started = time.monotonic()
+                first = ingest_job.func(days_back=2)
+                print(f"[5] Live ingestion result: {first}")
+                assert first["status"] == "success"
+                assert first["records_upserted"] > 0
+                print(f"    Execution time: {time.monotonic() - started:.2f}s")
+
+                second = ingest_job.func(days_back=2)
+                assert second["status"] == "success"
+                print(f"[6] Idempotent upsert rerun: {second}")
+
+                with engine.connect() as lock_conn:
+                    lock_conn.execute(sa.text(f"SELECT pg_advisory_lock({ADVISORY_LOCK_ID})"))
+                    try:
+                        contention = ingest_job.func(days_back=1)
+                        assert contention == {
+                            "status": "skipped",
+                            "reason": "advisory_lock_held",
+                        }
+                        print(f"[7] Advisory lock contention handled: {contention}")
+                    finally:
+                        lock_conn.execute(sa.text(f"SELECT pg_advisory_unlock({ADVISORY_LOCK_ID})"))
+
+            assert scheduler.running is False
+            print("[8] FastAPI lifespan exited; APScheduler stopped cleanly.")
+
+        asyncio.run(execute_lifecycle())
+
+        with engine.connect() as conn:
+            final_count = conn.execute(sa.text("SELECT count(*) FROM weather_data")).scalar_one()
+            rows = conn.execute(
+                sa.text("SELECT state, date, temp_max, temp_min, temp_avg "
+                        "FROM weather_data ORDER BY date DESC")
+            ).fetchall()
+            print(f"[9] Temporary schema contains {final_count} weather rows.")
+            for row in rows:
+                print(f"    {row.state}: {row.date}, max={row.temp_max}, min={row.temp_min}, avg={row.temp_avg}")
+            assert final_count > 0
+
+        print("[PASS] Scheduler demonstration ran entirely inside the disposable database.")
 
     finally:
-        # Step 10: Clean up isolated schema and verify production table intact
-        print("[STEP 10] Cleaning up isolated schema and verifying production table invariants...")
-        with main_engine.connect() as conn:
-            conn.execute(sa.text(f"DROP SCHEMA IF EXISTS {schema_name} CASCADE;"))
-            conn.commit()
-            print(f"          Dropped schema {schema_name}.")
-
-            prod_count_final = conn.execute(sa.text("SELECT count(*) FROM public.weather_data")).scalar()
-            print(f"          Production public.weather_data row count AFTER execution: {prod_count_final}")
-            assert prod_count_final == 46834, f"CRITICAL INVARIANT VIOLATION: Production rows changed! Expected 46834, found {prod_count_final}"
-            print("[SUCCESS] Production database strictly untouched at exactly 46,834 records!")
+        ingestion_service.SessionLocal = original_session_local
+        update_weather.STATE_COORDS = original_coords
+        engine.dispose()
+        if schema_created:
+            # Only the UUID schema created by this invocation is dropped.
+            cleanup_engine = sa.create_engine(demo_url, pool_pre_ping=True)
+            try:
+                with cleanup_engine.begin() as conn:
+                    conn.execute(sa.text(f'DROP SCHEMA IF EXISTS "{schema_name}" CASCADE'))
+            finally:
+                cleanup_engine.dispose()
+        print(f"[10] Removed only temporary schema {schema_name} from disposable database.")
 
 
 if __name__ == "__main__":
