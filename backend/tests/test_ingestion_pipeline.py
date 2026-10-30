@@ -757,3 +757,134 @@ def test_advisory_lock_pinned_connection_under_concurrency():
     mock_session.close.assert_called_once()
     # Pinned connection should be cleanly closed in finally
     mock_conn.close.assert_called_once()
+
+
+def test_run_ingestion_with_lock_returns_ingestion_summary_with_rich_comparisons():
+    """
+    Round 2 Adversarial Check: Verify run_ingestion_with_lock returns an
+    IngestionSummary instance that supports complete backwards-compatible
+    integer comparisons (==, !=, <, <=, >, >=, int()) while preserving
+    dictionary semantics and JSON serialization.
+    """
+    mock_session = MagicMock()
+    mock_session.execute.return_value.scalar.return_value = True
+
+    with patch("app.services.ingestion_service.SessionLocal", return_value=mock_session), \
+         patch("update_weather.update_weather", return_value={"status": "success", "records_upserted": 34}), \
+         patch("app.services.ingestion_service.clear_forecast_cache"):
+        result = run_ingestion_with_lock(days_back=7)
+
+    assert isinstance(result, update_weather.IngestionSummary)
+    assert result == 34
+    assert result != 0
+    assert result > 10
+    assert result >= 34
+    assert result < 50
+    assert result <= 34
+    assert int(result) == 34
+    assert result["status"] == "success"
+    assert result["records_upserted"] == 34
+
+
+def test_advisory_lock_released_when_transaction_is_aborted():
+    """
+    Round 2 Adversarial Check: If an exception aborts the database transaction,
+    verify run_ingestion_with_lock performs session.rollback() before attempting
+    pg_advisory_unlock so PostgreSQL does not reject the unlock query with
+    InFailedSqlTransaction, preventing lock leakage in the connection pool.
+    """
+    mock_session = MagicMock()
+    mock_session.execute.return_value.scalar.return_value = True
+    event_log = []
+
+    def mock_rollback():
+        event_log.append("rollback")
+
+    def mock_execute(stmt):
+        s = str(stmt)
+        if "pg_try_advisory_lock" in s:
+            event_log.append("lock")
+            return MagicMock(scalar=lambda: True)
+        elif "pg_advisory_unlock" in s:
+            event_log.append("unlock")
+            return MagicMock()
+        return MagicMock()
+
+    mock_session.rollback.side_effect = mock_rollback
+    mock_session.execute.side_effect = mock_execute
+
+    with patch("app.services.ingestion_service.SessionLocal", return_value=mock_session), \
+         patch("update_weather.update_weather", side_effect=OperationalError("INSERT", {}, Exception("current transaction is aborted"))):
+        with pytest.raises(OperationalError):
+            run_ingestion_with_lock(days_back=7)
+
+    # Rollback must precede unlock
+    assert event_log == ["lock", "rollback", "unlock"]
+    mock_session.close.assert_called_once()
+
+
+def test_advisory_lock_connection_invalidated_if_unlock_fails():
+    """
+    Round 2 Adversarial Check: If pg_advisory_unlock fails with an unrecoverable
+    database error in the finally block, the underlying connection must be invalidated
+    (conn.invalidate()) rather than returned to the pool with a dangling lock.
+    """
+    mock_engine = MagicMock()
+    mock_conn = MagicMock()
+    mock_engine.connect.return_value = mock_conn
+
+    mock_session = MagicMock()
+    # Lock succeeds, but unlock throws
+    def mock_execute(stmt):
+        s = str(stmt)
+        if "pg_try_advisory_lock" in s:
+            return MagicMock(scalar=lambda: True)
+        elif "pg_advisory_unlock" in s:
+            raise OperationalError("SELECT", {}, Exception("socket closed"))
+        return MagicMock()
+
+    mock_session.execute.side_effect = mock_execute
+
+    with patch("app.services.ingestion_service.engine", mock_engine), \
+         patch("app.services.ingestion_service.SessionLocal", return_value=mock_session), \
+         patch("update_weather.update_weather", return_value=0):
+        summary = run_ingestion_with_lock(days_back=7)
+
+    # conn.invalidate() must have been called so the physical connection is terminated
+    mock_conn.invalidate.assert_called_once()
+    mock_session.close.assert_called_once()
+
+
+def test_update_weather_empty_state_coords_fails_gracefully():
+    """
+    Round 2 Adversarial Check: If STATE_COORDS is empty (0 states to process),
+    status must be 'failed' rather than erroneously reporting 'success'.
+    """
+    mock_session = MagicMock()
+
+    with patch.dict(update_weather.STATE_COORDS, {}, clear=True):
+        summary = update_weather.update_weather(days_back=7, session=mock_session)
+
+    assert summary["status"] == "failed"
+    assert summary["total_states"] == 0
+    assert summary["successful_count"] == 0
+    assert summary["failed_count"] == 0
+    assert summary["records_upserted"] == 0
+
+
+def test_apscheduler_cron_trigger_0630_asia_kolkata():
+    """
+    Verify APScheduler CronTrigger configuration fires daily at 06:30 IST.
+    """
+    from apscheduler.triggers.cron import CronTrigger
+    import zoneinfo
+    from datetime import datetime
+
+    trigger = CronTrigger(hour=6, minute=30, timezone="Asia/Kolkata")
+    # Test next fire time from a known point in time (e.g. 05:00 IST)
+    tz = zoneinfo.ZoneInfo("Asia/Kolkata")
+    base_time = datetime(2026, 10, 31, 5, 0, 0, tzinfo=tz)
+    next_fire = trigger.get_next_fire_time(None, base_time)
+    assert next_fire.hour == 6
+    assert next_fire.minute == 30
+    assert next_fire.day == 31

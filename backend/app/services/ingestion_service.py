@@ -5,7 +5,6 @@ with PostgreSQL advisory locks, exception handling, and cache invalidation.
 import logging
 from datetime import datetime, timezone
 from typing import Optional
-from unittest.mock import Mock
 
 from sqlalchemy import text
 from app.database import SessionLocal, engine
@@ -23,7 +22,7 @@ def get_last_ingested_at() -> Optional[datetime]:
     global _last_ingested_at
     return _last_ingested_at
 
-def run_ingestion_with_lock(days_back: int = 7) -> dict:
+def run_ingestion_with_lock(days_back: int = 7) -> update_weather.IngestionSummary:
     """
     Runs the weather ingestion with a PostgreSQL advisory lock to ensure
     only one ingestion job runs across workers/processes.
@@ -46,7 +45,7 @@ def run_ingestion_with_lock(days_back: int = 7) -> dict:
         res = session.execute(text(f"SELECT pg_try_advisory_lock({ADVISORY_LOCK_ID})")).scalar()
         if not res:
             logger.warning("Ingestion job skipped: advisory lock currently held by another job.")
-            return {"status": "skipped", "reason": "advisory_lock_held"}
+            return update_weather.IngestionSummary({"status": "skipped", "reason": "advisory_lock_held", "records_upserted": 0})
 
         locked = True
         logger.info(f"Acquired advisory lock ({ADVISORY_LOCK_ID}). Starting ingestion (days_back={days_back})...")
@@ -54,12 +53,14 @@ def run_ingestion_with_lock(days_back: int = 7) -> dict:
         # Run upsert ingestion
         raw_result = update_weather.update_weather(days_back=days_back, session=session)
 
-        # Normalize result to dict
-        if isinstance(raw_result, dict):
-            summary = dict(raw_result)
+        # Normalize result to IngestionSummary
+        if isinstance(raw_result, update_weather.IngestionSummary):
+            summary = raw_result
+        elif isinstance(raw_result, dict):
+            summary = update_weather.IngestionSummary(raw_result)
         else:
             records = int(raw_result)
-            summary = {
+            summary = update_weather.IngestionSummary({
                 "status": "success",
                 "total_states": len(update_weather.STATE_COORDS),
                 "successful_states": list(update_weather.STATE_COORDS.keys()),
@@ -70,7 +71,7 @@ def run_ingestion_with_lock(days_back: int = 7) -> dict:
                 "records_inserted_or_updated": records,
                 "failed_state_errors": {},
                 "errors": {},
-            }
+            })
 
         status = summary.get("status", "success")
 
@@ -92,10 +93,25 @@ def run_ingestion_with_lock(days_back: int = 7) -> dict:
     finally:
         if locked:
             try:
+                # Clear any aborted transaction state before releasing advisory lock
+                try:
+                    session.rollback()
+                except Exception as rb_exc:
+                    logger.debug("Pre-unlock rollback error: %s", rb_exc)
+
                 session.execute(text(f"SELECT pg_advisory_unlock({ADVISORY_LOCK_ID})"))
                 logger.info(f"Released advisory lock ({ADVISORY_LOCK_ID}).")
             except Exception as e:
                 logger.error(f"Failed to release advisory lock: {e}")
+                # If releasing the lock on the connection fails, invalidate it so
+                # the connection is terminated and PostgreSQL frees the lock,
+                # rather than returning a connection with a dangling lock to the pool.
+                if conn is not None:
+                    try:
+                        conn.invalidate()
+                        conn = None
+                    except Exception as inv_exc:
+                        logger.warning("Error invalidating locked connection: %s", inv_exc)
         session.close()
         if conn is not None:
             try:

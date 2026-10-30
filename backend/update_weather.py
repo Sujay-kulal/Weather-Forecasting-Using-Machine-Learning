@@ -208,7 +208,7 @@ def update_weather(days_back: int = 7, session=None) -> IngestionSummary:
             finally:
                 time.sleep(0.5)
 
-        if not failed_states:
+        if not failed_states and successful_states:
             status = "success"
         elif not successful_states:
             status = "failed"
