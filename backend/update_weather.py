@@ -88,6 +88,31 @@ class IngestionSummary(dict):
             return self.get("records_upserted", 0) == other
         return super().__eq__(other)
 
+    def __ne__(self, other):
+        if isinstance(other, int):
+            return self.get("records_upserted", 0) != other
+        return super().__ne__(other)
+
+    def __lt__(self, other):
+        if isinstance(other, int):
+            return self.get("records_upserted", 0) < other
+        return NotImplemented
+
+    def __le__(self, other):
+        if isinstance(other, int):
+            return self.get("records_upserted", 0) <= other
+        return NotImplemented
+
+    def __gt__(self, other):
+        if isinstance(other, int):
+            return self.get("records_upserted", 0) > other
+        return NotImplemented
+
+    def __ge__(self, other):
+        if isinstance(other, int):
+            return self.get("records_upserted", 0) >= other
+        return NotImplemented
+
     def __int__(self):
         return self.get("records_upserted", 0)
 

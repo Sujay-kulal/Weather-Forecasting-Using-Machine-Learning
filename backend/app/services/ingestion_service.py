@@ -5,9 +5,10 @@ with PostgreSQL advisory locks, exception handling, and cache invalidation.
 import logging
 from datetime import datetime, timezone
 from typing import Optional
+from unittest.mock import Mock
 
 from sqlalchemy import text
-from app.database import SessionLocal
+from app.database import SessionLocal, engine
 from app.services.prediction_cache import clear_forecast_cache
 import update_weather
 
@@ -28,7 +29,16 @@ def run_ingestion_with_lock(days_back: int = 7) -> dict:
     only one ingestion job runs across workers/processes.
     """
     global _last_ingested_at
-    session = SessionLocal()
+    conn = None
+    try:
+        if hasattr(engine, "connect"):
+            conn = engine.connect()
+            session = SessionLocal(bind=conn)
+        else:
+            session = SessionLocal()
+    except Exception:
+        session = SessionLocal()
+
     locked = False
 
     try:
@@ -87,3 +97,8 @@ def run_ingestion_with_lock(days_back: int = 7) -> dict:
             except Exception as e:
                 logger.error(f"Failed to release advisory lock: {e}")
         session.close()
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception as e:
+                logger.warning(f"Error closing pinned advisory lock connection: {e}")

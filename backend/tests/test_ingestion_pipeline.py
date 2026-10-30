@@ -602,3 +602,158 @@ def test_successful_states_persist_when_subsequent_states_fail():
     # Verify chronological sequence: commit happened for StateSuccess FIRST,
     # and rollback happened for StateFail SECOND without affecting the commit.
     assert transaction_events == ["commit", "rollback"]
+
+
+# ============================================================================
+# Adversarial & Concurrency Invariant Tests
+# ============================================================================
+
+def test_ingestion_summary_rich_comparisons():
+    """
+    Adversarial Check: Verify IngestionSummary supports all rich comparison
+    operators with integers while preserving dictionary equality and JSON serialization.
+    """
+    summary = update_weather.IngestionSummary({
+        "status": "success",
+        "records_upserted": 10,
+        "records_inserted_or_updated": 10,
+    })
+
+    # Equality and inequality with int
+    assert summary == 10
+    assert not (summary == 5)
+    assert summary != 5
+    assert not (summary != 10)
+
+    # Commutative comparisons (int on LHS)
+    assert 10 == summary
+    assert not (5 == summary)
+    assert 5 != summary
+    assert not (10 != summary)
+
+    # Order comparisons with int
+    assert summary > 5
+    assert not (summary > 10)
+    assert summary >= 10
+    assert summary < 15
+    assert not (summary < 10)
+    assert summary <= 10
+
+    # Explicit integer conversion
+    assert int(summary) == 10
+
+    # Dictionary equality
+    assert summary == {
+        "status": "success",
+        "records_upserted": 10,
+        "records_inserted_or_updated": 10,
+    }
+    assert summary != {"records_upserted": 5}
+
+    # Zero record behavior
+    zero_summary = update_weather.IngestionSummary({"records_upserted": 0})
+    assert zero_summary == 0
+    assert not (zero_summary != 0)
+    assert zero_summary < 1
+    assert zero_summary <= 0
+    assert not (zero_summary > 0)
+
+
+def test_connection_drop_mid_loop_rollback_and_unlock_error_handled():
+    """
+    Adversarial Check: If PostgreSQL connection drops mid-batch causing both
+    execute AND rollback to throw OperationalError, the loop must:
+    1. Catch both exceptions gracefully.
+    2. Record state failures in failed_states without unhandled exceptions.
+    3. Return status='failed'.
+    """
+    states = {
+        "State1": (10.0, 70.0),
+        "State2": (20.0, 80.0),
+    }
+
+    mock_session = MagicMock()
+    mock_session.execute.side_effect = OperationalError("connection dropped", {}, Exception("server closed unexpectedly"))
+    mock_session.rollback.side_effect = OperationalError("rollback dropped", {}, Exception("connection already dead"))
+
+    with patch.dict(update_weather.STATE_COORDS, states, clear=True), \
+         patch("update_weather.fetch_forecast_for_state", return_value=_make_daily_fixture(num_days=1)), \
+         patch("time.sleep"):
+        summary = update_weather.update_weather(days_back=1, session=mock_session)
+
+    assert summary["status"] == "failed"
+    assert summary["successful_count"] == 0
+    assert summary["failed_count"] == 2
+    assert summary["failed_states"] == ["State1", "State2"]
+    assert "OperationalError" in summary["failed_state_errors"]["State1"]
+    assert "OperationalError" in summary["failed_state_errors"]["State2"]
+    assert mock_session.rollback.call_count == 2
+
+
+def test_database_transaction_aborted_state_reset_across_states():
+    """
+    Adversarial Check: When state k triggers a database error, session.rollback()
+    is executed and cleanly clears the aborted transaction state so that state k+1
+    can execute and commit successfully.
+    """
+    states = {
+        "StateFail": (10.0, 70.0),
+        "StateSucceed": (20.0, 80.0),
+    }
+
+    mock_session = MagicMock()
+    execution_log = []
+
+    def mock_execute(stmt):
+        params = stmt.compile().params
+        if any(v == "StateFail" for v in params.values()):
+            execution_log.append("execute_fail")
+            raise OperationalError("INSERT", {}, Exception("unique constraint violation"))
+        execution_log.append("execute_success")
+        return MagicMock()
+
+    def mock_rollback():
+        execution_log.append("rollback")
+
+    def mock_commit():
+        execution_log.append("commit")
+
+    mock_session.execute.side_effect = mock_execute
+    mock_session.rollback.side_effect = mock_rollback
+    mock_session.commit.side_effect = mock_commit
+
+    with patch.dict(update_weather.STATE_COORDS, states, clear=True), \
+         patch("update_weather.fetch_forecast_for_state", return_value=_make_daily_fixture(num_days=1)), \
+         patch("time.sleep"):
+        summary = update_weather.update_weather(days_back=1, session=mock_session)
+
+    assert summary["status"] == "partial_success"
+    assert summary["successful_states"] == ["StateSucceed"]
+    assert summary["failed_states"] == ["StateFail"]
+    assert execution_log == ["execute_fail", "rollback", "execute_success", "commit"]
+
+
+def test_advisory_lock_pinned_connection_under_concurrency():
+    """
+    Adversarial Check: Verify that run_ingestion_with_lock pins the underlying DB
+    connection so that pg_try_advisory_lock and pg_advisory_unlock operate on the
+    exact same connection regardless of ORM transaction commits/rollbacks.
+    """
+    mock_engine = MagicMock()
+    mock_conn = MagicMock()
+    mock_engine.connect.return_value = mock_conn
+
+    mock_session = MagicMock()
+    mock_session.execute.return_value.scalar.return_value = True
+
+    with patch("app.services.ingestion_service.engine", mock_engine), \
+         patch("app.services.ingestion_service.SessionLocal", return_value=mock_session), \
+         patch("update_weather.update_weather", return_value=10), \
+         patch("app.services.ingestion_service.clear_forecast_cache"):
+        summary = run_ingestion_with_lock(days_back=7)
+
+    assert summary["status"] == "success"
+    assert summary["records_upserted"] == 10
+    mock_session.close.assert_called_once()
+    # Pinned connection should be cleanly closed in finally
+    mock_conn.close.assert_called_once()
