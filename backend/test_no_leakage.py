@@ -1,5 +1,6 @@
 """
 Test proving no feature at row t uses data after t (Zero Future-Data Leakage).
+Runs standalone without requiring a database connection.
 """
 import sys
 from pathlib import Path
@@ -12,8 +13,19 @@ backend_dir = Path(__file__).resolve().parent
 if str(backend_dir) not in sys.path:
     sys.path.insert(0, str(backend_dir))
 
-from app.services.feature_service import build_features, month_to_season
-from app.models import WeatherData
+from app.services.feature_service import build_features, month_to_season, REQUIRED_HISTORY
+
+
+class MockObservation:
+    """Mock weather observation record for testing build_features without database."""
+    def __init__(self, date_val, temp_max, temp_min, temp_avg, humidity, rainfall):
+        self.date = date_val
+        self.temp_max = temp_max
+        self.temp_min = temp_min
+        self.temp_avg = temp_avg
+        self.humidity = humidity
+        self.rainfall = rainfall
+
 
 def compute_df_features(df_in: pd.DataFrame) -> pd.DataFrame:
     df_c = df_in.copy().sort_values(["State", "Date"]).reset_index(drop=True)
@@ -41,6 +53,7 @@ def compute_df_features(df_in: pd.DataFrame) -> pd.DataFrame:
     df_c["day_of_year_sin"] = np.sin(2 * np.pi * doy / 365)
     df_c["day_of_year_cos"] = np.cos(2 * np.pi * doy / 365)
     return df_c
+
 
 def test_dataframe_feature_leakage():
     """Verify that features at index t are completely invariant to future rows > t."""
@@ -82,41 +95,27 @@ def test_dataframe_feature_leakage():
 
     print("PASS: Dataframe feature engineering has 0 future leakage.")
 
-def test_feature_service_leakage():
-    """Verify backend build_features contract strictly ignores future measurements."""
-    state = "Delhi"
-    target_forecast_date = date(2025, 6, 15)
-    asof = target_forecast_date - timedelta(days=1)  # 2025-06-14
 
-    # Build 7 valid measurements strictly prior to asof (D-2 down to D-8)
-    history_rows = []
-    for day_offset in range(2, 9):
-        meas_date = target_forecast_date - timedelta(days=day_offset)
-        row = WeatherData(
-            id=day_offset,
-            state=state,
-            district="",
-            location="",
-            date=meas_date,
-            temp_max=35.0 - day_offset * 0.1,
-            temp_min=25.0 - day_offset * 0.1,
-            temp_avg=30.0 - day_offset * 0.1,
-            humidity=60.0 + day_offset,
-            rainfall=float(day_offset % 3),
-        )
-        history_rows.append(row)
+def test_build_features_service_invariance():
+    """Verify that build_features correctly consumes history strictly in reverse chronological order."""
+    target_date = date(2025, 6, 15)
+    asof_date = target_date - timedelta(days=1)  # 2025-06-14
 
-    feats_baseline = build_features(history_rows, state, asof).iloc[0]
+    # 7 historical records strictly before D-1 (D-2 down to D-8)
+    history = [
+        MockObservation(asof_date - timedelta(days=i), 30.0 + i, 20.0 + i, 25.0 + i, 60.0, 0.0)
+        for i in range(1, REQUIRED_HISTORY + 1)
+    ]
+    feats = build_features(history, "Karnataka", asof_date)
+    assert len(feats) == 1
+    assert feats.iloc[0]["lag1_temp_avg"] == 26.0  # history[0] at D-2
+    assert feats.iloc[0]["lag2_temp_avg"] == 27.0  # history[1] at D-3
+    assert feats.iloc[0]["Season"] == "Monsoon"
+    assert feats.iloc[0]["State"] == "Karnataka"
+    print("PASS: build_features service verified without database.")
 
-    # Verify that future dates (date >= asof or target_forecast_date) cannot enter history
-    # because backend query uses: date < asof. If we try to corrupt a hypothetical future row,
-    # build_features only consumes the 7 rows strictly before asof.
-    feats_check = build_features(history_rows, state, asof).iloc[0]
-    pd.testing.assert_series_equal(feats_baseline, feats_check)
-
-    print("PASS: Backend feature service strictly uses date < asof (0 future leakage).")
 
 if __name__ == "__main__":
     test_dataframe_feature_leakage()
-    test_feature_service_leakage()
-    print("ALL LEAKAGE TESTS PASSED: Zero future-data leakage proven.")
+    test_build_features_service_invariance()
+    print("ALL FEATURE INVARIANCE CHECKS PASSED. Route-level date filtering is covered by backend/tests/test_prediction_integrity.py.")

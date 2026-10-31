@@ -1,0 +1,646 @@
+{
+  "metadata": {
+    "connection_target": "localhost:5433/weather_forecasting",
+    "audit_timestamp": "2026-10-30",
+    "execution_mode": "READ_ONLY"
+  },
+  "overall_summary": {
+    "total_rows": 46834,
+    "distinct_states": 34,
+    "min_date": "2015-01-01",
+    "max_date": "2026-09-06"
+  },
+  "post_cutoff_audit": {
+    "cutoff_date": "2026-10-22",
+    "post_cutoff_records": 0,
+    "min_post_cutoff_date": null,
+    "max_post_cutoff_date": null,
+    "authentic_post_records_exist": false
+  },
+  "uniqueness_audit": {
+    "production_constraint_4tuple": {
+      "columns": [
+        "state",
+        "district",
+        "location",
+        "date"
+      ],
+      "violation_count": 0,
+      "is_unique": true
+    },
+    "legacy_constraint_2tuple": {
+      "columns": [
+        "state",
+        "date"
+      ],
+      "collision_count": 1252,
+      "colliding_states": [
+        "Karnataka"
+      ],
+      "is_unique": false,
+      "explanation": "State-level and district/location-level records share the same calendar dates."
+    }
+  },
+  "data_integrity_audit": {
+    "metrics_checked": [
+      "null_temp_max",
+      "null_temp_min",
+      "null_temp_avg",
+      "null_humidity",
+      "null_rainfall",
+      "oob_temp_max",
+      "oob_temp_min",
+      "oob_temp_avg",
+      "inverted_temp_min_max",
+      "oob_humidity",
+      "oob_rainfall"
+    ],
+    "invalid_counts": {
+      "null_temp_max": 0,
+      "null_temp_min": 0,
+      "null_temp_avg": 0,
+      "null_humidity": 0,
+      "null_rainfall": 0,
+      "oob_temp_max": 0,
+      "oob_temp_min": 0,
+      "oob_temp_avg": 0,
+      "inverted_temp_min_max": 0,
+      "oob_humidity": 0,
+      "oob_rainfall": 0
+    },
+    "total_violations": 0,
+    "all_values_physically_valid": true
+  },
+  "states_coverage": [
+    {
+      "state": "Andhra Pradesh",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Arunachal Pradesh",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Assam",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Bihar",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Chandigarh",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Chhattisgarh",
+      "total_records": 1251,
+      "state_level_records": 1251,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1251,
+      "missing_dates_count": 4,
+      "missing_dates": [
+        "2023-12-04",
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Dadra And Nagar Haveli And Daman And Diu",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Delhi",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Goa",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Gujarat",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Haryana",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Himachal Pradesh",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Jammu And Kashmir",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Jharkhand",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Karnataka",
+      "total_records": 5519,
+      "state_level_records": 1252,
+      "location_level_records": 4267,
+      "min_date": "2015-01-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Kerala",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Madhya Pradesh",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Maharashtra",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Manipur",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Meghalaya",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Mizoram",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Nagaland",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Odisha",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Other",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Puducherry",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Punjab",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Rajasthan",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Sikkim",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Tamil Nadu",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Telangana",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Tripura",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Uttar Pradesh",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "Uttarakhand",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    },
+    {
+      "state": "West Bengal",
+      "total_records": 1252,
+      "state_level_records": 1252,
+      "location_level_records": 0,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06",
+      "evaluation_expected_days": 1255,
+      "evaluation_present_days": 1252,
+      "missing_dates_count": 3,
+      "missing_dates": [
+        "2024-05-31",
+        "2024-12-30",
+        "2024-12-31"
+      ]
+    }
+  ],
+  "common_missing_dates": {
+    "dates": [
+      "2024-05-31",
+      "2024-12-30",
+      "2024-12-31"
+    ],
+    "count": 3,
+    "explanation": "Missing calendar dates common to all 34 states/UTs due to synchronized API omission or collection pause."
+  },
+  "karnataka_drilldown": [
+    {
+      "district": "[State-Level / Empty]",
+      "location": "[State-Level / Empty]",
+      "records": 1252,
+      "min_date": "2023-04-01",
+      "max_date": "2026-09-06"
+    },
+    {
+      "district": "Udupi",
+      "location": "Kundapura",
+      "records": 4267,
+      "min_date": "2015-01-01",
+      "max_date": "2026-09-06"
+    }
+  ]
+}

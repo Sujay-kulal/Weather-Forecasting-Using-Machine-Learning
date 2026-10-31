@@ -888,3 +888,145 @@ def test_apscheduler_cron_trigger_0630_asia_kolkata():
     assert next_fire.hour == 6
     assert next_fire.minute == 30
     assert next_fire.day == 31
+
+
+# ============================================================================
+# Round 3 Adversarial Verification Tests
+# ============================================================================
+
+def test_per_state_failure_isolation_malformed_state_coordinates():
+    """
+    Round 3 Adversarial Check: Corrupted or non-tuple coordinate values in
+    STATE_COORDS must not crash the loop header with unpack TypeError/ValueError.
+    They must be isolated inside the per-state try/except block, recorded in
+    failed_states, while valid states proceed and commit.
+    """
+    states = {
+        "CorruptedNone": None,
+        "CorruptedTuple": (15.0,),
+        "ValidState": (15.3173, 75.7139),
+    }
+
+    mock_session = MagicMock()
+
+    with patch.dict(update_weather.STATE_COORDS, states, clear=True), \
+         patch("update_weather.fetch_forecast_for_state", return_value=_make_daily_fixture(num_days=1)), \
+         patch("time.sleep"):
+        summary = update_weather.update_weather(days_back=1, session=mock_session)
+
+    assert summary["status"] == "partial_success"
+    assert summary["total_states"] == 3
+    assert summary["successful_states"] == ["ValidState"]
+    assert set(summary["failed_states"]) == {"CorruptedNone", "CorruptedTuple"}
+    assert summary["successful_count"] == 1
+    assert summary["failed_count"] == 2
+    assert summary["records_upserted"] == 1
+    assert "CorruptedNone" in summary["failed_state_errors"]
+    assert "CorruptedTuple" in summary["failed_state_errors"]
+    mock_session.commit.assert_called_once()
+
+
+def test_ingestion_summary_complete_numeric_protocol():
+    """
+    Round 3 Adversarial Check: Verify IngestionSummary implements full numeric
+    protocol emulation (float comparisons, arithmetic operations, formatting,
+    index/range) so callers expecting an int/float never encounter TypeErrors.
+    """
+    summary = update_weather.IngestionSummary({
+        "status": "success",
+        "records_upserted": 42,
+    })
+
+    # Float comparisons
+    assert summary == 42.0
+    assert 42.0 == summary
+    assert summary != 0.0
+    assert summary > 10.5
+    assert 10.5 < summary
+    assert summary >= 42.0
+    assert 42.0 <= summary
+    assert summary < 100.5
+    assert 100.5 > summary
+
+    # Arithmetic
+    assert summary + 8 == 50
+    assert 8 + summary == 50
+    assert summary - 2 == 40
+    assert 50 - summary == 8
+    assert summary * 2 == 84
+    assert 2 * summary == 84
+
+    total = 0
+    total += summary
+    assert total == 42
+
+    # Numeric conversions and indexing
+    assert int(summary) == 42
+    assert float(summary) == 42.0
+    assert len(range(summary)) == 42
+
+    # String formatting
+    assert f"{summary:04d}" == "0042"
+    assert f"{summary:.2f}" == "42.00"
+
+
+def test_update_weather_negative_days_back_raises_value_error():
+    """
+    Round 3 Adversarial Check: Verify negative days_back raises ValueError immediately
+    before issuing invalid requests to Open-Meteo.
+    """
+    mock_session = MagicMock()
+    with pytest.raises(ValueError, match="days_back cannot be negative"):
+        update_weather.update_weather(days_back=-1, session=mock_session)
+
+
+def test_run_ingestion_with_lock_connection_leak_prevention_on_session_init_failure():
+    """
+    Round 3 Adversarial Check: If SessionLocal(bind=conn) raises an exception,
+    the checked-out connection must be closed before fallback, preventing connection leaks.
+    """
+    mock_engine = MagicMock()
+    mock_conn = MagicMock()
+    mock_engine.connect.return_value = mock_conn
+
+    fallback_session = MagicMock()
+    fallback_session.execute.return_value.scalar.return_value = False
+
+    def mock_session_local(**kwargs):
+        if "bind" in kwargs:
+            raise RuntimeError("Failed to bind connection")
+        return fallback_session
+
+    with patch("app.services.ingestion_service.engine", mock_engine), \
+         patch("app.services.ingestion_service.SessionLocal", side_effect=mock_session_local):
+        result = run_ingestion_with_lock(days_back=7)
+
+    # Initial connection must have been closed upon binding error
+    mock_conn.close.assert_called_once()
+    assert result["status"] == "skipped"
+
+
+def test_advisory_unlock_warns_when_not_held():
+    """
+    Round 3 Adversarial Check: If pg_advisory_unlock returns False,
+    the service must log a warning and complete safely without error.
+    """
+    mock_session = MagicMock()
+    # Lock succeeds, but unlock returns False (not held)
+    def mock_execute(stmt):
+        s = str(stmt)
+        if "pg_try_advisory_lock" in s:
+            return MagicMock(scalar=lambda: True)
+        elif "pg_advisory_unlock" in s:
+            return MagicMock(scalar=lambda: False)
+        return MagicMock()
+
+    mock_session.execute.side_effect = mock_execute
+
+    with patch("app.services.ingestion_service.SessionLocal", return_value=mock_session), \
+         patch("update_weather.update_weather", return_value={"status": "success", "records_upserted": 0}), \
+         patch("app.services.ingestion_service.logger.warning") as mock_warn:
+        summary = run_ingestion_with_lock(days_back=7)
+
+    assert summary["status"] == "success"
+    mock_warn.assert_any_call(f"Advisory lock ({ADVISORY_LOCK_ID}) was not held when unlock was attempted.")
