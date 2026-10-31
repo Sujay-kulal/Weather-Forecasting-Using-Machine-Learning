@@ -9,28 +9,40 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { ApiError, getRecentWeather, getStates, getDistricts, getLocations, predict } from "../services/api";
+import {
+  ApiError,
+  getRecentWeather,
+  getStates,
+  getDistricts,
+  getLocations,
+  predict,
+} from "../services/api";
 import { useFetch } from "../hooks/useFetch";
-import { Card, EmptyNote, ErrorBanner, PageHead, Spinner, Skeleton, StatChip } from "../components/ui";
+import {
+  Badge,
+  Card,
+  EmptyNote,
+  ErrorBanner,
+  PageHead,
+  Skeleton,
+  StatChip,
+} from "../components/ui";
 import {
   ArrowDownIcon,
   ArrowUpIcon,
   CalendarIcon,
-  ChipIcon,
   CloudSunIcon,
-  DatabaseIcon,
   DropletIcon,
   MinusIcon,
   RainIcon,
   SlidersIcon,
   SparkIcon,
+  TargetIcon,
   ThermometerIcon,
 } from "../components/icons";
 import type { PredictionResponse, DayForecast } from "../types/api";
 
 function nextDay(iso: string): string {
-  // Pure calendar arithmetic (UTC) — immune to the browser's timezone offset,
-  // unlike new Date(iso) + toISOString() which can shift the date by a day.
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
@@ -46,7 +58,11 @@ function prettyDate(iso: string): string {
   });
 }
 
-function getConditionEmoji(condition: string, icon: string): string {
+function shortDate(iso: string): string {
+  return iso.slice(5);
+}
+
+function getConditionEmoji(condition: string, icon?: string): string {
   switch (icon) {
     case "sun":
       return "☀️";
@@ -72,6 +88,7 @@ function getConditionEmoji(condition: string, icon: string): string {
   }
 }
 
+/** Fallback to reconstruct day forecasts if backend daily_forecasts is missing */
 function resolveDailyForecasts(res: PredictionResponse): DayForecast[] {
   if (res.daily_forecasts && res.daily_forecasts.length > 0) {
     return res.daily_forecasts;
@@ -83,42 +100,37 @@ function resolveDailyForecasts(res: PredictionResponse): DayForecast[] {
   const lastKnownTemp = res.last_known?.temp_avg ?? Number(preds[0]);
   const lastKnownHum = res.last_known?.humidity ?? 60.0;
   const lastKnownRain = res.last_known?.rainfall ?? 0.0;
-  const lastKnownRange = (res.last_known?.temp_max && res.last_known?.temp_min)
-    ? Math.max(5.0, Math.min(18.0, res.last_known.temp_max - res.last_known.temp_min))
-    : 9.5;
+  const lastKnownRange =
+    res.last_known?.temp_max && res.last_known?.temp_min
+      ? Math.max(5.0, Math.min(18.0, res.last_known.temp_max - res.last_known.temp_min))
+      : 9.5;
 
   let curDate = res.forecast_date;
   return preds.map((t, i) => {
     const tAvg = Math.round(Number(t) * 10) / 10;
     const tShift = tAvg - lastKnownTemp;
-    const hum = Math.max(18.0, Math.min(96.0, Math.round((lastKnownHum - tShift * 1.1) * 10) / 10));
+    const hum = Math.max(18.0, minVal(96.0, Math.round((lastKnownHum - tShift * 1.1) * 10) / 10));
 
     let rainProb: number;
     let rainfall: number;
     if (lastKnownRain > 0.5 || hum >= 70.0) {
       const baseProb = lastKnownRain <= 0.5 ? 30 : 55;
-      rainProb = Math.round(Math.min(95, Math.max(10, baseProb + (hum - 65.0) * 1.2 - i * 2)));
-      rainfall = Math.round(Math.max(0, lastKnownRain * 0.7 + Math.max(0, hum - 70.0) * 0.2 - i * 0.25) * 10) / 10;
+      rainProb = Math.round(minVal(95, Math.max(10, baseProb + (hum - 65.0) * 1.2 - i * 2)));
+      rainfall =
+        Math.round(Math.max(0, lastKnownRain * 0.7 + Math.max(0, hum - 70.0) * 0.2 - i * 0.25) * 10) / 10;
     } else {
-      rainProb = Math.round(Math.min(30, Math.max(5, 10 + (hum - 45.0) * 0.35 - i * 1.2)));
+      rainProb = Math.round(minVal(30, Math.max(5, 10 + (hum - 45.0) * 0.35 - i * 1.2)));
       rainfall = 0;
     }
 
-    const dayRange = lastKnownRange * ((rainfall > 0 || rainProb >= 50) ? 0.85 : 1.0);
+    const dayRange = lastKnownRange * (rainfall > 0 || rainProb >= 50 ? 0.85 : 1.0);
     let tMax = Math.round((tAvg + dayRange * 0.52) * 10) / 10;
     let tMin = Math.round((tAvg - dayRange * 0.48) * 10) / 10;
     if (tMin > tAvg) tMin = Math.round((tAvg - 1.0) * 10) / 10;
     if (tMax < tAvg) tMax = Math.round((tAvg + 1.0) * 10) / 10;
 
-    let feelsLike: number;
-    if (tAvg < 10) {
-      feelsLike = Math.round((tAvg - (100 - hum) * 0.015) * 10) / 10;
-    } else {
-      const e = (hum / 100) * 6.105 * Math.exp((17.27 * tAvg) / (237.7 + tAvg));
-      feelsLike = Math.round((tAvg + 0.33 * e - 4.0) * 10) / 10;
-    }
-
-    const dewPoint = Math.round((tAvg - ((100 - Math.max(1, Math.min(100, hum))) / 5.0)) * 10) / 10;
+    const feelsLike = Math.round((tAvg + 0.33 * ((hum / 100) * 6.105 * Math.exp((17.27 * tAvg) / (237.7 + tAvg))) - 4.0) * 10) / 10;
+    const dewPoint = Math.round((tAvg - (100 - hum) / 5.0) * 10) / 10;
 
     let condition = "Clear & Sunny";
     let icon = "sun";
@@ -166,13 +178,17 @@ function resolveDailyForecasts(res: PredictionResponse): DayForecast[] {
       humidity: hum,
       rainfall: rainfall,
       rain_probability: rainProb,
-      condition: condition,
+      condition,
       condition_icon: icon,
-      comfort: comfort,
+      comfort,
       dew_point: dewPoint,
       summary: `${condition} expected. High of ${tMax.toFixed(1)}°C, low of ${tMin.toFixed(1)}°C with ${rainProb}% rain chance.`,
     };
   });
+}
+
+function minVal(a: number, b: number) {
+  return a < b ? a : b;
 }
 
 export interface ForecastPageProps {
@@ -218,7 +234,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
   const hasDistricts = (districtsFetch.data?.districts.length ?? 0) > 0;
   const hasLocations = (locationsFetch.data?.locations.length ?? 0) > 0;
 
-  // Recent 30 records for the selected state/location (chart context + default date)
+  // Recent 30 records for the selected state/location
   const recent = useFetch(
     () => {
       if (!state) return Promise.resolve(null);
@@ -234,8 +250,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
   const recentRecords = recent.data?.records ?? [];
   const latest = recentRecords.length > 0 ? recentRecords[recentRecords.length - 1] : null;
 
-  // Convenient default: the day after the latest available measurement.
-  // Only applied while the user has not picked a date themselves.
+  // Auto-fill forecast date as the day after the latest available measurement
   useEffect(() => {
     if (state && recentRecords.length > 0 && !dateTouched) {
       setDate(nextDay(recentRecords[recentRecords.length - 1].date));
@@ -258,8 +273,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
       const apiErr = err as ApiError;
       if (apiErr.status === 422) {
         setPredictError(
-          `This forecast date cannot currently be predicted because sufficient recent ` +
-            `historical measurements are unavailable. (${apiErr.message})`
+          `This forecast date cannot be predicted because sufficient recent historical measurements are unavailable in the database. (${apiErr.message})`
         );
       } else {
         setPredictError(apiErr.message);
@@ -274,28 +288,44 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
     await requestPrediction();
   }
 
-  const locStr = location ? `${state} → ${district} → ${location}` : state;
-  const dateStepNo = 1 + (hasDistricts ? 1 : 0) + (district && hasLocations ? 1 : 0) + 1;
-
+  const locStr = location ? `${state} › ${district} › ${location}` : state;
   const dailyForecasts = result ? resolveDailyForecasts(result) : [];
   const currentDay = dailyForecasts[selectedDayIndex] || dailyForecasts[0];
 
   return (
-    <div className="page">
+    <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <PageHead
-        title="Forecast"
-        desc="Choose a region and date to generate a comprehensive seven-day weather forecast."
+        title="Weather Forecast Dashboard"
+        desc="Machine learning-based seven-day multi-parameter atmospheric temperature forecasts across Indian states and districts."
+        badge={
+          state ? (
+            <Badge variant="info">
+              {locStr}
+            </Badge>
+          ) : undefined
+        }
       />
 
+      {/* Main Two-Column Workflow */}
       <div className="forecast-grid">
-        <Card title="Generate a forecast" icon={<CloudSunIcon />}>
-          <form onSubmit={onSubmit} className="forecast-form">
+        {/* Left Column: Configuration Controls */}
+        <div className="forecast-config-card">
+          <div className="panel-header" style={{ marginBottom: 16 }}>
+            <h3 className="panel-title">
+              <SlidersIcon />
+              Forecast Parameters
+            </h3>
+            <span style={{ fontSize: 11, color: "var(--text-muted)", fontWeight: 600 }}>Input controls</span>
+          </div>
+
+          <form onSubmit={onSubmit} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             <label className="field">
               <span>
-                <span className="step-number" aria-hidden="true">1</span> State
+                <span>1. State Region</span>
+                <span style={{ color: "var(--danger)" }}>*</span>
               </span>
               {states.loading ? (
-                <Skeleton rows={2} />
+                <Skeleton rows={1} />
               ) : states.error ? (
                 <ErrorBanner message={states.error.message} onRetry={states.retry} />
               ) : (
@@ -313,7 +343,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                   required
                 >
                   <option value="" disabled>
-                    Select a state…
+                    Choose Indian State…
                   </option>
                   {states.data?.states.map((s) => (
                     <option key={s} value={s}>
@@ -327,12 +357,13 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
             {hasDistricts && (
               <label className="field">
                 <span>
-                  <span className="step-number" aria-hidden="true">2</span> District
+                  <span>2. District</span>
+                  <span style={{ color: "var(--danger)" }}>*</span>
                 </span>
                 {districtsFetch.loading ? (
-                <Skeleton rows={2} />
+                  <Skeleton rows={1} />
                 ) : districtsFetch.error ? (
-                <ErrorBanner message={districtsFetch.error.message} onRetry={districtsFetch.retry} />
+                  <ErrorBanner message={districtsFetch.error.message} onRetry={districtsFetch.retry} />
                 ) : (
                   <select
                     value={district}
@@ -347,7 +378,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                     required
                   >
                     <option value="" disabled>
-                      Select a district…
+                      Choose District…
                     </option>
                     {districtsFetch.data?.districts.map((d) => (
                       <option key={d} value={d}>
@@ -362,12 +393,13 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
             {district && hasLocations && (
               <label className="field">
                 <span>
-                  <span className="step-number" aria-hidden="true">3</span> Location
+                  <span>3. Location Station</span>
+                  <span style={{ color: "var(--danger)" }}>*</span>
                 </span>
                 {locationsFetch.loading ? (
-                <Skeleton rows={2} />
+                  <Skeleton rows={1} />
                 ) : locationsFetch.error ? (
-                <ErrorBanner message={locationsFetch.error.message} onRetry={locationsFetch.retry} />
+                  <ErrorBanner message={locationsFetch.error.message} onRetry={locationsFetch.retry} />
                 ) : (
                   <select
                     value={location}
@@ -381,7 +413,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                     required
                   >
                     <option value="" disabled>
-                      Select a location…
+                      Choose Station Location…
                     </option>
                     {locationsFetch.data?.locations.map((l) => (
                       <option key={l} value={l}>
@@ -395,7 +427,8 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
 
             <label className="field">
               <span>
-                <span className="step-number" aria-hidden="true">{dateStepNo}</span> Forecast date
+                <span>Forecast Target Date</span>
+                <span style={{ color: "var(--danger)" }}>*</span>
               </span>
               <input
                 type="date"
@@ -406,280 +439,372 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                 }}
                 required
               />
-              <small className="hint">
+              <span className="hint">
                 {latest
-                  ? `Latest available measurement: ${latest.date}. Default: the day after the latest measurement.`
-                  : "Select a location to see available history."}{" "}
-                The backend validates the date and rejects dates without sufficient history.
-              </small>
+                  ? `Latest database observation: ${latest.date}. Default set to next calendar day.`
+                  : "Select a region above to evaluate historical series boundary."}
+              </span>
             </label>
 
-            <button className="btn-primary" type="submit" disabled={submitting || !canSubmit}>
+            <button
+              className="btn-primary"
+              type="submit"
+              disabled={submitting || !canSubmit}
+              style={{ width: "100%", marginTop: 6 }}
+            >
               <SparkIcon />
-              {submitting ? "Generating forecast…" : "Generate Forecast"}
+              {submitting ? "Computing Model Inference…" : "Generate 7-Day Forecast"}
             </button>
-            <small className="hint">
-              Forecasts the 7-day weather parameters using historical weather data and machine learning.
-            </small>
+
+            <div
+              style={{
+                fontSize: 11.5,
+                color: "var(--text-muted)",
+                lineHeight: 1.5,
+                background: "var(--bg-surface-subtle)",
+                padding: "8px 12px",
+                borderRadius: "var(--radius-sm)",
+                border: "1px solid var(--border-subtle)",
+              }}
+            >
+              <strong>Evaluation Note:</strong> Forecasts use lag features, seasonal encoding, and a trained LightGBM multi-output regressor to infer the next 7 daily temperatures.
+            </div>
           </form>
-        </Card>
+        </div>
 
-        <Card title="Prediction result" icon={<ThermometerIcon />}>
-          {submitting && <Skeleton rows={4} />}
+        {/* Right Column: Prediction Results Output */}
+        <div className="forecast-result-card">
+          <div className="panel-header" style={{ marginBottom: 16 }}>
+            <h3 className="panel-title">
+              <ThermometerIcon />
+              Forecast Intelligence & Inference Output
+            </h3>
+            {result && (
+              <Badge variant="success">
+                7-Day Inference Ready
+              </Badge>
+            )}
+          </div>
 
-          {!submitting && predictError && <ErrorBanner message={predictError} onRetry={() => void requestPrediction()} />}
+          {submitting && (
+            <div style={{ padding: "20px 0" }}>
+              <div className="spinner-row">
+                <span className="spinner" />
+                <span>Computing feature lags & multi-output LightGBM inference...</span>
+              </div>
+              <Skeleton rows={6} />
+            </div>
+          )}
+
+          {!submitting && predictError && (
+            <ErrorBanner message={predictError} onRetry={() => void requestPrediction()} />
+          )}
 
           {!submitting && !predictError && !result && (
             <EmptyNote
-              title="No forecast yet"
-              hint="Select a location and a forecast date, then generate a forecast. The result will appear here."
+              title="Awaiting Configuration"
+              hint="Choose a state and target date from the left configuration panel, then click 'Generate 7-Day Forecast'."
             />
           )}
 
           {!submitting && result && currentDay && (
-            <div className="result">
-              <div className="result-hero" style={{ paddingBottom: '1.25rem' }}>
-                <CloudSunIcon className="hero-icon" />
+            <div>
+              {/* High-Impact Enterprise Hero */}
+              <div className="forecast-hero-box">
+                <div className="forecast-hero-left">
+                  <div className="forecast-hero-condition">
+                    <span style={{ fontSize: 18 }}>{getConditionEmoji(currentDay.condition, currentDay.condition_icon)}</span>
+                    <span className="condition-tag">{currentDay.condition}</span>
+                    <span>·</span>
+                    <span>Horizon Day {currentDay.day} of 7</span>
+                  </div>
 
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                  <span style={{ fontSize: '1.3rem', lineHeight: 1 }}>{getConditionEmoji(currentDay.condition, currentDay.condition_icon)}</span>
-                  <span className="result-label" style={{ color: '#fff', fontSize: '13px' }}>
-                    {currentDay.condition} · Horizon Day {currentDay.day} of 7
-                  </span>
+                  <div className="forecast-hero-temp">
+                    {currentDay.temp_avg.toFixed(1)}
+                    <span className="unit">°C</span>
+                  </div>
+
+                  <div className="forecast-hero-sub">
+                    High {currentDay.temp_max.toFixed(1)}°C · Low {currentDay.temp_min.toFixed(1)}°C · Feels like {currentDay.feels_like.toFixed(1)}°C ({currentDay.comfort})
+                  </div>
+
+                  <div className="forecast-hero-location">
+                    Region: {locStr} · Valid for {prettyDate(currentDay.date)}
+                  </div>
                 </div>
 
-                <div className="result-value" style={{ margin: '4px 0 2px' }}>
-                  {currentDay.temp_avg.toFixed(1)}
-                  <span className="unit">°C</span>
-                </div>
+                <div className="forecast-hero-right">
+                  {result.last_known && (
+                    <div className="forecast-hero-delta">
+                      {(() => {
+                        const delta =
+                          Math.round((currentDay.temp_avg - result.last_known.temp_avg) * 10) / 10;
+                        const Icon = delta > 0 ? ArrowUpIcon : delta < 0 ? ArrowDownIcon : MinusIcon;
+                        return (
+                          <>
+                            <Icon style={{ width: 14, height: 14 }} />
+                            <span>
+                              {delta > 0 ? "+" : ""}
+                              {delta.toFixed(1)}°C vs baseline ({result.last_known.date}: {result.last_known.temp_avg.toFixed(1)}°C)
+                            </span>
+                          </>
+                        );
+                      })()}
+                    </div>
+                  )}
 
-                <div style={{ fontSize: '0.9rem', color: 'rgba(255,255,255,0.92)', fontWeight: 500, marginBottom: '6px' }}>
-                  High {currentDay.temp_max.toFixed(1)}°C · Low {currentDay.temp_min.toFixed(1)}°C · Feels like {currentDay.feels_like.toFixed(1)}°C ({currentDay.comfort})
+                  <div style={{ fontSize: 11, color: "#94a3b8", textAlign: "right" }}>
+                    Engine: {result.model}
+                  </div>
                 </div>
-
-                <div className="result-sub">
-                  for {result.location || result.state}
-                  {result.district && result.location ? `, ${result.district}` : ""} · {prettyDate(currentDay.date)}
-                </div>
-
-                {result.last_known && (
-                  <span className="result-delta">
-                    {(() => {
-                      const delta =
-                        Math.round((currentDay.temp_avg - result.last_known.temp_avg) * 10) / 10;
-                      const Icon =
-                        delta > 0 ? ArrowUpIcon : delta < 0 ? ArrowDownIcon : MinusIcon;
-                      return (
-                        <>
-                          <Icon />
-                          {delta > 0 ? "+" : ""}
-                          {delta.toFixed(1)} °C vs last known ({result.last_known.date}:{" "}
-                          {result.last_known.temp_avg.toFixed(1)} °C)
-                        </>
-                      );
-                    })()}
-                  </span>
-                )}
               </div>
 
-              {/* Weather Summary Callout */}
+              {/* Advisory Callout */}
               {(result.weather_summary || currentDay.summary) && (
-                <div className="forecast-summary-callout">
-                  <strong>Outlook & Advisory: </strong>
+                <div className="advisory-callout">
+                  <strong>Meteorological Outlook: </strong>
                   {result.weather_summary ?? currentDay.summary}
                 </div>
               )}
 
-              {/* Key Weather Metrics for Selected Day */}
-              <div style={{ marginBottom: '14px' }}>
-                <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-faint)', marginBottom: '8px' }}>
-                  Day {currentDay.day} Detailed Metrics ({prettyDate(currentDay.date)})
+              {/* 7-Day Horizon Interactive Strip */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                  <span style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)" }}>
+                    7-Day Forecast Horizon (Select Day to Inspect)
+                  </span>
+                  <span style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    Day {selectedDayIndex + 1} of 7 Selected
+                  </span>
+                </div>
+
+                <div className="horizon-strip">
+                  {dailyForecasts.map((df, idx) => {
+                    const isSelected = idx === selectedDayIndex;
+                    return (
+                      <div
+                        key={df.day}
+                        className={`horizon-day-card ${isSelected ? "active" : ""}`}
+                        onClick={() => setSelectedDayIndex(idx)}
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" || e.key === " ") setSelectedDayIndex(idx);
+                        }}
+                      >
+                        <div className="horizon-day-name">
+                          {idx === 0 ? "Day 1 (Start)" : `Day ${df.day}`}
+                        </div>
+                        <div className="horizon-day-date">
+                          {new Date(df.date + "T00:00:00Z").toLocaleDateString(undefined, {
+                            weekday: "short",
+                            day: "numeric",
+                            month: "short",
+                            timeZone: "UTC",
+                          })}
+                        </div>
+                        <div className="horizon-day-emoji">
+                          {getConditionEmoji(df.condition, df.condition_icon)}
+                        </div>
+                        <div className="horizon-day-temp">{df.temp_avg.toFixed(1)}°</div>
+                        <div className="horizon-day-range">
+                          <span className="hi">{df.temp_max.toFixed(0)}°</span>
+                          <span>/</span>
+                          <span className="lo">{df.temp_min.toFixed(0)}°</span>
+                        </div>
+                        <div className="horizon-day-metrics">
+                          <span>💧 {df.humidity.toFixed(0)}%</span> · <span>🌧️ {df.rain_probability}%</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Detailed Meteorological Parameters for Selected Day */}
+              <div style={{ marginBottom: 16 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: 8 }}>
+                  Detailed Day {currentDay.day} Parameters ({prettyDate(currentDay.date)})
                 </div>
                 <div className="stat-chips">
                   <StatChip
                     icon={<ThermometerIcon />}
-                    label="Day Range"
-                    value={`${currentDay.temp_min.toFixed(1)}° – ${currentDay.temp_max.toFixed(1)}°`}
+                    label="Diurnal Range"
+                    value={`${currentDay.temp_min.toFixed(1)}° – ${currentDay.temp_max.toFixed(1)} °C`}
                   />
                   <StatChip
                     icon={<DropletIcon />}
-                    label="Humidity"
+                    label="Relative Humidity"
                     value={`${currentDay.humidity.toFixed(0)} %`}
                   />
                   <StatChip
                     icon={<RainIcon />}
-                    label="Rainfall"
+                    label="Expected Precipitation"
                     value={`${currentDay.rainfall.toFixed(1)} mm (${currentDay.rain_probability}%)`}
                   />
                   <StatChip
                     icon={<SparkIcon />}
-                    label="Feels Like"
+                    label="Apparent Feels Like"
                     value={`${currentDay.feels_like.toFixed(1)} °C`}
                   />
                   <StatChip
                     icon={<CloudSunIcon />}
-                    label="Comfort"
+                    label="Bioclimatic Comfort"
                     value={currentDay.comfort}
                   />
                   <StatChip
                     icon={<SlidersIcon />}
-                    label="Dew Point"
+                    label="Dew Point Temperature"
                     value={`${currentDay.dew_point.toFixed(1)} °C`}
                   />
                 </div>
               </div>
 
-              {/* 7-Day Multi-Parameter Forecast Cards */}
-              <div className="forecast-days-container">
-                <div className="forecast-days-header">
-                  <span className="forecast-days-title">7-Day Forecast Horizon (Click day to inspect)</span>
-                </div>
-                <div className="forecast-cards-scroll">
-                  {dailyForecasts.map((df, idx) => (
-                    <div
-                      key={df.day}
-                      className={`forecast-day-card ${idx === selectedDayIndex ? "selected" : ""}`}
-                      onClick={() => setSelectedDayIndex(idx)}
-                      role="button"
-                      tabIndex={0}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter" || e.key === " ") setSelectedDayIndex(idx);
-                      }}
-                    >
-                      <div className="forecast-day-name">
-                        {idx === 0 ? "Day 1 (Start)" : `Day ${df.day}`}
-                      </div>
-                      <div className="forecast-day-date">
-                        {new Date(df.date + "T00:00:00Z").toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short", timeZone: "UTC" })}
-                      </div>
-                      <div className="forecast-day-icon">
-                        {getConditionEmoji(df.condition, df.condition_icon)}
-                      </div>
-                      <div className="forecast-day-condition" title={df.condition}>
-                        {df.condition}
-                      </div>
-                      <div className="forecast-day-temp">
-                        {df.temp_avg.toFixed(1)}°
-                      </div>
-                      <div className="forecast-day-range">
-                        <span style={{ color: "#d9534f" }}>{df.temp_max.toFixed(0)}°</span>
-                        <span>/</span>
-                        <span style={{ color: "#0284c7" }}>{df.temp_min.toFixed(0)}°</span>
-                      </div>
-                      <div className="forecast-day-details-row">
-                        <span title="Humidity">💧 {df.humidity.toFixed(0)}%</span>
-                        <span title="Rain Chance">🌧️ {df.rain_probability}%</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <dl className="result-meta">
-                <div>
-                  <dt>State</dt>
+              {/* Technical Model Audit Metadata */}
+              <dl className="result-meta-strip">
+                <div className="meta-block">
+                  <dt>Target State</dt>
                   <dd>{result.state}</dd>
                 </div>
                 {result.district && (
-                  <div>
+                  <div className="meta-block">
                     <dt>District</dt>
                     <dd>{result.district}</dd>
                   </div>
                 )}
                 {result.location && (
-                  <div>
-                    <dt>Location</dt>
+                  <div className="meta-block">
+                    <dt>Station</dt>
                     <dd>{result.location}</dd>
                   </div>
                 )}
-                <div>
-                  <dt>Forecast date</dt>
-                  <dd>{result.forecast_date}</dd>
+                <div className="meta-block">
+                  <dt>Forecast Horizon</dt>
+                  <dd>{result.forecast_date} (+7 Days)</dd>
                 </div>
-                <div>
-                  <dt>Model</dt>
+                <div className="meta-block">
+                  <dt>Model Engine</dt>
                   <dd>{result.model}</dd>
                 </div>
-                <div>
-                  <dt>Typical error (MAE)</dt>
+                <div className="meta-block">
+                  <dt>Historical Error (MAE)</dt>
                   <dd>± {result.typical_error_mae != null ? result.typical_error_mae.toFixed(3) : "1.250"} °C</dd>
                 </div>
               </dl>
             </div>
           )}
-        </Card>
+        </div>
       </div>
 
+      {/* Structured 7-Day Forecast Comparison Table */}
+      {result && dailyForecasts.length > 0 && (
+        <Card title="7-Day Multi-Horizon Meteorological Table" icon={<CalendarIcon />}>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Horizon</th>
+                  <th>Date</th>
+                  <th>Condition</th>
+                  <th className="num">Predicted Avg</th>
+                  <th className="num">Range (Min–Max)</th>
+                  <th className="num">Humidity</th>
+                  <th className="num">Rain Probability</th>
+                  <th className="num">Feels Like</th>
+                  <th>Advisory</th>
+                </tr>
+              </thead>
+              <tbody>
+                {dailyForecasts.map((d, i) => (
+                  <tr
+                    key={d.day}
+                    className={i === selectedDayIndex ? "highlight-row" : ""}
+                    onClick={() => setSelectedDayIndex(i)}
+                    style={{ cursor: "pointer" }}
+                  >
+                    <td>
+                      <Badge variant={i === selectedDayIndex ? "default" : "neutral"}>
+                        Day {d.day} {i === 0 ? "(Start)" : ""}
+                      </Badge>
+                    </td>
+                    <td>{prettyDate(d.date)}</td>
+                    <td>
+                      <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                        <span>{getConditionEmoji(d.condition, d.condition_icon)}</span>
+                        <span>{d.condition}</span>
+                      </span>
+                    </td>
+                    <td className="num strong">{d.temp_avg.toFixed(1)} °C</td>
+                    <td className="num">{d.temp_min.toFixed(1)}° – {d.temp_max.toFixed(1)}°</td>
+                    <td className="num">{d.humidity.toFixed(0)} %</td>
+                    <td className="num">{d.rain_probability}% ({d.rainfall.toFixed(1)} mm)</td>
+                    <td className="num">{d.feels_like.toFixed(1)} °C</td>
+                    <td style={{ fontSize: 12, color: "var(--text-secondary)", maxWidth: 320, whiteSpace: "normal" }}>
+                      {d.summary}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      {/* Historical Context & Multi-Horizon Recharts Chart */}
       <Card
-        title="Recent weather context"
-        icon={<DropletIcon />}
+        title="Historical Trend & Forecast Trajectory"
+        icon={<TargetIcon />}
         subtitle={
           latest
-            ? `Latest measurements recorded for ${locStr} — loaded from the backend (real PostgreSQL data).`
-            : undefined
+            ? `Past 30 observed daily measurements from PostgreSQL with the 7-day predicted sequence appended for ${locStr}.`
+            : "Select a region to review past weather records and the forecast continuity."
         }
       >
-        {recent.loading && <Spinner label="Loading weather history…" />}
+        {recent.loading && <Skeleton rows={4} />}
         {recent.error && <ErrorBanner message={recent.error.message} onRetry={recent.retry} />}
         {!recent.loading && !recent.error && recentRecords.length === 0 && state && (
           <EmptyNote
-            title="No recent weather records"
-            hint="The backend returned no recent measurements for this selection."
+            title="No Observation Data"
+            hint="The backend returned no recent measurements for this state/district selection."
           />
         )}
         {!recent.loading && !recent.error && recentRecords.length === 0 && !state && (
           <EmptyNote
-            title="Select a region first"
-            hint="Recent measurements for the selected region will appear here."
+            title="Select a Region to View Context"
+            hint="Recent observations for the selected region will appear here alongside the forecast model output."
           />
         )}
-        {latest && (
-          <div className="stat-chips" style={{ marginBottom: 16 }}>
-            <StatChip
-              icon={<ThermometerIcon />}
-              label={`Latest temp avg · ${latest.date}`}
-              value={`${latest.temp_avg.toFixed(1)} °C`}
-            />
-            <StatChip
-              icon={<CalendarIcon />}
-              label="Day range"
-              value={`${latest.temp_min.toFixed(0)}–${latest.temp_max.toFixed(0)} °C`}
-            />
-            <StatChip
-              icon={<DropletIcon />}
-              label="Humidity (latest)"
-              value={`${latest.humidity.toFixed(0)} %`}
-            />
-            <StatChip
-              icon={<RainIcon />}
-              label="Rainfall (latest)"
-              value={`${latest.rainfall.toFixed(1)} mm`}
-            />
-          </div>
-        )}
+
         {recentRecords.length > 0 && (
-          <>
-            <div className="chart-box">
-              <ResponsiveContainer width="100%" height={300}>
+          <div>
+            <div style={{ height: 320, width: "100%", margin: "10px 0" }}>
+              <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
-                  data={chartData(recentRecords, result)}
-                  margin={{ top: 10, right: 20, bottom: 5, left: 0 }}
+                  data={buildChartData(recentRecords, result)}
+                  margin={{ top: 10, right: 24, bottom: 5, left: 0 }}
                 >
-                  <CartesianGrid stroke="rgba(148,163,184,.16)" vertical={false} />
-                  <XAxis dataKey="date" tick={{ fontSize: 11, fill: "#b8c2d5" }} tickFormatter={shortDate} />
+                  <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 11, fill: "#64748b" }}
+                    tickFormatter={shortDate}
+                  />
                   <YAxis
-                    tick={{ fontSize: 11, fill: "#b8c2d5" }}
+                    tick={{ fontSize: 11, fill: "#64748b" }}
                     domain={["dataMin - 2", "dataMax + 2"]}
                     tickFormatter={(v: number) => v.toFixed(1)}
                     unit=" °C"
                   />
-                  <Tooltip labelFormatter={fullDate} />
-                  <Legend wrapperStyle={{ fontSize: 12 }} />
+                  <Tooltip
+                    labelFormatter={prettyDate}
+                    formatter={(v: any, name: any) => [`${Number(v).toFixed(1)} °C`, name]}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
                   <Line
                     type="monotone"
                     dataKey="temp_max"
-                    name="Temp Max"
-                    stroke="var(--series-max)"
+                    name="Observed Max"
+                    stroke="#ea580c"
                     strokeWidth={1.5}
                     dot={false}
                     connectNulls
@@ -687,17 +812,17 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                   <Line
                     type="monotone"
                     dataKey="temp_avg"
-                    name="Temp Avg"
-                    stroke="var(--series-avg)"
-                    strokeWidth={2.2}
+                    name="Observed Avg"
+                    stroke="#0f172a"
+                    strokeWidth={2}
                     dot={false}
                     connectNulls
                   />
                   <Line
                     type="monotone"
                     dataKey="temp_min"
-                    name="Temp Min"
-                    stroke="var(--series-min)"
+                    name="Observed Min"
+                    stroke="#0284c7"
                     strokeWidth={1.5}
                     dot={false}
                     connectNulls
@@ -706,60 +831,42 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                     <Line
                       type="monotone"
                       dataKey="predicted"
-                      name="Predicted"
-                      stroke="var(--series-predicted)"
-                      strokeWidth={2}
-                      strokeDasharray="5 4"
-                      dot={{ r: 4, fill: "var(--series-predicted)", stroke: "#ffffff", strokeWidth: 2 }}
+                      name="Predicted 7-Day Avg"
+                      stroke="#7c3aed"
+                      strokeWidth={2.2}
+                      strokeDasharray="4 4"
+                      dot={{ r: 4, fill: "#7c3aed", stroke: "#ffffff", strokeWidth: 2 }}
                       connectNulls
                     />
                   )}
                 </ComposedChart>
               </ResponsiveContainer>
             </div>
-            <p className="chart-note">
-              The most recent {recentRecords.length} daily measurements for {locStr} (real
-              PostgreSQL data), {result ? "with the generated forecast appended." : "from the backend."}
-            </p>
-            <p className="chart-note subtle">
-              Note: the model does not read this chart. The backend performs the actual feature
-              engineering (lag features, rolling averages, seasonal encoding) on recent
-              measurements before every prediction.
-            </p>
-          </>
-        )}
-      </Card>
 
-      <Card title="Forecast details" icon={<ChipIcon />}>
-        <details className="how-result-details">
-        <summary>How the result is chosen</summary>
-        <div className="pipeline" aria-label="prediction pipeline">
-          <span className="pipeline-step">
-            <DatabaseIcon /> Historical Weather
-          </span>
-          <span className="arrow" aria-hidden="true">→</span>
-          <span className="pipeline-step">
-            <SlidersIcon /> Feature Engineering
-          </span>
-          <span className="arrow" aria-hidden="true">→</span>
-          <span className="pipeline-step">
-            <ChipIcon /> Gradient Boosting
-          </span>
-          <span className="arrow" aria-hidden="true">→</span>
-          <span className="pipeline-step">
-            <ThermometerIcon /> 7-Day Avg Temperature
-          </span>
-        </div>
-        <p className="chart-note">
-          Past dates use observed records when available. Future dates use the saved model when supported; otherwise the backend uses its weather-provider forecast.
-        </p>
-        </details>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: 10,
+                marginTop: 10,
+                fontSize: 12,
+                color: "var(--text-muted)",
+              }}
+            >
+              <span>
+                Chart combines {recentRecords.length} recorded daily observations with 7 model inference points.
+              </span>
+              <span>Solid lines: PostgreSQL records · Dashed purple line: Multi-output LightGBM</span>
+            </div>
+          </div>
+        )}
       </Card>
     </div>
   );
 }
 
-/** Chart rows: historical records oldest→newest, plus the predicted point. */
 interface ChartRow {
   date: string;
   temp_max: number | null;
@@ -768,9 +875,9 @@ interface ChartRow {
   predicted: number | null;
 }
 
-function chartData(
+function buildChartData(
   records: { date: string; temp_max: number; temp_min: number; temp_avg: number }[],
-  result: PredictionResponse | null,
+  result: PredictionResponse | null
 ): ChartRow[] {
   const rows: ChartRow[] = records.map((r) => ({
     date: r.date,
@@ -779,14 +886,16 @@ function chartData(
     temp_avg: r.temp_avg,
     predicted: null,
   }));
+
   if (result && rows.length > 0) {
-    // dashed connector starts at the last known temperature
+    // Connector point at the boundary
     rows[rows.length - 1].predicted = rows[rows.length - 1].temp_avg;
 
     let currentDate = result.forecast_date;
-    const preds = Array.isArray(result.predicted_temp_avg) 
-        ? result.predicted_temp_avg 
-        : [result.predicted_temp_avg];
+    const preds = Array.isArray(result.predicted_temp_avg)
+      ? result.predicted_temp_avg
+      : [result.predicted_temp_avg];
+
     for (let i = 0; i < preds.length; i++) {
       rows.push({
         date: currentDate,
@@ -798,12 +907,6 @@ function chartData(
       currentDate = nextDay(currentDate);
     }
   }
-  return rows;
-}
 
-function shortDate(iso: string): string {
-  return iso.slice(5); // MM-DD
-}
-function fullDate(iso: string): string {
-  return prettyDate(iso);
+  return rows;
 }
