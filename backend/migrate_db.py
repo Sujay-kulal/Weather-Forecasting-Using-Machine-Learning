@@ -19,6 +19,17 @@ def _constraint_exists(conn, constraint_name: str) -> bool:
     return False
 
 
+def _is_duplicate_constraint_error(exc: Exception) -> bool:
+    """Return True if the error is specifically a duplicate constraint or object in PostgreSQL/SQLAlchemy."""
+    orig = getattr(exc, "orig", None)
+    pgcode = getattr(orig, "pgcode", None) or getattr(exc, "pgcode", None)
+    if pgcode in ("42710", "42P07"):
+        return True
+
+    msg = str(exc).lower()
+    return "already exists" in msg or "duplicate" in msg
+
+
 def migrate(target_engine=None):
     eng = target_engine or engine
     with eng.begin() as conn:
@@ -28,14 +39,15 @@ def migrate(target_engine=None):
 
         # Add unique constraint on weather_data with savepoint and existence check for rerun safety
         if not _constraint_exists(conn, "uq_weather_state_dist_loc_date"):
-            with conn.begin_nested():
-                try:
+            try:
+                with conn.begin_nested():
                     conn.execute(text(
                         "ALTER TABLE weather_data ADD CONSTRAINT uq_weather_state_dist_loc_date "
                         "UNIQUE (state, district, location, date);"
                     ))
-                except Exception:
-                    pass
+            except Exception as exc:
+                if not _is_duplicate_constraint_error(exc):
+                    raise
 
         conn.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS district VARCHAR(100) NOT NULL DEFAULT '';"))
         conn.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS location VARCHAR(100) NOT NULL DEFAULT '';"))
@@ -43,28 +55,30 @@ def migrate(target_engine=None):
 
         # Add unique constraint on predictions with savepoint and existence check for rerun safety
         if not _constraint_exists(conn, "uq_prediction_run_dist_loc"):
-            with conn.begin_nested():
-                try:
+            try:
+                with conn.begin_nested():
                     conn.execute(text(
                         "ALTER TABLE predictions ADD CONSTRAINT uq_prediction_run_dist_loc "
                         "UNIQUE (state, district, location, forecast_date, created_at);"
                     ))
-                except Exception:
-                    pass
+            except Exception as exc:
+                if not _is_duplicate_constraint_error(exc):
+                    raise
 
         conn.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS model_version VARCHAR(100);"))
         conn.execute(text("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS actual_temp DOUBLE PRECISION;"))
 
         # Add unique constraint on predictions model_version with savepoint and existence check
         if not _constraint_exists(conn, "uq_prediction_state_location_date_model_version"):
-            with conn.begin_nested():
-                try:
+            try:
+                with conn.begin_nested():
                     conn.execute(text(
                         "ALTER TABLE predictions ADD CONSTRAINT uq_prediction_state_location_date_model_version "
                         "UNIQUE (state, district, location, forecast_date, model_version);"
                     ))
-                except Exception:
-                    pass
+            except Exception as exc:
+                if not _is_duplicate_constraint_error(exc):
+                    raise
 
 
 def parse_args(argv=None):

@@ -106,6 +106,18 @@ def test_migrate_savepoint_rollback_on_duplicate_constraint_preserves_outer_tran
     assert any("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS district" in s for s in executed_ddl)
     assert any("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS model_version" in s for s in executed_ddl)
 
+    # Genuine migration errors (non-duplicate) must NOT be swallowed and must remain visible
+    def mock_execute_fatal(stmt, *args, **kwargs):
+        if "ADD CONSTRAINT uq_weather_state_dist_loc_date" in str(stmt):
+            raise DatabaseError("disk I/O failure or permission denied", {}, None)
+        res = MagicMock()
+        res.scalar.return_value = None
+        return res
+
+    mock_conn.execute.side_effect = mock_execute_fatal
+    with pytest.raises(DatabaseError, match="disk I/O failure or permission denied"):
+        migrate(mock_engine)
+
 
 def test_constraint_exists_helper():
     """Verify _constraint_exists queries pg_constraint properly."""
