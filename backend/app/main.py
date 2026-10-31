@@ -12,8 +12,10 @@ from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.database import Base, check_connection, engine, init_db
 from app.routes import admin, health, location_weather, prediction, weather
@@ -41,7 +43,7 @@ async def lifespan(app: FastAPI):
     app.state.model_name = prediction.model_service.MODEL_NAME
     app.state.model_mae = prediction.model_service.MODEL_MAE
 
-    # APScheduler: only start when explicitly enabled via ENABLE_INGESTION_SCHEDULER
+    # Start APScheduler: only when explicitly enabled via ENABLE_INGESTION_SCHEDULER
     scheduler_enabled = os.environ.get("ENABLE_INGESTION_SCHEDULER", "false").strip().lower() in ("true", "1", "yes")
     if scheduler_enabled:
         scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
@@ -86,6 +88,25 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Global RFC 7807 Problem Details Handler
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    detail = exc.detail
+    title = exc.detail if isinstance(exc.detail, str) else "HTTP Error"
+    content = {
+        "type": "about:blank",
+        "title": title,
+        "status": exc.status_code,
+        "detail": detail,
+        "instance": request.url.path,
+    }
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=content,
+        headers={"Content-Type": "application/problem+json"},
+    )
+
+
 # CORS - allow local dev servers AND production deployments.
 # Override via env var:  CORS_ORIGINS=https://your-app.vercel.app
 origins_env = os.environ.get(
@@ -94,9 +115,10 @@ origins_env = os.environ.get(
     "http://127.0.0.1:3000,http://127.0.0.1:5173,"
     "https://weather-forecasting-using-machine.onrender.com"
 )
+origins_list = [o.strip() for o in origins_env.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in origins_env.split(",")],
+    allow_origins=origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

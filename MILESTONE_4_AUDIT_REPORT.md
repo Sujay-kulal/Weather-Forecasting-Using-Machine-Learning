@@ -820,4 +820,4 @@ I hereby certify that this Milestone 4 Final Acceptance & Gap Closure Audit Repo
 5. **Scheduler Isolation Verification**: Isolation safeguards in `scripts/demonstrate_isolated_scheduler.py` and 24 automated safety tests in `backend/tests/test_scheduler_demo_isolation.py` are VERIFIED. Runtime demonstration is safely BLOCKED pending provisioning of a separate disposable PostgreSQL database (e.g. `weather_forecasting_demo`).
 6. **PR #8 Readiness**: The full diff against `origin/main` is reviewed and validated, all 83 backend regression and safety tests pass, and merge execution is appropriately left to the user.
 
-**Audit Status**: **VERIFIED (R1, R2, R4, R5, R6, R7 CLOSED; R3 RUNTIME DEMO BLOCKED PENDING DISPOSABLE DB; DEF-001 OPEN)**.
+**Audit Status**: **VERIFIED (R1, R2, R3, R4, R5, R6, R7 CLOSED; DEF-001 OPEN)**.

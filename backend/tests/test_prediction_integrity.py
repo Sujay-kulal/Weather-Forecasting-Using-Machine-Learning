@@ -270,3 +270,31 @@ def test_predict_route_excludes_asof_and_future_weather_rows(monkeypatch):
         assert response.json()["predicted_temp_avg"] == [24.0, 24.1, 24.2, 24.3, 24.4, 24.5, 24.6]
     finally:
         session.close()
+
+
+def test_weather_data_orm_unique_constraint_allows_multiple_districts():
+    """DEF-02 Regression: Verify WeatherData ORM table args define only uq_weather_state_dist_loc_date,
+    allowing multiple districts for the same state on the same date."""
+    session = make_session()
+    try:
+        # Check constraints defined on WeatherData table
+        constraint_names = {c.name for c in WeatherData.__table__.constraints if c.name}
+        assert "uq_weather_state_dist_loc_date" in constraint_names
+        assert "uq_weather_state_date" not in constraint_names, "Obsolete uq_weather_state_date must be dropped from ORM"
+
+        # Verify multiple districts on the same date can be inserted without constraint violation
+        d1 = WeatherData(
+            date=date(2026, 10, 31), state="Karnataka", district="Bengaluru Urban", location="Bengaluru",
+            temp_max=30.0, temp_min=20.0, temp_avg=25.0, humidity=60.0, rainfall=0.0
+        )
+        d2 = WeatherData(
+            date=date(2026, 10, 31), state="Karnataka", district="Mysuru", location="Mysuru",
+            temp_max=29.0, temp_min=19.0, temp_avg=24.0, humidity=65.0, rainfall=0.0
+        )
+        session.add_all([d1, d2])
+        session.commit()
+
+        count = session.scalar(select(func.count()).select_from(WeatherData))
+        assert count == 2
+    finally:
+        session.close()
