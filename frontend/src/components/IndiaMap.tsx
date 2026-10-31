@@ -241,6 +241,25 @@ function MapFlyToController({ flyTarget }: { flyTarget: [number, number] | null 
   return null;
 }
 
+/** Automatically invalidates map size on window/container resize */
+function MapResizeHandler() {
+  const map = useMap();
+  useEffect(() => {
+    const handleResize = () => {
+      map.invalidateSize();
+    };
+    window.addEventListener("resize", handleResize);
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 250);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      clearTimeout(timer);
+    };
+  }, [map]);
+  return null;
+}
+
 export function IndiaMap({
   onSelectState,
   selectedState,
@@ -653,6 +672,7 @@ export function IndiaMap({
           }}
         >
           <MapFlyToController flyTarget={flyTarget} />
+          <MapResizeHandler />
           <ZoomControl position="topright" />
           <AttributionControl position="bottomright" />
 

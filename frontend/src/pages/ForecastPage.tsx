@@ -452,7 +452,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
               disabled={submitting || !canSubmit}
               style={{ width: "100%", marginTop: 6 }}
             >
-              <SparkIcon />
+              <SparkIcon style={{ width: 16, height: 16, flexShrink: 0 }} />
               {submitting ? "Computing Model Inference…" : "Generate 7-Day Forecast"}
             </button>
 
