@@ -111,7 +111,7 @@ export default function App() {
       />
 
       {/* Fixed Left Sidebar */}
-      <aside className={`app-sidebar ${collapsed ? "collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`}>
+      <aside className={`app-sidebar ${collapsed && !mobileOpen ? "collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`}>
         <div className="sidebar-header">
           <div className="sidebar-logo-icon">
             <SparkIcon />
@@ -190,13 +190,14 @@ export default function App() {
               <MenuIcon style={{ width: 20, height: 20 }} />
             </button>
             <div className="topbar-breadcrumbs">
-              <span>Platform</span>
-              <span style={{ opacity: 0.4 }}>/</span>
+              <span className="breadcrumb-root">Platform</span>
+              <span className="breadcrumb-sep" style={{ opacity: 0.4 }}>/</span>
               <span className="current">{currentModule.label}</span>
               {selectedState && (
                 <>
-                  <span style={{ opacity: 0.4 }}>/</span>
+                  <span className="breadcrumb-sep" style={{ opacity: 0.4 }}>/</span>
                   <span
+                    className="breadcrumb-state"
                     style={{
                       background: "var(--accent-subtle)",
                       color: "var(--accent)",

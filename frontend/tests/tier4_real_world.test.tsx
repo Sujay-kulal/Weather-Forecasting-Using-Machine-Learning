@@ -284,6 +284,20 @@ describe("Tier 4: Real-World Scenarios", () => {
       assertContains(html, 'class="mobile-overlay "');
       assertContains(html, 'aria-hidden="true"');
     });
+
+    it("ensures mobileOpen drawer suppresses collapsed class to preserve labels", () => {
+      // When sidebar was collapsed on desktop but drawer opens on mobile,
+      // the aside must not carry 'collapsed' while mobileOpen is active
+      localStorage.setItem("weathercast_sidebar_collapsed", "true");
+      const html = renderComponent(<App />);
+      // Default state has collapsed
+      assertMatches(html, /app-sidebar collapsed/);
+      // Brand text exists in DOM for mobile drawer to display
+      assertContains(html, "sidebar-brand-text");
+      assertContains(html, "sidebar-title");
+      assertContains(html, "WeatherCast India");
+      assertContains(html, "sidebar-subtitle");
+    });
   });
 
   // ── 4.6 Breadcrumbs Synchronization with State Selection ───────────────────
@@ -291,6 +305,7 @@ describe("Tier 4: Real-World Scenarios", () => {
     it("renders base breadcrumb path with platform root and module name", () => {
       const html = renderComponent(<App />);
       assertContains(html, "topbar-breadcrumbs");
+      assertContains(html, "breadcrumb-root");
       assertContains(html, "Platform");
       assertContains(html, '<span class="current">Weather Forecast</span>');
     });

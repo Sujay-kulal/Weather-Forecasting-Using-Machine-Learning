@@ -8,6 +8,8 @@ type IconProps = SVGProps<SVGSVGElement>;
 
 function base(props: IconProps): IconProps {
   return {
+    width: props.width ?? 16,
+    height: props.height ?? 16,
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",

@@ -770,6 +770,18 @@ a:hover {
   border-color: var(--border-strong);
 }
 
+button svg,
+.btn-primary svg,
+.btn-secondary svg,
+.btn-outline svg,
+.btn-ghost svg {
+  width: 16px;
+  height: 16px;
+  max-width: 16px;
+  max-height: 16px;
+  flex-shrink: 0;
+}
+
 /* Form Fields */
 .field {
   display: flex;
@@ -1456,13 +1468,44 @@ tbody td:first-child {
 }
 
 @media (max-width: 768px) {
+  /* Sidebar Drawer on Mobile */
   .app-sidebar {
     transform: translateX(-100%);
-    width: 260px !important;
+    width: 280px !important;
+    z-index: 100;
   }
 
   .app-sidebar.mobile-open {
     transform: translateX(0);
+    width: 280px !important;
+  }
+
+  /* Force display of brand, labels, and info when mobile drawer opens */
+  .app-sidebar.mobile-open .sidebar-brand-text,
+  .app-sidebar.mobile-open .nav-item-label,
+  .app-sidebar.mobile-open .sidebar-status-box,
+  .app-sidebar.mobile-open .sidebar-section-title {
+    display: flex !important;
+  }
+
+  .app-sidebar.mobile-open .sidebar-title {
+    display: block !important;
+  }
+
+  .app-sidebar.mobile-open .sidebar-subtitle {
+    display: block !important;
+  }
+
+  .app-sidebar.mobile-open .nav-item {
+    justify-content: flex-start !important;
+    padding: 10px 14px !important;
+    width: 100% !important;
+  }
+
+  /* Hide desktop collapse toggle button on mobile */
+  .app-sidebar.mobile-open .sidebar-collapse-btn,
+  .app-sidebar .sidebar-collapse-btn {
+    display: none !important;
   }
 
   .mobile-overlay.mobile-open {
@@ -1477,31 +1520,85 @@ tbody td:first-child {
     display: inline-flex;
   }
 
+  /* Compact Topbar on Mobile */
   .app-topbar {
-    padding: 0 16px;
+    padding: 0 12px;
+    height: 52px;
   }
 
+  .topbar-clock {
+    display: none !important;
+  }
+
+  .breadcrumb-root,
+  .breadcrumb-sep {
+    display: none !important;
+  }
+
+  .topbar-breadcrumbs {
+    max-width: 170px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .status-pill {
+    padding: 3px 8px;
+    font-size: 11px;
+  }
+
+  /* Layout and Padding on Mobile */
   .page-container {
-    padding: 16px;
-    gap: 16px;
+    padding: 12px;
+    gap: 14px;
   }
 
+  .page-head {
+    padding-bottom: 12px;
+    gap: 8px;
+  }
+
+  .page-title {
+    font-size: 19px;
+  }
+
+  .page-desc {
+    font-size: 12.5px;
+  }
+
+  .panel {
+    padding: 14px;
+  }
+
+  .card-header {
+    padding: 12px 14px;
+  }
+
+  .card-body {
+    padding: 12px 14px;
+  }
+
+  /* Horizon Strip */
   .horizon-strip {
     display: flex;
     overflow-x: auto;
-    padding-bottom: 6px;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 8px;
     scroll-snap-type: x mandatory;
+    gap: 8px;
   }
 
   .horizon-day-card {
-    min-width: 120px;
+    min-width: 110px;
     scroll-snap-align: start;
     flex: 0 0 auto;
+    padding: 8px 10px;
   }
 
+  /* Forecast Hero Box */
   .forecast-hero-box {
     flex-direction: column;
-    padding: 18px;
+    padding: 16px;
+    gap: 12px;
   }
 
   .forecast-hero-right {
@@ -1509,24 +1606,122 @@ tbody td:first-child {
   }
 
   .forecast-hero-temp {
-    font-size: 42px;
+    font-size: 38px;
   }
 
+  /* Stat Chips on Mobile */
   .stat-chips {
-    grid-template-columns: 1fr 1fr;
+    grid-template-columns: repeat(2, 1fr) !important;
+    gap: 8px;
+  }
+
+  .stat-chip {
+    padding: 10px;
+    gap: 8px;
+  }
+
+  .stat-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .stat-icon svg {
+    width: 15px;
+    height: 15px;
+  }
+
+  .stat-value {
+    font-size: 15px;
+  }
+
+  .stat-label {
+    font-size: 11px;
+  }
+
+  /* Leaflet Map on Mobile */
+  .map-shell-container .leaflet-container {
+    height: 380px !important;
+  }
+
+  .map-toolbar-bar {
+    padding: 8px 10px;
+    gap: 8px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .map-toolbar-bar > div,
+  .map-toolbar-bar > form {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .map-toolbar-bar form input[type="search"] {
+    flex: 1;
+    width: 100% !important;
+  }
+
+  .map-legend-bar {
+    padding: 8px 10px;
+    font-size: 11px;
+    gap: 8px;
+  }
+
+  /* ML Architecture Flow on Mobile */
+  .arch-flow {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+  }
+
+  .arch-arrow {
+    transform: rotate(90deg);
+    align-self: center;
   }
 
   .feature-groups-grid {
     grid-template-columns: 1fr;
   }
+
+  /* Form & Button Sizing on Mobile */
+  .field input,
+  .field select,
+  .field textarea {
+    font-size: 14px;
+    min-height: 40px;
+  }
+
+  .btn-primary,
+  .btn-secondary,
+  .btn-outline {
+    min-height: 38px;
+    font-size: 13px;
+  }
+
+  /* Footer on Mobile */
+  .app-footer {
+    padding: 14px 16px;
+    flex-direction: column;
+    text-align: center;
+    gap: 8px;
+  }
+
+  .app-footer > div {
+    justify-content: center;
+    flex-wrap: wrap;
+  }
 }
 
 @media (max-width: 480px) {
-  .stat-chips {
-    grid-template-columns: 1fr;
+  .topbar-breadcrumbs {
+    max-width: 140px;
   }
 
-  .topbar-clock {
-    display: none;
+  .stat-chips {
+    grid-template-columns: 1fr !important;
+  }
+
+  .horizon-day-card {
+    min-width: 105px;
   }
 }
