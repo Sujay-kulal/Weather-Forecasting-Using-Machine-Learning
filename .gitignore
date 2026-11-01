@@ -35,3 +35,7 @@ data/
 
 # Extracted zip archives
 Weather-Forecasting-Using-Machine-Learning-main/
+
+# Local workspace agents and scratch directories
+.agents/
+scratch/

@@ -87,6 +87,31 @@ def test_admin_ingest_authorized_partial_success(client, monkeypatch):
     mock_ingest.assert_called_once_with(days_back=7)
 
 
+def test_admin_ingest_authorized_total_failure_returns_502(client, monkeypatch):
+    """Verify that when 100% of states fail to ingest, endpoint returns 502 Bad Gateway."""
+    monkeypatch.setenv("ADMIN_TOKEN", "valid-secret-token")
+    mock_payload = {
+        "status": "failed",
+        "total_states": 34,
+        "successful_states": [],
+        "failed_states": ["Karnataka", "Delhi"],
+        "successful_count": 0,
+        "failed_count": 34,
+        "records_upserted": 0,
+        "records_inserted_or_updated": 0,
+        "failed_state_errors": {"Karnataka": "Connection refused", "Delhi": "HTTP 503"},
+        "last_ingested_at": None,
+    }
+
+    with patch("app.routes.admin.run_ingestion_with_lock", return_value=mock_payload) as mock_ingest:
+        response = client.post("/admin/ingest", headers={"X-Admin-Token": "valid-secret-token"})
+
+    assert response.status_code == 502
+    assert response.json()["detail"]["status"] == "failed"
+    assert response.json()["detail"]["failed_count"] == 34
+    mock_ingest.assert_called_once_with(days_back=7)
+
+
 def test_admin_ingest_authorized_custom_days_back(client, monkeypatch):
     """Verify days_back query parameter is passed through to run_ingestion_with_lock."""
     monkeypatch.setenv("ADMIN_TOKEN", "valid-secret-token")

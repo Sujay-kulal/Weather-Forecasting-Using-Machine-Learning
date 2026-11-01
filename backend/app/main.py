@@ -12,8 +12,10 @@ from contextlib import asynccontextmanager
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.database import Base, check_connection, engine, init_db
 from app.routes import admin, health, location_weather, prediction, weather
@@ -41,44 +43,69 @@ async def lifespan(app: FastAPI):
     app.state.model_name = prediction.model_service.MODEL_NAME
     app.state.model_mae = prediction.model_service.MODEL_MAE
 
-    # Start APScheduler: Daily at 06:30 Asia/Kolkata
-    scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
-    scheduler.add_job(
-        run_ingestion_with_lock,
-        trigger=CronTrigger(hour=6, minute=30, timezone="Asia/Kolkata"),
-        id="daily_weather_ingest",
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=3600,
-        replace_existing=True,
-    )
-    scheduler.add_job(
-        fill_missing_actuals,
-        trigger=CronTrigger(hour=7, minute=0, timezone="Asia/Kolkata"),
-        id="fill_prediction_actuals",
-        max_instances=1,
-        coalesce=True,
-        misfire_grace_time=3600,
-        replace_existing=True,
-    )
-    scheduler.start()
-    app.state.scheduler = scheduler
-    logger.info("APScheduler BackgroundScheduler started (Daily 06:30 Asia/Kolkata).")
+    # Start APScheduler: only when explicitly enabled via ENABLE_INGESTION_SCHEDULER
+    scheduler_enabled = os.environ.get("ENABLE_INGESTION_SCHEDULER", "false").strip().lower() in ("true", "1", "yes")
+    if scheduler_enabled:
+        scheduler = BackgroundScheduler(timezone="Asia/Kolkata")
+        scheduler.add_job(
+            run_ingestion_with_lock,
+            trigger=CronTrigger(hour=6, minute=30, timezone="Asia/Kolkata"),
+            id="daily_weather_ingest",
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=3600,
+            replace_existing=True,
+        )
+        scheduler.add_job(
+            fill_missing_actuals,
+            trigger=CronTrigger(hour=7, minute=0, timezone="Asia/Kolkata"),
+            id="fill_prediction_actuals",
+            max_instances=1,
+            coalesce=True,
+            misfire_grace_time=3600,
+            replace_existing=True,
+        )
+        scheduler.start()
+        app.state.scheduler = scheduler
+        logger.info("APScheduler BackgroundScheduler started (Daily 06:30 Asia/Kolkata).")
+    else:
+        app.state.scheduler = None
+        logger.info("APScheduler BackgroundScheduler is disabled (ENABLE_INGESTION_SCHEDULER is not enabled).")
 
     try:
         yield
     finally:
-        scheduler.shutdown(wait=False)
-        logger.info("APScheduler BackgroundScheduler shut down.")
+        if getattr(app.state, "scheduler", None) is not None:
+            app.state.scheduler.shutdown(wait=False)
+            logger.info("APScheduler BackgroundScheduler shut down.")
 
 
 app = FastAPI(
     title="Weather Forecasting API",
-    description="Next-day average temperature forecasting for Indian states "
-                "using a trained Gradient Boosting model (scikit-learn).",
+    description="Seven-day average temperature forecasting for Indian states "
+                "using the configured saved multi-output ML pipeline.",
     version="2.0.0",
     lifespan=lifespan,
 )
+
+# Global RFC 7807 Problem Details Handler
+@app.exception_handler(StarletteHTTPException)
+async def http_exception_handler(request: Request, exc: StarletteHTTPException):
+    detail = exc.detail
+    title = exc.detail if isinstance(exc.detail, str) else "HTTP Error"
+    content = {
+        "type": "about:blank",
+        "title": title,
+        "status": exc.status_code,
+        "detail": detail,
+        "instance": request.url.path,
+    }
+    return JSONResponse(
+        status_code=exc.status_code,
+        content=content,
+        headers={"Content-Type": "application/problem+json"},
+    )
+
 
 # CORS - allow local dev servers AND production deployments.
 # Override via env var:  CORS_ORIGINS=https://your-app.vercel.app
@@ -88,9 +115,10 @@ origins_env = os.environ.get(
     "http://127.0.0.1:3000,http://127.0.0.1:5173,"
     "https://weather-forecasting-using-machine.onrender.com"
 )
+origins_list = [o.strip() for o in origins_env.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[o.strip() for o in origins_env.split(",")],
+    allow_origins=origins_list,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

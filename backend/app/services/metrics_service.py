@@ -33,13 +33,12 @@ def fill_missing_actuals(db: Session | None = None, *, today: date_type | None =
             )
             .where(Prediction.actual_temp.is_(None), Prediction.forecast_date < as_of)
         ).all()
-        for prediction_id, actual in matches:
+        if matches:
             session.execute(
-                update(Prediction)
-                .where(Prediction.id == prediction_id, Prediction.actual_temp.is_(None))
-                .values(actual_temp=actual)
+                update(Prediction),
+                [{'id': prediction_id, 'actual_temp': actual} for prediction_id, actual in matches],
             )
-        session.commit()
+            session.commit()
         return len(matches)
     except Exception:
         session.rollback()
