@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -88,11 +89,23 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+def _sanitize_error_detail(detail: object) -> object:
+    if not isinstance(detail, str):
+        return detail
+    import re
+    # Mask database connection URIs containing credentials
+    sanitized = re.sub(r"://[^@]+@", "://***:***@", detail)
+    # Mask Windows/Unix absolute file paths
+    sanitized = re.sub(r"[A-Za-z]:\\[^ \"'\n\r\t]+", "[redacted-path]", sanitized)
+    sanitized = re.sub(r"/(?:[a-zA-Z0-9_-]+/)+[a-zA-Z0-9_.-]+", "[redacted-path]", sanitized)
+    return sanitized
+
+
 # Global RFC 7807 Problem Details Handler
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
-    detail = exc.detail
-    title = exc.detail if isinstance(exc.detail, str) else "HTTP Error"
+    detail = _sanitize_error_detail(exc.detail) if exc.status_code >= 500 else exc.detail
+    title = exc.detail if isinstance(exc.detail, str) and exc.status_code < 500 else "HTTP Error"
     content = {
         "type": "about:blank",
         "title": title,
@@ -102,6 +115,39 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     }
     return JSONResponse(
         status_code=exc.status_code,
+        content=content,
+        headers={"Content-Type": "application/problem+json"},
+    )
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    content = {
+        "type": "about:blank",
+        "title": "Validation Error",
+        "status": 422,
+        "detail": exc.errors(),
+        "instance": request.url.path,
+    }
+    return JSONResponse(
+        status_code=422,
+        content=content,
+        headers={"Content-Type": "application/problem+json"},
+    )
+
+
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    logger.exception("Unhandled server exception on %s: %s", request.url.path, exc)
+    content = {
+        "type": "about:blank",
+        "title": "Internal Server Error",
+        "status": 500,
+        "detail": "An internal server error occurred.",
+        "instance": request.url.path,
+    }
+    return JSONResponse(
+        status_code=500,
         content=content,
         headers={"Content-Type": "application/problem+json"},
     )

@@ -216,6 +216,7 @@ def run_isolated_demonstration(demo_db_url: Optional[str] = None):
             orig_main_engine = app_main.engine
             orig_main_init_db = app_main.init_db
             orig_main_check_conn = app_main.check_connection
+            orig_ingest_engine = getattr(ingestion_service, "engine", None)
             orig_ingest_session_local = ingestion_service.SessionLocal
             orig_metrics_session_local = metrics_service.SessionLocal
             orig_coords = update_weather.STATE_COORDS
@@ -226,6 +227,7 @@ def run_isolated_demonstration(demo_db_url: Optional[str] = None):
             app_main.engine = isolated_engine
             app_main.init_db = lambda: Base.metadata.create_all(bind=isolated_engine)
             app_main.check_connection = lambda: True
+            ingestion_service.engine = isolated_engine
             ingestion_service.SessionLocal = IsolatedSessionLocal
             metrics_service.SessionLocal = IsolatedSessionLocal
 
@@ -290,6 +292,7 @@ def run_isolated_demonstration(demo_db_url: Optional[str] = None):
                 app_main.engine = orig_main_engine
                 app_main.init_db = orig_main_init_db
                 app_main.check_connection = orig_main_check_conn
+                ingestion_service.engine = orig_ingest_engine
                 ingestion_service.SessionLocal = orig_ingest_session_local
                 metrics_service.SessionLocal = orig_metrics_session_local
                 update_weather.STATE_COORDS = orig_coords
@@ -315,9 +318,73 @@ def run_isolated_demonstration(demo_db_url: Optional[str] = None):
         print("[SUCCESS] Demonstration complete. Production database was never connected or touched.")
 
 
+def run_with_disposable_server():
+    """Launch isolated PostgreSQL cluster on port 54329 and execute demonstration."""
+    import subprocess
+    import psycopg
+
+    temp_cluster_dir = os.path.join(os.environ.get("TEMP", "C:\\Temp"), "disposable_pg_cluster")
+    disposable_port = 54329
+    disposable_db = "weather_forecasting_disposable"
+    disposable_url = f"postgresql+psycopg://postgres@127.0.0.1:{disposable_port}/{disposable_db}"
+    pg_log_path = os.path.join(os.environ.get("TEMP", "C:\\Temp"), "disposable_pg_server.log")
+
+    proc = None
+    server_started_by_us = False
+
+    server_ready = False
+    try:
+        with psycopg.connect(f"host=127.0.0.1 port={disposable_port} user=postgres dbname=postgres", connect_timeout=1) as conn:
+            server_ready = True
+    except Exception:
+        server_ready = False
+
+    if not server_ready:
+        pg_log = open(pg_log_path, "w+", encoding="utf-8")
+        pg_bin = "C:\\Users\\SUJAY\\pgsql\\bin\\postgres.exe"
+        if not os.path.exists(pg_bin):
+            pg_bin = "postgres"
+        cmd = [pg_bin, "-D", temp_cluster_dir, "-p", str(disposable_port)]
+        proc = subprocess.Popen(cmd, stdout=pg_log, stderr=subprocess.STDOUT)
+        server_started_by_us = True
+        for _ in range(25):
+            if proc.poll() is not None:
+                raise RuntimeError(f"Disposable postgres process exited prematurely with code {proc.poll()}")
+            try:
+                with psycopg.connect(f"host=127.0.0.1 port={disposable_port} user=postgres dbname=postgres", connect_timeout=1) as conn:
+                    server_ready = True
+                    break
+            except Exception:
+                time.sleep(0.5)
+
+    if not server_ready:
+        raise RuntimeError("Failed to connect to disposable PostgreSQL on port 54329")
+
+    # Ensure disposable db exists
+    with psycopg.connect(f"host=127.0.0.1 port={disposable_port} user=postgres dbname=postgres", autocommit=True) as conn:
+        with conn.cursor() as cur:
+            cur.execute(f"SELECT 1 FROM pg_database WHERE datname = '{disposable_db}';")
+            if not cur.fetchone():
+                cur.execute(f"CREATE DATABASE {disposable_db};")
+
+    os.environ["SCHEDULER_DEMO_DATABASE_URL"] = disposable_url
+    try:
+        run_isolated_demonstration(demo_db_url=disposable_url)
+    finally:
+        if server_started_by_us and proc is not None:
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+            except Exception:
+                proc.kill()
+
+
 if __name__ == "__main__":
     try:
-        run_isolated_demonstration()
+        if "--disposable" in sys.argv:
+            run_with_disposable_server()
+        else:
+            run_isolated_demonstration()
     except Exception as exc:
         print(f"\n[DEMO ERROR / BLOCKED]: {exc}", file=sys.stderr)
         sys.exit(1)

@@ -198,9 +198,8 @@ def _try_ml_prediction(
         history[0].date,
     )
     try:
-        if cache_key in prediction_cache:
-            predicted = prediction_cache[cache_key]
-        else:
+        predicted = prediction_cache.get(cache_key)
+        if predicted is None:
             features = build_features(history, identity.state, asof)
             predicted = model_service.predict(features, pipeline=pipeline)
             prediction_cache[cache_key] = predicted
