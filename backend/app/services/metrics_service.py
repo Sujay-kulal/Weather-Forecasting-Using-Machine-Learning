@@ -31,17 +31,28 @@ def fill_missing_actuals(db: Session | None = None, *, today: date_type | None =
                 & (func.coalesce(WeatherData.location, "") == func.coalesce(Prediction.location, ""))
                 & (WeatherData.date == Prediction.forecast_date),
             )
-            .where(Prediction.actual_temp.is_(None), Prediction.forecast_date < as_of)
+            .where(
+                Prediction.actual_temp.is_(None),
+                Prediction.forecast_date < as_of,
+                WeatherData.temp_avg.is_not(None),
+            )
         ).all()
         if matches:
-            session.execute(
-                update(Prediction),
-                [{'id': prediction_id, 'actual_temp': actual} for prediction_id, actual in matches],
-            )
-            session.commit()
+            BATCH_SIZE = 500
+            for i in range(0, len(matches), BATCH_SIZE):
+                chunk = matches[i : i + BATCH_SIZE]
+                session.execute(
+                    update(Prediction),
+                    [{'id': prediction_id, 'actual_temp': actual} for prediction_id, actual in chunk],
+                )
+            if owns_session:
+                session.commit()
+            else:
+                session.flush()
         return len(matches)
     except Exception:
-        session.rollback()
+        if owns_session:
+            session.rollback()
         raise
     finally:
         if owns_session:

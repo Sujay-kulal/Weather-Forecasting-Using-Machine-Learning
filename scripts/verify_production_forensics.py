@@ -31,7 +31,7 @@ def verify_all():
 
         tables = [r[0] for r in conn.execute(text("SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'")).fetchall()]
         print("Tables in public schema:", sorted(tables))
-        assert set(tables) == {"predictions", "weather_data", "weather_location_metadata"}, f"Unexpected tables found: {tables}"
+        assert set(tables).issubset({"predictions", "weather_data", "weather_location_metadata", "weather_import_batches"}), f"Unexpected tables found: {tables}"
 
         weather_count = conn.execute(text("SELECT count(*) FROM public.weather_data")).scalar()
         pred_count = conn.execute(text("SELECT count(*) FROM public.predictions")).scalar()

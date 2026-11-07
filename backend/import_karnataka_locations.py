@@ -19,6 +19,8 @@ import io
 import json
 import logging
 import math
+import sys
+from pathlib import Path
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
@@ -26,6 +28,10 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 import zipfile
 from zoneinfo import ZoneInfo
+
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
 
 from sqlalchemy import func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -367,6 +373,7 @@ def run_import_stage(
     end_date: date_type | None = None,
     daily_budget: int = DEFAULT_DAILY_BUDGET,
     hourly_budget: int = DEFAULT_HOURLY_BUDGET,
+    session_factory: Any = None,
 ) -> dict[str, Any]:
     """Inspect the plan or import at most one reserved free-tier daily budget."""
     if not 1 <= daily_budget <= DEFAULT_DAILY_BUDGET:
@@ -408,7 +415,8 @@ def run_import_stage(
     completed_batches = 0
     stop_for_budget = False
 
-    with SessionLocal() as session:
+    session_maker = session_factory or SessionLocal
+    with session_maker() as session:
         # This import requires the explicitly applied schema migration; it
         # never creates or alters tables during normal execution.
         metadata_ids = _add_location_metadata(session, locations)

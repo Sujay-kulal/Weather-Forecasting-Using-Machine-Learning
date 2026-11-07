@@ -7,11 +7,12 @@ POST /predict implements the Phase 2 pipeline:
   predictions table -> JSON response. No future data, no stale data,
   no hardcoded values.
 """
+from collections import defaultdict
 from datetime import date as date_type, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 
 from app.database import get_db
 from app.models import Prediction, WeatherData
@@ -20,7 +21,7 @@ from app.schemas import (ModelInfoResponse, PredictionRecord, PredictionRequest,
 from app.services import feature_service, model_service, weather_forecast_service
 from app.services.metrics_service import rolling_live_metrics
 from app.services.prediction_store import upsert_prediction
-from app.services.resolve_location import resolve_location
+from app.services.resolve_location import MODEL_SUPPORTED_STATES, resolve_location
 from app.services.temperature import round_temperature
 from app.services.feature_service import (MAX_STALENESS_DAYS, REQUIRED_HISTORY,
                                           build_features)
@@ -30,9 +31,9 @@ router = APIRouter(tags=["prediction"])
 
 @router.post("/predict", response_model=PredictionResponse)
 def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_db)):
-    # 1. Validate the state/district/location against the database
+    # 1. Validate the state/district/location against the database and model whitelist
     canonical, dist, loc = resolve_location(
-        request.state, request.district or "", request.location or "", db
+        request.state, request.district or "", request.location or "", db, require_model_support=True
     )
 
     # 2. Reproduce the training row t = D-1: its lags/rolls come from the
@@ -74,9 +75,8 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
 
     # 4. Check TTLCache for prediction computation, keyed (state, target_date, latest_data_date)
     cache_key = (canonical, request.forecast_date, history[0].date)
-    if cache_key in prediction_cache:
-        predicted = prediction_cache[cache_key]
-    else:
+    predicted = prediction_cache.get(cache_key)
+    if predicted is None:
         # Build features and predict with saved model (from app.state if available)
         try:
             features = build_features(history, canonical, asof)
@@ -218,26 +218,45 @@ def forecast_all(
     asof = target_date - timedelta(days=1)
     pipeline = getattr(req.app.state, "pipeline", None)
     states = [state for state in model_service.model_info.get("states", []) if state != "Other"]
+
+    # Single SQL window function query eliminating N+1 round-trips
+    rn_col = func.row_number().over(
+        partition_by=WeatherData.state,
+        order_by=WeatherData.date.desc(),
+    ).label("rn")
+
+    ranked_subquery = (
+        select(WeatherData, rn_col)
+        .where(
+            WeatherData.state.in_(states),
+            WeatherData.district == "",
+            WeatherData.location == "",
+            WeatherData.date < asof,
+        )
+        .subquery()
+    )
+
+    ranked_alias = aliased(WeatherData, ranked_subquery)
+    rows = db.execute(
+        select(ranked_alias)
+        .where(ranked_subquery.c.rn <= 8)
+        .order_by(ranked_alias.state, ranked_alias.date.desc())
+    ).scalars().all()
+
+    history_by_state: dict[str, list[WeatherData]] = defaultdict(list)
+    for r in rows:
+        history_by_state[r.state].append(r)
+
     results: dict[str, float] = {}
     for state in states:
-        history = db.execute(
-            select(WeatherData)
-            .where(
-                WeatherData.state == state,
-                WeatherData.district == "",
-                WeatherData.location == "",
-                WeatherData.date < asof,
-            )
-            .order_by(WeatherData.date.desc())
-            .limit(REQUIRED_HISTORY)
-        ).scalars().all()
-        if len(history) < REQUIRED_HISTORY or (asof - history[0].date).days > MAX_STALENESS_DAYS:
+        state_history = history_by_state.get(state, [])[:REQUIRED_HISTORY]
+        if len(state_history) < REQUIRED_HISTORY or (asof - state_history[0].date).days > MAX_STALENESS_DAYS:
             continue
-        key = (state, target_date, history[0].date)
+        key = (state, target_date, state_history[0].date)
         try:
             predicted = prediction_cache.get(key)
             if predicted is None:
-                features = build_features(history, state, asof)
+                features = build_features(state_history, state, asof)
                 predicted = model_service.predict(features, pipeline=pipeline)
                 prediction_cache[key] = predicted
             if len(predicted) >= day:
