@@ -31,15 +31,8 @@ try:
     elif evaluation_path and (PROJECT_ROOT / evaluation_path).is_file():
         MODEL_PATH = PROJECT_ROOT / evaluation_path
     else:
-        MODEL_PATH = next(
-            (
-                candidate for candidate in (
-                    PROJECT_ROOT / "model" / "weather_model_v2.joblib",
-                    PROJECT_ROOT / "model" / "weather_model.joblib",
-                )
-                if candidate.is_file()
-            ),
-            PROJECT_ROOT / "model" / "weather_model_v2.joblib",
+        raise FileNotFoundError(
+            "No model_path configured in model_info.json and no evaluation_artifact found."
         )
     pipeline = joblib.load(MODEL_PATH)
     FEATURE_ORDER = model_info["features"]          # exact training column order
@@ -57,7 +50,7 @@ try:
     logger.info("Loaded %s pipeline from %s (%d input features)",
                 MODEL_NAME, MODEL_PATH, len(FEATURE_ORDER))
 except Exception:
-    logger.exception("FATAL: could not load the trained model from %s", MODEL_PATH)
+    logger.exception("FATAL: could not load the trained model")
     raise
 
 

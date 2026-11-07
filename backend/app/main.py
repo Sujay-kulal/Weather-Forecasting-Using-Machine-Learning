@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.database import Base, check_connection, engine, init_db
+from app.database import check_connection, init_db
 from app.routes import admin, health, location_weather, prediction, weather
 from app.services.ingestion_service import run_ingestion_with_lock
 from app.services.metrics_service import fill_missing_actuals

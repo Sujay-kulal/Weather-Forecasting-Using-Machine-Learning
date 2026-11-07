@@ -9,7 +9,7 @@ train_model.py logic replicated here with pandas (independent implementation):
   row at date t carries lags from t, t-1, t-2 ... and its target is day t+1.
   So for forecast date D, the reference training row is the record at t = D-1.
 
-Run from backend/:  python test_consistency.py
+Run from backend/:  pytest tests/test_consistency.py
 """
 import sys
 from pathlib import Path
@@ -17,14 +17,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Ensure backend/ is on sys.path so `app.*` imports work
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from app.database import SessionLocal  # noqa: E402
 from app.models import WeatherData  # noqa: E402
 from app.services import model_service  # noqa: E402
 from app.services.feature_service import build_features, month_to_season  # noqa: E402
 
-CSV = Path(__file__).resolve().parent.parent / "data" / "archive_c" / "PSP_Weather_Merged_EDA_Cleaned.csv"
+CSV = Path(__file__).resolve().parent.parent.parent / "data" / "archive_c" / "PSP_Weather_Merged_EDA_Cleaned.csv"
 FEATURES = model_service.FEATURE_ORDER
 
 def _training_frame() -> pd.DataFrame:
