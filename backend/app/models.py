@@ -11,7 +11,6 @@ weather_import_batches: batch audit history for location weather imports.
 from datetime import date, datetime
 from sqlalchemy import (
     CheckConstraint,
-    Column,
     Date,
     DateTime,
     Float,

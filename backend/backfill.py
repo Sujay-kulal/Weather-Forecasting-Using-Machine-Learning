@@ -18,7 +18,7 @@ if str(backend_dir) not in sys.path:
 
 from app.database import SessionLocal
 from app.models import WeatherData
-from sqlalchemy import select, text
+from sqlalchemy import select
 from update_weather import STATE_COORDS
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")

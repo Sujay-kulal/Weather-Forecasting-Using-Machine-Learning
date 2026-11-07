@@ -5,7 +5,7 @@ import logging
 import argparse
 import urllib.request
 import urllib.error
-from datetime import datetime, date
+from datetime import datetime
 from pathlib import Path
 
 # Make `app` importable

@@ -21,7 +21,7 @@ from sqlalchemy import select
 # Make `app` importable when run from the backend folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from app.database import Base, SessionLocal, engine, init_db  # noqa: E402
+from app.database import SessionLocal, engine, init_db  # noqa: E402
 from app.models import WeatherData  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent

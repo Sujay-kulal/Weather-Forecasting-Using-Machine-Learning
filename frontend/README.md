@@ -25,7 +25,7 @@ npm run build
 npx tsc --noEmit -p tsconfig.json
 ```
 
-## Pages and data
+## Pages and Data
 
 - **Forecast:** Select a state and date; a valid forecast request writes an
   audit record to PostgreSQL.
@@ -36,10 +36,11 @@ npx tsc --noEmit -p tsconfig.json
 - **India Map:** Combines backend state-level ML forecasts with the separate
   Open-Meteo city-observation layer.
 
-The forecast date defaults to two days after the newest measurement. This lets
-the existing model's lagged feature contract include that newest observation.
-The API omits prediction bounds unless metadata validates calibration for the
-currently loaded artifact.
+The forecast date defaults to one day after the newest available measurement.
+The `/forecast/all` map endpoint uses two days after the latest observation so
+the model's lagged feature contract includes that newest observation. The API
+omits prediction bounds unless metadata validates calibration for the currently
+loaded artifact.
 
 The frontend is a single-page application with tab navigation; a browser refresh
 returns to the Forecast page.
