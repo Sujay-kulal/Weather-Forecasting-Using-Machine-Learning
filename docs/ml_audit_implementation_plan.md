@@ -21,7 +21,7 @@ The audit evaluates the production model artifact (`model/weather_model_v3.jobli
 
 ## 2. Evaluation Taxonomy & Temporal Maturity Classification
 
-The audit enforces a strict separation between distinct evaluation regimes relative to the **current audit date of November 1, 2026 (`2026-11-01`)**:
+The audit enforces a strict separation between distinct evaluation regimes relative to the **current audit date of November 7, 2026 (`2026-11-07`)**:
 
 ```mermaid
 flowchart TD
@@ -44,13 +44,13 @@ flowchart TD
     subgraph Independent ["3. Genuine Out-of-Sample Evaluation"]
         direction TB
         subgraph RetrospectivePostCutoff ["3A. Retrospective Post-Cutoff Backtest"]
-            I1["Data: Post-cutoff past dates (2026-10-22 to 2026-10-25 fully mature; Oct 26-31 partially mature)"]
+            I1["Data: Post-cutoff past dates (2026-10-22 to 2026-10-31 fully calendar-mature as of Nov 7; Nov 1+ partially mature)"]
             I2["Model: Frozen deployed weather_model_v3.joblib"]
             I3["Status: BLOCKED in local environment (PostgreSQL ends on 2026-09-06)"]
             I4["Purpose: Evaluates frozen weights on historical unseen periods once data is ingested"]
         end
         subgraph ProspectiveLive ["3B. Prospective Production Forecasting"]
-            P1["Data: Live real-time stream logged prior to observation (>= 2026-11-01)"]
+            P1["Data: Live real-time stream logged prior to observation (>= 2026-11-07)"]
             P2["Model: Frozen deployed weather_model_v3.joblib"]
             P3["Status: Zero hindsight or data-snooping bias possible"]
             P4["Purpose: Gold standard real-world operational evaluation"]
@@ -59,7 +59,7 @@ flowchart TD
 ```
 
 ### Horizon-Specific Target Availability and Calendar Maturity Schedule
-Let $t$ be the forecast origin date, and $T_{obs\_max} = \text{2026-11-01}$ be the current calendar date.
+Let $t$ be the forecast origin date, and $T_{obs\_max} = \text{2026-11-07}$ be the current calendar date.
 - Target date for horizon $h$ is: $\text{Target Date}(h) = t + h$.
 - Target $h$ is **calendar mature** if and only if:
   $$t + h \le T_{obs\_max} \iff h \le T_{obs\_max} - t$$
@@ -67,28 +67,24 @@ Let $t$ be the forecast origin date, and $T_{obs\_max} = \text{2026-11-01}$ be t
 
 #### Calendar Maturity vs. Ground-Truth Data Availability
 A fundamental distinction must be maintained between:
-1. **Calendar Maturity**: The physical date has occurred on the wall-clock calendar ($t + h \le \text{2026-11-01}$).
+1. **Calendar Maturity**: The physical date has occurred on the wall-clock calendar ($t + h \le \text{2026-11-07}$).
 2. **Ingestion Availability**: Physical observations have been recorded, ingested, and committed to PostgreSQL (`date <= 2026-09-06`).
 3. **Quality Validation**: Physical records have passed null checks, range checks, and continuity tests.
 4. **Forecast-Origin Usability**: The required 7-day feature lag window $[t-8, t-2]$ is present and unbroken in the database.
 
-#### Maturity Analysis Across Retrospective Candidate Origins (Current Date: 2026-11-01)
+#### Maturity Analysis Across Retrospective Candidate Origins (Current Date: 2026-11-07)
 
 | Forecast Origin ($t$) | Horizon 1 ($t+1$) | Horizon 2 ($t+2$) | Horizon 3 ($t+3$) | Horizon 4 ($t+4$) | Horizon 5 ($t+5$) | Horizon 6 ($t+6$) | Horizon 7 ($t+7$) | Fully Mature (All 7 Horizons)? |
 | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| **2026-10-22** | Oct 23 (Mature) | Oct 24 (Mature) | Oct 25 (Mature) | Oct 26 (Mature) | Oct 27 (Mature) | Oct 28 (Mature) | Oct 29 (Mature) | **YES** (Mature Oct 29) |
-| **2026-10-23** | Oct 24 (Mature) | Oct 25 (Mature) | Oct 26 (Mature) | Oct 27 (Mature) | Oct 28 (Mature) | Oct 29 (Mature) | Oct 30 (Mature) | **YES** (Mature Oct 30) |
-| **2026-10-24** | Oct 25 (Mature) | Oct 26 (Mature) | Oct 27 (Mature) | Oct 28 (Mature) | Oct 29 (Mature) | Oct 30 (Mature) | Oct 31 (Mature) | **YES** (Mature Oct 31) |
-| **2026-10-25** | Oct 26 (Mature) | Oct 27 (Mature) | Oct 28 (Mature) | Oct 29 (Mature) | Oct 30 (Mature) | Oct 31 (Mature) | Nov 01 (Mature) | **YES** (Matures today) |
-| **2026-10-26** | Oct 27 (Mature) | Oct 28 (Mature) | Oct 29 (Mature) | Oct 30 (Mature) | Oct 31 (Mature) | Nov 01 (Mature) | *Nov 02 (Pending)* | **NO** (Horizons 1–6 only) |
-| **2026-10-27** | Oct 28 (Mature) | Oct 29 (Mature) | Oct 30 (Mature) | Oct 31 (Mature) | Nov 01 (Mature) | *Nov 02 (Pending)* | *Nov 03 (Pending)* | **NO** (Horizons 1–5 only) |
-| **2026-10-28** | Oct 29 (Mature) | Oct 30 (Mature) | Oct 31 (Mature) | Nov 01 (Mature) | *Nov 02 (Pending)* | *Nov 03 (Pending)* | *Nov 04 (Pending)* | **NO** (Horizons 1–4 only) |
-| **2026-10-29** | Oct 30 (Mature) | Oct 31 (Mature) | Nov 01 (Mature) | *Nov 02 (Pending)* | *Nov 03 (Pending)* | *Nov 04 (Pending)* | *Nov 05 (Pending)* | **NO** (Horizons 1–3 only) |
-| **2026-10-30** | Oct 31 (Mature) | Nov 01 (Mature) | *Nov 02 (Pending)* | *Nov 03 (Pending)* | *Nov 04 (Pending)* | *Nov 05 (Pending)* | *Nov 06 (Pending)* | **NO** (Horizons 1–2 only) |
-| **2026-10-31** | Nov 01 (Mature) | *Nov 02 (Pending)* | *Nov 03 (Pending)* | *Nov 04 (Pending)* | *Nov 05 (Pending)* | *Nov 06 (Pending)* | *Nov 07 (Pending)* | **NO** (Horizon 1 only) |
-| **2026-11-01** | *Nov 02 (Pending)* | *Nov 03 (Pending)* | *Nov 04 (Pending)* | *Nov 05 (Pending)* | *Nov 06 (Pending)* | *Nov 07 (Pending)* | *Nov 08 (Pending)* | **PROSPECTIVE** (All pending) |
+| **2026-10-22** | Oct 23 (Mature) | Oct 24 (Mature) | Oct 25 (Mature) | Oct 26 (Mature) | Oct 27 (Mature) | Oct 28 (Mature) | Oct 29 (Mature) | **YES** |
+| **2026-10-25** | Oct 26 (Mature) | Oct 27 (Mature) | Oct 28 (Mature) | Oct 29 (Mature) | Oct 30 (Mature) | Oct 31 (Mature) | Nov 01 (Mature) | **YES** |
+| **2026-10-28** | Oct 29 (Mature) | Oct 30 (Mature) | Oct 31 (Mature) | Nov 01 (Mature) | Nov 02 (Mature) | Nov 03 (Mature) | Nov 04 (Mature) | **YES** |
+| **2026-10-31** | Nov 01 (Mature) | Nov 02 (Mature) | Nov 03 (Mature) | Nov 04 (Mature) | Nov 05 (Mature) | Nov 06 (Mature) | Nov 07 (Mature) | **YES** (H7 matures on audit date) |
+| **2026-11-01** | Nov 02 (Mature) | Nov 03 (Mature) | Nov 04 (Mature) | Nov 05 (Mature) | Nov 06 (Mature) | Nov 07 (Mature) | *Nov 08 (Pending)* | **NO** (Horizons 1–6 only) |
+| **2026-11-02** | Nov 03 (Mature) | Nov 04 (Mature) | Nov 05 (Mature) | Nov 06 (Mature) | Nov 07 (Mature) | *Nov 08 (Pending)* | *Nov 09 (Pending)* | **NO** (Horizons 1–5 only) |
+| **2026-11-07** | *Nov 08 (Pending)* | *Nov 09 (Pending)* | *Nov 10 (Pending)* | *Nov 11 (Pending)* | *Nov 12 (Pending)* | *Nov 13 (Pending)* | *Nov 14 (Pending)* | **PROSPECTIVE** (All pending) |
 
-- **Methodological Rule**: The retrospective candidate window from `2026-10-22` to `2026-10-31` is **NOT fully mature for all seven horizons as of November 1**. Only forecast origins $t \in [\text{2026-10-22}, \text{2026-10-25}]$ have all 7 targets mature. Origins from Oct 26 to Oct 31 must be evaluated under strict horizon-specific availability masks.
+- **Methodological Rule**: As of the audit date (2026-11-07), all candidate retrospective forecast origins from `2026-10-22` through `2026-10-31` are **fully calendar-mature for all seven horizons** (the latest target is Oct 31 + 7 = Nov 7 = audit date). The first partially-mature origin is `2026-11-01` (horizon 7 target Nov 08 is pending). However, **calendar maturity does not imply data availability**: the PostgreSQL database ends on `2026-09-06`, so independent evaluation remains **physically blocked** regardless of calendar maturity status (see Section 11).
 
 ---
 
@@ -214,30 +210,22 @@ A critical correction must be made to prior claims: **Not all 12,045 test partit
   - The remaining 0.82% of rows represent post-training origins whose target horizons heavily intersect historical training observations.
   - The reported metrics are strictly **training-overlap diagnostics**.
 
-### 3. Source Evidence for the 363-Row Discrepancy Reconciliation
-In `backend/evaluate_deployed_artifact.py`, lines 171–178:
-```python
-max_origin = panel["Date"].max()
-test_start = max_origin - pd.DateOffset(months=TEST_MONTHS) + pd.Timedelta(days=1)
-calibration_start = test_start - pd.DateOffset(months=CALIBRATION_MONTHS)
-train_end = calibration_start - pd.Timedelta(days=EMBARGO_ORIGIN_DAYS)
-calibration_end = test_start - pd.Timedelta(days=EMBARGO_ORIGIN_DAYS)
-```
-- Line 35 defines `EMBARGO_ORIGIN_DAYS = 8`.
-- Gaps between partitions:
-  - Gap 1: Between `train_end` and `calibration_start` = $8 - 1 = 7 \text{ excluded days}$.
-  - Gap 2: Between `calibration_end` and `test_start` = $8 - 1 = 7 \text{ excluded days}$.
-  - Total excluded embargo days = $7 + 7 = 14 \text{ days}$.
-  - Across 33 states: $14 \times 33 = \mathbf{462 \text{ excluded rows}}$.
-- Panel date extension:
-  - The evaluated panel had `max_origin = 2026-10-18`.
-  - The training dataset origin cutoff was `2026-10-15` (for target 7 to fall on `2026-10-22`).
-  - Added days: `2026-10-16`, `2026-10-17`, `2026-10-18` = $3 \text{ days}$.
-  - Across 33 states: $3 \times 33 = \mathbf{99 \text{ extra rows}}$.
-- Net arithmetic discrepancy:
-  $$\text{Excluded Embargo Rows} - \text{Additional Panel Rows} = 462 - 99 = \mathbf{363 \text{ rows}} \quad (11 \text{ days} \times 33 \text{ states})$$
-  $$\text{Fitted Rows } (141,867) - \text{Evaluated Partition Sum } (141,504) = \mathbf{363 \text{ rows}}$$
-- **Conditional Hypothesis Status**: While this arithmetic identity mathematically balances the totals, it assumes unbroken 33-state daily reporting without dropped rows. Because historical data from 2015 to 2023 is absent from disk, uniform per-state daily reporting is classified as a **Conditional Hypothesis**, not a verified empirical fact.
+### 3. Reconciliation of the 363-Row Discrepancy (Unverifiable Historical Artifact)
+
+The serialized model's `scaler.n_samples_seen_` reports 141,867 fitted rows, while the partition totals in `model/model_info.json` (train: 126,654 + calibration: 2,805 + test: 12,045 = 141,504) differ by exactly 363 rows.
+
+**Source-Code Status**: The partition counts in `model_info.json` (lines 247–250) were generated by a **previous version** of the evaluation script that is no longer present in the repository. The current `backend/evaluate_deployed_artifact.py` (509 lines) uses a completely different architecture:
+- Line 38: `EMBARGO_DAYS = 8`
+- Line 39: `EMBARGO_OFFSET_DAYS = 9`
+- Lines 87–104: `calculate_eligible_test_period()` computes eligible test windows from `training_cutoff + timedelta(days=EMBARGO_OFFSET_DAYS)`.
+- Lines 117–209: `build_calendar_verified_panel()` constructs features from explicit calendar-date lookups, not from `shift(-i)`.
+- The current code does **not** define `TEST_MONTHS`, `CALIBRATION_MONTHS`, or `EMBARGO_ORIGIN_DAYS` constants, and does not use `pd.DateOffset(months=...)` partition algebra.
+
+**Conditional Historical Arithmetic**: A plausible reconciliation follows, but is classified as an **Unverifiable Historical Artifact** because the generating code is absent from the repository:
+- If the prior evaluation script used two 7-day embargo gaps (between train/calibration and calibration/test partitions): $14 \text{ excluded days} \times 33 \text{ states} = 462 \text{ excluded rows}$.
+- If the evaluation panel extended 3 calendar days past the training origin cutoff (Oct 16–18): $3 \times 33 = 99 \text{ additional rows}$.
+- Net: $462 - 99 = 363$, matching $141{,}867 - 141{,}504 = 363$.
+- This arithmetic is **internally consistent** but depends on: (a) the existence of a prior evaluation script with month-based partitioning and 8-day embargo gaps, (b) unbroken 33-state daily reporting without dropped rows, and (c) no duplicate or missing rows in the historical dataset. **None of these assumptions can be verified from the current repository contents.**
 
 ---
 
@@ -319,6 +307,25 @@ history = db.execute(
   - Genuine retrospective evaluation requires **data vintage and acquisition timestamps** (`created_at`, ingestion audit logs) proving the inputs were present in the database prior to origin date $t$.
   - Genuinely prospective evaluation requires an **immutable prediction ledger** recording the feature vector and model predictions at origin $t$ *before* the physical weather occurs.
 
+### Mathematical Definitions and Operational Contracts for Evaluation Baselines
+
+The audit benchmarks the deployed model against two standard meteorological reference baselines implemented in `backend/evaluate_deployed_artifact.py` (lines 227–261):
+
+1. **Persistence Baseline**:
+   $$\hat{y}_{s, t+h|t} = y_{s, t-1} \quad \forall h \in \{1, 2, \dots, 7\}$$
+   - *Operational Meaning*: Repeats the most recent valid historical observation across all 7 forward forecast horizons.
+   - *Why $y_{t-1}$ rather than $y_t$*: In operational deployment (Section 6, lines 293–298), a forecast for target date $D_{forecast} = t+1$ operates with $asof = t$. The newest usable observation queried from PostgreSQL enforces `date < asof`, yielding $D_{obs\_latest} = asof - 1 \text{ day} = t-1$ (`lag1_temp_avg`).
+   - *Methodological Disclosure*: Using $y_{t-1}$ reflects actual operational pipeline constraints (measurements for date $t$ are not finalized until $t+1$). However, predicting $t+h$ using $t-1$ represents an effective $(h+1)$-step persistence forecast, making the baseline slightly weaker than an idealized 0-lag persistence forecast based on contemporaneous $y_t$. This design choice must be explicitly reported in the audit metrics.
+
+2. **Climatology Baseline**:
+   $$\hat{y}_{s, t+h|t} = \bar{y}_{s, \operatorname{DOY}(t+h)}$$
+   where $\operatorname{DOY}(t+h)$ is the calendar day-of-year of the target date, and $\bar{y}_{s, \operatorname{DOY}}$ is the historical sample mean temperature for state $s$ on that specific calendar day-of-year.
+   - *Strict Training-Only Contraction*: In `backend/evaluate_deployed_artifact.py` (line 406), `training_raw` is restricted strictly to historical training observations prior to the test window ($date \le T_{train\_cutoff}$). Observations from the test window are never included in climatological averages.
+   - *Missing-Day and Leap-Day Behavior*:
+     - In `backend/evaluate_deployed_artifact.py` (lines 252–255), if a `(State, DOY)` key is missing from `climatology_lookup` (e.g. leap day Day 366 unobserved in historical training records, or unobserved calendar days), the implementation executes a tiered fallback:
+       $$\hat{y}_{s, t+h|t} = \begin{cases} \bar{y}_{s, \operatorname{DOY}(t+h)} & \text{if } (s, \operatorname{DOY}(t+h)) \in \text{Lookup} \\ \bar{y}_s & \text{else if state historical mean } \bar{y}_s \text{ exists} \\ y_{s, t-1} & \text{else fallback to row } \texttt{lag1\_temp\_avg} \end{cases}$$
+     - *Leap-Day Alignment Status*: Day 366 falls back to the overall state historical mean $\bar{y}_s$. Circular trigonometric smoothing or interpolation across year boundaries (e.g. Day 365/366 $\to$ Day 1) is not implemented in the current code and is classified as an **Unimplemented Feature**.
+
 ---
 
 ## 7. Statistical Methodology and Uncertainty Estimation
@@ -340,25 +347,32 @@ $$\theta_{macro, h} = \frac{1}{S} \sum_{s=1}^S \theta_{s, h} = \frac{1}{S} \sum_
 - Under incomplete panels ($N_{s, h}$ varies across states), $\theta_{macro, h}$ is an unweighted average of state means.
 - To compute a date-level time-series variance matching this exact estimand, define the normalized daily macro contribution:
   $$\xi_{t, h} = \frac{1}{S} \sum_{s=1}^S \frac{M_{s, t, h} L_{s, t, h}}{N_{s, h}}$$
-- Notice: $\sum_{t=1}^T \xi_{t, h} = \theta_{macro, h} = T \cdot \bar{\xi}_h$.
-- Apply Newey-West HAC variance to the time series $\xi_{t, h}$:
-  $$\widehat{\text{Var}}(\theta_{macro, h}) = T \cdot \widehat{\text{LRV}}(\xi_{t, h})$$
-  $$SE(\theta_{macro, h}) = \sqrt{\widehat{\text{Var}}(\theta_{macro, h})}$$
+- Notice: $\sum_{t=1}^T \xi_{t, h} = \theta_{macro, h}$. Define the sample mean $\bar{\xi}_h = \theta_{macro, h} / T$.
+- **Explicit Long-Run Variance Definition**: The Newey-West estimator of the spectral density at zero for the $\xi_{t,h}$ series is:
+  $$\widehat{\Omega}_h(\xi) = \hat{\gamma}_0(\xi) + 2 \sum_{k=1}^{K} \left(1 - \frac{k}{K+1}\right) \hat{\gamma}_k(\xi)$$
+  where $\hat{\gamma}_k(\xi) = \frac{1}{T} \sum_{t=k+1}^T (\xi_{t,h} - \bar{\xi}_h)(\xi_{t-k,h} - \bar{\xi}_h)$ is the sample autocovariance at lag $k$, and $K$ is the Bartlett bandwidth (see Section 7.3A for data-driven selection).
+- **Variance of the macro estimator**: Since $\theta_{macro,h} = \sum_{t=1}^T \xi_{t,h} = T \bar{\xi}_h$:
+  $$\widehat{\text{Var}}(\theta_{macro, h}) = T \cdot \widehat{\Omega}_h(\xi)$$
+  $$SE(\theta_{macro, h}) = \sqrt{T \cdot \widehat{\Omega}_h(\xi)}$$
+  **Consistency check**: For a single state ($S=1$) with complete data ($N_{s,h} = T$), $\xi_{t,h} = L_{t,h}/T$, so $\widehat{\Omega}(\xi) = \widehat{\Omega}(L)/T^2$, and $SE = \sqrt{T \cdot \widehat{\Omega}(L)/T^2} = \sqrt{\widehat{\Omega}(L)/T}$, recovering the standard per-series formula in Section 7.3A.
   This estimator matches the macro estimand under arbitrary missingness across states.
 
 #### C. Micro-average Estimand (Observation-Weighted / Pooled Panel)
 $$\theta_{micro, h} = \frac{\sum_{s=1}^S \sum_{t=1}^T M_{s, t, h} L_{s, t, h}}{\sum_{s=1}^S N_{s, h}} = \frac{\sum_{t=1}^T U_{t, h}}{N_{total, h}}$$
 where $U_{t, h} = \sum_{s=1}^S M_{s, t, h} L_{s, t, h}$ is the daily aggregate loss across all observed states, and $N_{total, h} = \sum_{s=1}^S N_{s, h}$.
-- Notice: $\theta_{micro, h} = \frac{T \cdot \bar{U}_h}{N_{total, h}}$.
+- Notice: $\theta_{micro, h} = \frac{\sum_{t} U_{t,h}}{N_{total, h}} = \frac{T \cdot \bar{U}_h}{N_{total, h}}$.
+- **Explicit Long-Run Variance**: Define $\widehat{\Omega}_h(U) = \hat{\gamma}_0(U) + 2\sum_{k=1}^K (1 - \frac{k}{K+1}) \hat{\gamma}_k(U)$ as the Newey-West spectral density estimator at zero for the $U_{t,h}$ series, with autocovariances $\hat{\gamma}_k(U) = \frac{1}{T}\sum_{t=k+1}^T (U_{t,h} - \bar{U}_h)(U_{t-k,h} - \bar{U}_h)$.
 - Apply Newey-West HAC variance to $U_{t, h}$:
-  $$\widehat{\text{Var}}(\theta_{micro, h}) = \left(\frac{1}{N_{total, h}}\right)^2 \cdot T \cdot \widehat{\text{LRV}}(U_{t, h})$$
-  $$SE(\theta_{micro, h}) = \frac{\sqrt{T \cdot \widehat{\text{LRV}}(U_{t, h})}}{N_{total, h}}$$
+  $$\widehat{\text{Var}}(\theta_{micro, h}) = \frac{T \cdot \widehat{\Omega}_h(U)}{N_{total, h}^2}$$
+  $$SE(\theta_{micro, h}) = \frac{\sqrt{T \cdot \widehat{\Omega}_h(U)}}{N_{total, h}}$$
   This estimator matches the micro estimand under arbitrary missingness.
 
 ### 3. Rigorous Implementation Specifications: HAC, Delta Method, and DM/HLN
 
+> **Notation Convention**: In this section, $N$ denotes the number of temporal observations in the specific time series under analysis. For a per-state, per-horizon analysis, $N = N_{s,h}$ (the count of valid forecast-origin dates for state $s$ at horizon $h$). For a complete-panel state, $N_{s,h} = T$. $N$ **never** denotes the total panel rows $S \times T$. The pooled-panel estimands in Section 7.2 use $T$ (the number of distinct forecast-origin dates) as their temporal dimension, not $N$ from this section.
+
 #### A. Newey-West HAC Variance for MAE with Data-Driven Bandwidth
-1. Construct loss series $z_{t, h} = |e_{t, h}|$ for $t = 1, \dots, N$. Compute mean $\bar{z}_h = \frac{1}{N} \sum_{t=1}^N z_{t, h}$.
+1. Construct loss series $z_{t, h} = |e_{t, h}|$ for $t = 1, \dots, N$ (where $N = N_{s,h}$ is the per-state temporal sample size). Compute mean $\bar{z}_h = \frac{1}{N} \sum_{t=1}^N z_{t, h}$.
 2. **Dependence Assumptions**: Do NOT assume $h-1$ truncation for non-linear ML models. Weather persistence and gradient boosting trees can produce error memory extending beyond $h-1$.
 3. **Data-Driven Bandwidth Selection**: Use the Newey & West (1994) plug-in bandwidth:
    $$K^* = \lfloor 4(N/100)^{2/9} \rfloor$$
@@ -380,9 +394,16 @@ where $U_{t, h} = \sum_{s=1}^S M_{s, t, h} L_{s, t, h}$ is the daily aggregate l
    $$SE(\text{RMSE}_h) = \frac{\sqrt{\widehat{\Omega}_h(u) / N}}{2 \cdot \text{RMSE}_h}$$
 5. Two-sided $(1-\alpha)$ confidence interval: $\text{RMSE}_h \pm t_{1-\alpha/2, N-1} \cdot SE(\text{RMSE}_h)$.
 
-#### C. Harvey-Leybourne-Newbold (HLN 1997) Diebold-Mariano Test & Degeneracy Handling
-1. For competing models $A$ and $B$, compute paired loss differential:
-   $$d_{t, h} = |e_{A, t, h}| - |e_{B, t, h}| \quad \text{for } t = 1, \dots, N$$
+#### C. Diebold-Mariano Test with HAC Variance and HLN Sensitivity Analysis
+
+**Scope and Series Definition**: The DM test is applied in two distinct contexts:
+
+- **Per-state, per-horizon DM test**: For each state $s$ and horizon $h$, the loss-differential series is $d_{s, t, h} = |e_{A, s, t, h}| - |e_{B, s, t, h}|$ for $t = 1, \dots, N_{s,h}$, where $N_{s,h}$ is the number of valid forecast-origin dates for that state-horizon pair. The temporal sample size is $N = N_{s,h}$ (at most $T$, potentially less under incomplete panels).
+- **Pooled (macro or micro) DM test**: The DM test may also be applied to the date-level pooled differential series. For macro pooling, define $\delta_{t,h} = \frac{1}{S}\sum_{s=1}^S \frac{M_{s,t,h} d_{s,t,h}}{N_{s,h}}$ for $t = 1, \dots, T$, using the same normalization as Section 7.2A. The temporal sample size is $N = T$.
+
+In both cases, $N$ is the temporal sample size of the series under analysis. It is **never** $S \times T$.
+
+1. Compute paired loss differential $d_{t, h}$ (per-state) or $\delta_{t,h}$ (pooled) as defined above.
 2. Compute mean differential: $\bar{d}_h = \frac{1}{N} \sum_{t=1}^N d_{t, h}$.
 3. **Degenerate Differentials**:
    - **Zero-variance differential** ($d_{t, h} = 0 \ \forall t$): Both models produce identical forecasts everywhere. Sample variance is 0, $\bar{d}_h = 0$. Test statistic is $0/0$ (undefined). Report $\text{DM} = 0$, $p = 1.0$, and flag `identical_models`.
@@ -390,10 +411,19 @@ where $U_{t, h} = \sum_{s=1}^S M_{s, t, h} L_{s, t, h}$ is the daily aggregate l
 4. **Invalid Long-Run Variance**:
    - The unweighted rectangular kernel $\widehat{V}_h = \hat{\gamma}_0 + 2 \sum_{k=1}^{K} \hat{\gamma}_k$ can become negative in finite samples.
    - If $\widehat{V}_h \le 0$, automatically substitute the **Bartlett triangular kernel**, which is mathematically guaranteed positive semi-definite ($\widehat{V}_h \ge 0$).
-5. Raw DM test statistic: $DM_h = \frac{\bar{d}_h}{\sqrt{\widehat{V}_h / N}}$.
-6. HLN finite-sample correction factor:
-   $$DM_{HLN, h} = DM_h \times \left[ \frac{N + 1 - 2h + h(h-1)/N}{N} \right]^{1/2}$$
-7. Inference: Compare $DM_{HLN, h}$ to Student's $t$-distribution with $\nu = N - 1$ degrees of freedom. Two-sided p-value: $p_h = 2 \cdot (1 - F_{t(\nu)}(|DM_{HLN, h}|))$.
+5. **Primary Approach: HAC-Based DM Statistic**:
+   - Compute $\widehat{\Omega}_h(d) = \hat{\gamma}_0(d) + 2\sum_{k=1}^K (1 - \frac{k}{K+1}) \hat{\gamma}_k(d)$ with Bartlett kernel and data-driven bandwidth $K^*$.
+   - Test statistic: $DM_h = \frac{\bar{d}_h}{\sqrt{\widehat{\Omega}_h(d) / N}}$.
+   - **Rationale**: Each of the 7 LightGBM estimators is trained independently (Section 3, line 102: "7 independent LightGBM estimators"). The loss-differential autocorrelation structure is driven by atmospheric persistence rather than overlapping multi-step recursive forecast errors. A data-driven Bartlett bandwidth adapts to the actual dependence structure without imposing parametric MA($h-1$) assumptions.
+   - **Reference distribution and degrees of freedom**: The DM statistic is referred to Student's $t$ with $\nu = N - 1$ degrees of freedom. Two-sided p-value: $p_h = 2 \cdot (1 - F_{t(\nu)}(|DM_h|))$.
+     - **Justification**: The $t_{N-1}$ reference is a finite-sample heuristic (Diebold, 2015). It provides a conservative correction relative to the standard normal when $N$ is small, but its theoretical validity requires the normalized loss-differential series $d_{t,h}/\sigma_d$ to be approximately i.i.d. Gaussian after HAC variance correction. For short temporal samples (e.g. $N < 30$), this approximation is unreliable; the HAC estimator itself may be inconsistent (bandwidth comparable to sample size).
+     - **Unresolved limitation**: For the current workspace, no genuine out-of-sample evaluation dates exist (Section 11). If future evaluation produces a short temporal sample ($N < 30$), the $t_{N-1}$ reference distribution should be cross-checked against the Studentized MBB bootstrap p-value from Section 7.7. Neither distribution can be claimed as definitively valid for very small $N$ with HAC correction.
+6. **Sensitivity Analysis: HLN Finite-Sample Correction (MA($h-1$) Assumption)**:
+   - As a secondary check, report the Harvey-Leybourne-Newbold (1997) corrected statistic using rectangular kernel with $h-1$ lag truncation:
+     $$DM_{HLN, h} = DM_h^{(h-1)} \times \left[ \frac{N + 1 - 2h + h(h-1)/N}{N} \right]^{1/2}$$
+     where $DM_h^{(h-1)}$ uses the spectral density estimated with truncation at lag $h-1$.
+   - **Disclosure**: The HLN correction assumes the loss differential follows an MA($h-1$) process, which is appropriate for recursive multi-step forecasts from a single autoregressive model but may not hold for independent per-horizon gradient-boosting estimators. Report both HAC-based (primary) and HLN-based (sensitivity) p-values.
+7. Report both statistics, their p-values, and whether they agree or disagree on rejecting $H_0$.
 
 ### 4. Multiple-Testing Families & Error Rate Control
 Hypothesis tests are partitioned into 3 pre-specified families:
@@ -405,9 +435,36 @@ Hypothesis tests are partitioned into 3 pre-specified families:
    - For each horizon $h \in \{1 \dots 7\}$, define a distinct family of 33 state hypotheses: $H_{0, s, h}: \mu_{d, s, h} = 0$.
    - Apply Benjamini-Yekutieli (BY) FDR control within each 33-state family at $q=0.05$ with harmonic penalty $c(33) = \sum_{j=1}^{33} \frac{1}{j} \approx 4.088$ to account for arbitrary spatial cross-state dependency.
 3. **Family 3: Global State-Horizon Matrix (231 Hypotheses, Hierarchical Testing)**:
-   - **Replacement of Invalid Independence Assumption**: Standard Fisher's test assumes independent p-values, which is severely violated by spatial and temporal weather dependence.
-   - **Stage 1 (Omnibus Test under Dependence)**: Use a **global sign-flip permutation test**: randomly flip the sign of paired differentials $d_{t, s, h}$ simultaneously across all states and horizons on date $t$ ($R = 5,000$ permutations). This strictly preserves spatial covariance across states and temporal covariance across horizons while testing $H_0^{global}: \mu_{d, s, h} = 0 \ \forall (s, h)$.
-   - **Stage 2 (Follow-up Post-Hoc Tests)**: Only if the omnibus test rejects at global level $\alpha = 0.05$, proceed to individual cell testing. Apply Benjamini-Yekutieli across all $M = 231$ tests with harmonic penalty $c(231) = \sum_{j=1}^{231} \frac{1}{j} \approx 6.025$.
+   - **Replacement of Invalid Independence Assumption**: Standard Fisher's omnibus test assumes independent p-values, which is severely violated by spatial cross-correlation and temporal weather persistence.
+   - **Stage 1 (Omnibus Global Testing under Dependence)**:
+     - *Candidate Method (Date-Level Sign-Flip Permutation)*: Global date-level sign-flip permutation test ($R = 5,000$ draws) where signs of paired differentials $d_{t, s, h}$ are flipped simultaneously across all $S=33$ states and $H=7$ horizons on each date $t$:
+       $$\mathbf{d}_t^* = \epsilon_t \cdot \mathbf{d}_t, \quad \epsilon_t \in \{-1, +1\} \text{ with equal probability } 1/2$$
+     - *Contemporaneous Spatial Dependence Preserved*: Because the scalar sign flip $\epsilon_t$ multiplies the entire $33 \times 7$ differential vector $\mathbf{d}_t$ on date $t$, all contemporaneous spatial cross-covariances across states and cross-horizon covariances on that date are preserved.
+     - *Failure Under Serial Dependence*: Drawing $\epsilon_t$ independently across calendar dates $t = 1 \dots T$ assumes temporal independence between dates. Atmospheric error differentials exhibit multi-day serial autocorrelation; independent date-level sign flips destroy this serial dependence structure under permutations, underestimating null variance and causing severe Type I error inflation.
+     - *Methodological Classification*: **Rejected as Invalid Under Serial Autocorrelation**.
+     
+     - *Assessment of Alternative 1: Block-Sign-Flip Permutation*:
+       - *Procedure*: Divide the $T$-day evaluation timeline into $K = \lfloor T/B \rfloor$ contiguous non-overlapping temporal blocks of length $B$ (e.g. $B \in \{7, 14, 21\}$ days), assigning a single random sign flip $\epsilon_b \in \{-1, +1\}$ to all dates within block $b$.
+       - *Joint Symmetry and Exchangeability Assumption*: Assumes that under $H_0^{global}$, conditional on observed magnitudes, the entire block trajectory $\mathbf{D}_b = [\mathbf{d}_t]_{t \in \text{block } b}$ has a distribution symmetric around zero ($\mathbb{P}(\mathbf{D}_b) = \mathbb{P}(-\mathbf{D}_b)$). Systematic seasonal skewness or asymmetric penalties during extreme weather events violate this exchangeability.
+       - *Inter-Block Independence Assumption*: Assumes temporal dependence decays within $B$ days such that blocks are approximately mutually independent. If persistent weather regimes or synoptic patterns exceed $B$ days, dependence bleeds across block boundaries, biasing the permutation distribution.
+       - *Block-Length Selection Limitations*: Heuristic selection of $B \in \{7, 14, 21\}$ lacks an objective, data-driven optimization criterion in multivariate spatio-temporal settings, introducing arbitrary researcher degrees of freedom.
+       - *Feasibility Assessment for Current Evaluation Sample*:
+         - As established in Section 11, the database strictly ends on `2026-09-06`. The model training cutoff is `2026-10-22` with an 8-day embargo (`EMBARGO_OFFSET_DAYS = 9`, earliest eligible origin `2026-10-31`). Therefore, the number of actual available post-cutoff evaluation dates is **$T = 0$**.
+         - Even on a hypothetical short evaluation window ($T \in [10, 30]$ days):
+           - $B = 21$ yields $K = \lfloor 30/21 \rfloor = 1$ block ($2^1 = 2$ permutations; minimum p-value resolution $0.5$).
+           - $B = 14$ yields $K = \lfloor 30/14 \rfloor = 2$ blocks ($2^2 = 4$ permutations; minimum p-value resolution $0.25$).
+           - $B = 7$ yields $K = \lfloor 30/7 \rfloor = 4$ blocks ($2^4 = 16$ permutations; minimum p-value resolution $1/16 = 0.0625$, which cannot achieve statistical significance at $\alpha = 0.05$).
+         - Valid two-sided testing at $\alpha = 0.05$ mathematically requires at least $K \ge 6$ blocks ($2^6 = 64$, resolution $\approx 0.0156$), and stable empirical p-values require $K \ge 15 \dots 20$ blocks ($T \ge 105 \dots 315$ days).
+       - *Status*: **Infeasible and NOT Approved for Current Evaluation**. The block-sign-flip permutation test cannot achieve valid significance testing with the available evaluation sample.
+
+     - *Assessment of Alternative 2: Studentized MBB Wald Omnibus*:
+       - *The 231-Dimensional Covariance Problem*: Evaluating the global null across $S = 33$ states and $H = 7$ horizons produces a test vector $\bar{\mathbf{d}} \in \mathbb{R}^{231}$. The empirical long-run covariance matrix $\widehat{\boldsymbol{\Sigma}}_{\bar{\mathbf{d}}}$ is $231 \times 231$, comprising $\frac{231 \times 232}{2} = 26,796$ unique covariance parameters.
+       - *Singularity and Unreliability of Full Inversion*: Estimating $\widehat{\boldsymbol{\Sigma}}_{\bar{\mathbf{d}}}$ from $T$ temporal observations yields an empirical matrix of rank at most $\min(T - 1, 231)$. When $T \le 231$ (and specifically when $T = 0$ or $T = 30$), the covariance matrix is mathematically singular and non-invertible. Even if regularized (e.g. ridge shrinkage or pseudo-inverse), estimating 26,796 parameters from small $T$ introduces extreme noise amplification, rendering the quadratic form $W = \bar{\mathbf{d}}^\top \widehat{\boldsymbol{\Sigma}}_{\bar{\mathbf{d}}}^{-1} \bar{\mathbf{d}}$ completely unstable and unreliable.
+       - *Methodologically Supported Lower-Dimensional Alternatives*: Rather than inverting a 231-dimensional matrix, multiple-testing control is decomposed into lower-dimensional sub-families already specified in this plan:
+         1. **Family 1 (Pooled Horizon Comparisons)**: 7 scalar hypotheses testing pooled date-level differentials with Benjamini-Hochberg FDR control.
+         2. **Family 2 (State Comparisons per Horizon)**: 7 separate families of 33 hypotheses with Benjamini-Yekutieli FDR control under arbitrary spatial dependence, bypassing matrix inversion entirely.
+       - *Status*: **Methodological Classification: Unresolved and NOT Approved for Inference**. The 231-dimensional Studentized MBB Wald omnibus test is rejected as mathematically ill-conditioned for the available sample size. Global omnibus testing is omitted; error rate control is enforced through Families 1 and 2.
+   - **Stage 2 (Follow-up Post-Hoc Tests)**: Only if the omnibus test rejects at global level $\alpha = 0.05$, proceed to individual cell testing. Apply Benjamini-Yekutieli (BY) FDR control across all $M = 231$ tests with harmonic penalty $c(231) = \sum_{j=1}^{231} \frac{1}{j} \approx 6.025$ to control FDR under arbitrary cross-hypothesis dependence structures.
 
 ### 5. Effective Sample Size ($N_{eff}$) Edge-Case Handling
 For loss series $z_{t, h} = |e_{t, h}|$, the asymptotic effective sample size is:
@@ -561,7 +618,7 @@ Generate comprehensive audit deliverable at repository root.
 1. **Post-Cutoff Observations Deficit (Critical Evaluation Blocker)**:
    - The PostgreSQL database `weather_data` table strictly ends on `2026-09-06` across all 33 states (Karnataka spans 2015-01-01 to 2026-09-06; 32 other states span 2023-04-01 to 2026-09-06).
    - The model metadata records training through `2026-10-22`.
-   - **Finding**: The database completely lacks observations from `2026-09-07` through `2026-10-22` (46 days) and lacks all subsequent post-cutoff observations from `2026-10-23` to the present (`2026-11-01`).
+   - **Finding**: The database completely lacks observations from `2026-09-07` through `2026-10-22` (46 days) and lacks all subsequent post-cutoff observations from `2026-10-23` to the present (`2026-11-07`).
    - **Consequence**: Genuine out-of-sample independent evaluation of `weather_model_v3.joblib` is **completely physically blocked** until ground-truth observations past the training cutoff are ingested. All evaluations on the deployed model artifact within this workspace are strictly pre-cutoff training-overlap diagnostics.
 2. **External Training Dataset Absence**: `data/archive_c/PSP_Weather_Merged_EDA_Cleaned.csv` and historical pre-2023 database records are not present on disk. External dataset provenance remains conditional until the dataset or raw ingestion manifests are restored.
 3. **Multi-Step Autocorrelation**: Overlapping 7-day forecast windows create inherent autocorrelation in forecast errors. Asymptotic Newey-West standard errors, HLN small-sample corrections, and spatially synchronized block bootstraps must be used in place of naive i.i.d. estimators.
@@ -574,16 +631,16 @@ Generate comprehensive audit deliverable at repository root.
 | Blocker # | Original Issue | Required Correction | Supporting Evidence & Derivations | Resolution Status |
 | :---: | :--- | :--- | :--- | :---: |
 | **1** | Overstated claim of 100% test rows in training; confused forecast-origin membership with target overlap. | Disaggregate test partition: 11,946 rows (99.18%) in-sample origins; 99 rows (0.82%) post-training origins with target overlap. | Section 4.2 proves training origins stopped at `2026-10-15` (11,946 rows); Oct 16–18 origins (99 rows) have targets overlapping training period $\le \text{2026-10-22}$. | **RESOLVED WITH EVIDENCE** |
-| **2** | Confused calendar maturity with data availability. | Distinguish calendar maturity (Nov 1) from data ingestion availability (Sep 6), quality validation, and feature usability. | Section 2 defines 4-level taxonomy. Target maturity table details partial maturity for Oct 26–31 origins. | **RESOLVED WITH EVIDENCE** |
+| **2** | Confused calendar maturity with data availability. | Distinguish calendar maturity (Nov 7) from data ingestion availability (Sep 6), quality validation, and feature usability. | Section 2 defines 4-level taxonomy. Target maturity table details full maturity through Oct 31 and partial maturity for Nov 1+ origins as of 2026-11-07. | **RESOLVED WITH EVIDENCE** |
 | **3** | Treated row-based `shift(-i)` as calendar day without verifying daily continuity. | Require strict verification of daily calendar continuity (`freq='D'`), zero duplicate dates, and state-level sorting before accepting `shift(-i)`. | Section 5 specifies test assertions for calendar gaps and duplicate dates to prevent horizon corruption. | **RESOLVED BY METHODOLOGY** |
-| **4** | Pooled macro and micro HAC estimators did not match their stated estimands under incomplete panels. | Formulate exact normalized daily macro contribution $\xi_{t, h}$ and daily aggregate micro loss $U_{t, h}$. | Section 7.2 mathematically derives $\widehat{\text{Var}}(\theta_{macro, h}) = T \cdot \widehat{\text{LRV}}(\xi_{t, h})$ and $\widehat{\text{Var}}(\theta_{micro, h}) = \frac{T \cdot \widehat{\text{LRV}}(U_{t, h})}{N_{total}^2}$. | **RESOLVED BY METHODOLOGY** |
-| **5** | DM/HLN assumed $h-1$ truncation without justification; lacked degenerate and invalid variance handling. | Add data-driven bandwidth ($K^*$), report sensitivity across $\{h-1, 2h, K^*\}$, handle zero/constant differentials, and Bartlett fallback. | Section 7.3 specifies exact algorithms for degenerate differentials ($DM=0, p=1$ or deterministic dominance) and Bartlett positive semi-definiteness guarantee. | **RESOLVED BY METHODOLOGY** |
-| **6** | Fisher omnibus test assumed independence, violating spatial/temporal correlation across 231 tests. | Replace Fisher independence test with global permutation sign-flip test and Benjamini-Yekutieli global multiplicity control. | Section 7.4 details global sign-flip permutation across date slices and BY harmonic penalty $c(231) \approx 6.025$. | **RESOLVED BY METHODOLOGY** |
+| **4** | Pooled macro and micro HAC estimators did not match their stated estimands under incomplete panels. | Formulate exact normalized daily macro contribution $\xi_{t, h}$ and daily aggregate micro loss $U_{t, h}$. | Section 7.2 mathematically derives $\widehat{\text{Var}}(\theta_{macro, h}) = T \cdot \widehat{\Omega}_h(\xi)$ and $\widehat{\text{Var}}(\theta_{micro, h}) = \frac{T \cdot \widehat{\Omega}_h(U)}{N_{total}^2}$ with explicit spectral density definitions. | **RESOLVED BY METHODOLOGY** |
+| **5** | DM/HLN assumed $h-1$ truncation without justification; lacked degenerate and invalid variance handling. | Adopt Bartlett HAC as primary inference; report HLN (MA($h-1$)) as sensitivity analysis; handle degenerate/invalid cases. | Section 7.3 specifies HAC DM as primary, reports HLN sensitivity, handles zero/constant differentials, and guarantees Bartlett positive semi-definiteness. | **RESOLVED BY METHODOLOGY** |
+| **6** | Fisher omnibus test assumed independence, violating spatial/temporal correlation across 231 tests. | Replace Fisher independence test with sign-flip permutation test; disclose symmetry and serial-dependence limitations. | Section 7.4 details global sign-flip permutation, classifies it as conditional/unresolved under strong autocorrelation, and recommends block permutation / Studentized MBB alternatives. | **RESOLVED BY METHODOLOGY (CONDITIONAL)** |
 | **7** | Moving-block bootstrap lacked valid dependent acceleration, failed replicate handling, and missingness masks. | Implement Studentized MBB for dependent second-order accuracy; specify missingness mask $M_{s, t, h}$, minimum valid $N_{valid} \ge \max(10, B)$, and 50-retry replacement. | Section 7.7 specifies complete Studentized MBB algorithm with synchronized cross-state block draws and BCa alternative caveats. | **RESOLVED BY METHODOLOGY** |
 | **8** | Sterbenz Lemma claimed universally for `temp_range`; universal numerical tolerances unsupported. | Disclose Sterbenz Lemma failure when signs differ ($T_{min} < 0$) or ratio $> 2$; replace universal tolerances with empirical discrepancy profiling. | Section 8 details IEEE 754 $0.5 \text{ ULP}$ subtraction bounds and empirical profiling across the full database. | **RESOLVED BY METHODOLOGY** |
 | **9** | Lacked robust handling for zero RMSE, non-finite values, and extreme $R^2$ divergence. | Implement zero RMSE guardrail ($SE=0$), non-finite input/prediction detection, and $R^2 \to -\infty$ cap at $-10^6$. | Section 7.3 and 7.8 provide explicit numerical guardrails for degenerate and divergent metrics. | **RESOLVED BY METHODOLOGY** |
-| **10** | Unspecified API status codes, duplicate-history vulnerability, and baseline reproducibility. | Specify HTTP 404/422 status codes, assert unique date constraints in DB, and provide mathematical baseline definitions. | Section 6, 7.3, and 10 formally specify Persistence, Climatology, API routes, and unique constraints. | **RESOLVED WITH EVIDENCE** |
-| **11** | 363-row reconciliation presented as proven fact rather than conditional arithmetic. | Downgrade reconciliation to a conditional mathematical hypothesis pending original training manifest. | Section 4.3 provides literal source code excerpts from `evaluate_deployed_artifact.py` and documents the conditionality of uniform 33-state reporting. | **RESOLVED WITH EVIDENCE** |
+| **10** | Unspecified API status codes, duplicate-history vulnerability, and baseline reproducibility. | Specify HTTP 404/422 status codes, assert unique date constraints in DB, and provide mathematical baseline definitions. | Section 6, 7.3, and 10 formally define Persistence ($\hat{y}_{t+h} = y_{t-1}$), Climatology ($\hat{y}_{t+h} = \bar{y}_{s, DOY}$), API routes, and unique constraints. | **RESOLVED WITH EVIDENCE** |
+| **11** | 363-row reconciliation presented as proven fact rather than conditional arithmetic. | Reclassify reconciliation as an unverifiable historical artifact because generating code is absent from the repository. | Section 4.3 documents the absence of partition code in current `evaluate_deployed_artifact.py` (which uses `EMBARGO_OFFSET_DAYS = 9`) and retains arithmetic only as a conditional hypothesis. | **RESOLVED WITH EVIDENCE** |
 
 ---
 
