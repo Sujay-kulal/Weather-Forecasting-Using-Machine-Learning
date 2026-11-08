@@ -180,12 +180,10 @@ def test_fastapi_lifespan_uses_isolated_database_engine(monkeypatch):
     IsolatedMockSession = sessionmaker()
 
     orig_engine = app_db.engine
-    orig_main_engine = app_main.engine
     orig_ingest_session = ingestion_service.SessionLocal
 
     try:
         app_db.engine = isolated_mock_engine
-        app_main.engine = isolated_mock_engine
         ingestion_service.SessionLocal = IsolatedMockSession
         metrics_service.SessionLocal = IsolatedMockSession
 
@@ -200,12 +198,10 @@ def test_fastapi_lifespan_uses_isolated_database_engine(monkeypatch):
             async with app_main.lifespan(test_app):
                 # Verify init_db ran with isolated engine binding
                 mock_init_db.assert_called_once()
-                assert app_main.engine is isolated_mock_engine
                 assert app_db.engine is isolated_mock_engine
                 assert ingestion_service.SessionLocal is IsolatedMockSession
 
         asyncio.run(_run())
     finally:
         app_db.engine = orig_engine
-        app_main.engine = orig_main_engine
         ingestion_service.SessionLocal = orig_ingest_session

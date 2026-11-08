@@ -8,8 +8,9 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.pytest_cache/
 
-# Node (reserved for the future frontend)
+# Node
 node_modules/
 dist/
 build/
@@ -31,7 +32,6 @@ data/
 
 # Kaggle credentials - NEVER commit
 .kaggle/
-
 
 # Extracted zip archives
 Weather-Forecasting-Using-Machine-Learning-main/
