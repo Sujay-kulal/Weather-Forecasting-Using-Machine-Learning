@@ -26,12 +26,6 @@ import {
   TargetIcon,
 } from "../components/icons";
 
-interface HorizonMetric {
-  MAE: number;
-  RMSE: number;
-  R2: number;
-}
-
 const FALLBACK_HORIZONS = [
   { day: 1, mae: 0.9251, rmse: 1.2517, r2: 0.9808, skill: 10.3 },
   { day: 2, mae: 1.0623, rmse: 1.4286, r2: 0.9750, skill: 13.4 },
@@ -95,18 +89,18 @@ export function ModelPerformancePage() {
     target,
     features,
     metrics,
-    train_period,
+    // train_period not destructured — unused after diagnostic labeling correction
     test_period,
     metrics_status,
     evaluation_note,
+    validated_for_artifact,
   } = info.data;
-  const validated_for_artifact = (info.data as any).validated_for_artifact as boolean | undefined;
 
   const selected = metrics[model_name] ?? metrics["LightGBM"];
   const isValidated = metrics_status === "validated_for_current_artifact" || validated_for_artifact === true;
 
   // Horizon breakdown
-  const rawByHorizon = (selected as any)?.by_horizon as Record<string, HorizonMetric> | undefined;
+  const rawByHorizon = selected?.by_horizon;
   const horizonData = [1, 2, 3, 4, 5, 6, 7].map((d) => {
     const key = `day_${d}`;
     const h = rawByHorizon?.[key];
@@ -133,7 +127,7 @@ export function ModelPerformancePage() {
       RMSE: Number((metrics["LightGBM"]?.RMSE ?? 1.5731).toFixed(4)),
       R2: Number((metrics["LightGBM"]?.R2 ?? 0.9697).toFixed(4)),
       skill: "+19.1%",
-      status: isValidated ? "Production Validated" : "Evaluated Test Overlap",
+      status: isValidated ? "Production Validated" : "Diagnostic (Training Overlap)",
       statusVariant: (isValidated ? "success" : "warning") as "success" | "warning",
     },
     {
@@ -141,11 +135,11 @@ export function ModelPerformancePage() {
       shortName: "Random Forest",
       type: "Tuned Ensemble Benchmark",
       isProduction: false,
-      MAE: Number((metrics["Random Forest"]?.MAE ?? 1.2842).toFixed(4)),
-      RMSE: Number((metrics["Random Forest"]?.RMSE ?? 1.7145).toFixed(4)),
-      R2: Number((metrics["Random Forest"]?.R2 ?? 0.9634).toFixed(4)),
+      MAE: Number(((metrics["Random Forest"] ?? metrics["RandomForest"])?.MAE ?? 1.2842).toFixed(4)),
+      RMSE: Number(((metrics["Random Forest"] ?? metrics["RandomForest"])?.RMSE ?? 1.7145).toFixed(4)),
+      R2: Number(((metrics["Random Forest"] ?? metrics["RandomForest"])?.R2 ?? 0.9634).toFixed(4)),
       skill: "+10.7%",
-      status: "Candidate Benchmark",
+      status: (metrics["Random Forest"] || metrics["RandomForest"]) ? "Evaluated Benchmark" : "Candidate Benchmark (Pre-Audit)",
       statusVariant: "neutral" as const,
     },
     {
@@ -153,11 +147,11 @@ export function ModelPerformancePage() {
       shortName: "Linear Reg",
       type: "Multivariate Linear Baseline",
       isProduction: false,
-      MAE: Number((metrics["Linear Regression"]?.MAE ?? 1.3512).toFixed(4)),
-      RMSE: Number((metrics["Linear Regression"]?.RMSE ?? 1.7963).toFixed(4)),
-      R2: Number((metrics["Linear Regression"]?.R2 ?? 0.9592).toFixed(4)),
+      MAE: Number(((metrics["Linear Regression"] ?? metrics["LinearRegression"])?.MAE ?? 1.3512).toFixed(4)),
+      RMSE: Number(((metrics["Linear Regression"] ?? metrics["LinearRegression"])?.RMSE ?? 1.7963).toFixed(4)),
+      R2: Number(((metrics["Linear Regression"] ?? metrics["LinearRegression"])?.R2 ?? 0.9592).toFixed(4)),
       skill: "+6.1%",
-      status: "Linear Baseline",
+      status: (metrics["Linear Regression"] || metrics["LinearRegression"]) ? "Evaluated Baseline" : "Linear Baseline (Pre-Audit)",
       statusVariant: "neutral" as const,
     },
     {
@@ -196,10 +190,10 @@ export function ModelPerformancePage() {
     <div className="page">
       <PageHead
         title="Model Evaluation & Benchmarking"
-        desc="Rigorous empirical evaluation of the production LightGBM multi-output model against baseline benchmarks on out-of-time test partitions."
+        desc="Diagnostic evaluation of the LightGBM multi-output model against baseline benchmarks. Metrics below are from training-overlapping data and have not been independently validated."
         badge={
           <Badge variant={isValidated ? "success" : "warning"}>
-            {isValidated ? "Production Validated" : "Diagnostic Overlap (Unvalidated)"}
+            {isValidated ? "Production Validated" : "Diagnostic — Pending Independent Validation"}
           </Badge>
         }
       >
@@ -216,49 +210,50 @@ export function ModelPerformancePage() {
         />
         <StatChip
           icon={<TargetIcon />}
-          label="Overall Test MAE"
+          label="Diagnostic MAE"
           value={`±${overallMae.toFixed(2)}°C`}
-          sub="Mean absolute error (All Horizons)"
+          sub="Training-overlap evaluation (all horizons)"
         />
         <StatChip
           icon={<TargetIcon />}
-          label="Overall RMSE"
+          label="Diagnostic RMSE"
           value={`${overallRmse.toFixed(2)}°C`}
-          sub="Root mean squared error"
+          sub="Training-overlap evaluation"
         />
         <StatChip
           icon={<ChartIcon />}
-          label="R² Score"
+          label="Diagnostic R²"
           value={overallR2.toFixed(4)}
-          sub="Explained target variance"
+          sub="Training-overlap evaluation"
         />
         <StatChip
           icon={<ArrowUpIcon />}
-          label="Baseline Skill Score"
+          label="Diagnostic Skill Score"
           value="+19.1% vs Persistence"
-          sub="Relative MAE reduction vs naive"
+          sub="Relative MAE reduction (training-overlap)"
         />
         <StatChip
           icon={<CheckIcon />}
           label="Conformal Coverage"
-          value={`${coveragePercent}%`}
-          sub={`Target 90% (q = ±${conformalQ}°C)`}
+          value={info.data.coverage_90 ? `${coveragePercent}%` : "Pending"}
+          sub={info.data.coverage_90 ? `Target 90% (q = ±${conformalQ}°C)` : "Not yet calibrated for current artifact"}
         />
       </div>
 
       {/* Enterprise Advisory Callout: Out-of-Time Test Set & Embargo Safeguards */}
-      <div className="advisory-callout" role="region" aria-label="Evaluation Safeguards">
+      <div className="advisory-callout" role="region" aria-label="Evaluation Safeguards" style={{ borderLeft: "4px solid var(--warning-border)" }}>
         <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-          <DatabaseIcon style={{ width: 20, height: 20, color: "var(--accent)", flexShrink: 0, marginTop: 2 }} />
+          <DatabaseIcon style={{ width: 20, height: 20, color: "var(--warning)", flexShrink: 0, marginTop: 2 }} />
           <div>
             <strong style={{ fontSize: "14px", display: "block", marginBottom: 4 }}>
-              Out-of-Time Evaluation Protocol & Anti-Leakage Embargo Safeguards
+              ⚠ Diagnostic Metrics — Independent Validation Pending
             </strong>
             <p style={{ margin: "0 0 6px 0", color: "var(--text-secondary)", lineHeight: 1.55 }}>
-              The multi-output LightGBM model is evaluated on a strictly chronological out-of-time test window from{" "}
-              <strong>{test_period[0]}</strong> to <strong>{test_period[1]}</strong> (12,045 samples across all 34 Indian states and Union Territories).
-              A mandatory <strong>8-day anti-leakage embargo</strong> buffer strictly isolates the training partition (
-              {train_period[0]} → {train_period[1]}, 126,654 rows) from the test set, preventing multi-step autoregressive leakage.
+              The metrics on this page are <strong>diagnostic scores from an evaluation where the recorded training cutoff overlaps the test window</strong>.
+              They should not be interpreted as independently validated forecasting accuracy.
+              The test window spans{" "}
+              <strong>{test_period[0]}</strong> to <strong>{test_period[1]}</strong>,
+              but independent out-of-sample validation on a strictly unseen partition has not yet been completed.
             </p>
             <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: "12px", color: "var(--text-muted)", marginTop: 6 }}>
               <span>
@@ -278,7 +273,7 @@ export function ModelPerformancePage() {
       {/* Horizon-by-Horizon Performance Breakdown */}
       <Card
         title="Horizon-by-Horizon Performance Breakdown (Day 1 through Day 7)"
-        subtitle="Detailed meteorological error growth across consecutive forecast lead times. Demonstrates sustained accuracy across the 7-day trajectory."
+        subtitle="Diagnostic error growth across forecast lead times. These scores are from training-overlapping evaluation and are not independently validated."
         icon={<CalendarIcon />}
       >
         {/* 7-Day Horizon Cards */}
@@ -420,7 +415,7 @@ export function ModelPerformancePage() {
       {/* Model Comparison Visuals: Recharts BarChart & Comparison Table */}
       <Card
         title="Model Architecture Benchmark Comparison"
-        subtitle="Comparing production LightGBM Multi-Output against machine learning benchmarks and climatological baselines."
+        subtitle="Diagnostic comparison of LightGBM against benchmarks. All metrics are from training-overlapping evaluation; relative rankings have not been independently confirmed."
         icon={<TargetIcon />}
         action={
           <div style={{ display: "inline-flex", background: "var(--bg-surface-subtle)", padding: 3, borderRadius: "var(--radius-md)" }}>

@@ -98,7 +98,7 @@ describe("Tier 4: Real-World Scenarios", () => {
 
       // App footer
       assertContains(html, "Architecture: React 18 · FastAPI · PostgreSQL · LightGBM");
-      assertContains(html, "Test-Set MAE: ±1.25°C");
+      assertContains(html, "Diagnostic MAE: ±1.16°C (validation pending)");
     });
 
     it("executes the sequential operator journey through each module page", () => {
@@ -130,7 +130,7 @@ describe("Tier 4: Real-World Scenarios", () => {
       // Step 5: Operator validates Model Evaluation & Performance Benchmarks
       const modelHtml = renderComponent(<ModelPerformancePage />);
       assertContains(modelHtml, "Model Evaluation &amp; Benchmarking");
-      assertContains(modelHtml, "Overall Test MAE");
+      assertContains(modelHtml, "Diagnostic MAE");
       assertContains(modelHtml, "Horizon-by-Horizon Performance Breakdown");
 
       // Step 6: Operator audits Prediction History and Inference Logs

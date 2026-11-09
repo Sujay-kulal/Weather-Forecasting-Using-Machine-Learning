@@ -7,6 +7,7 @@
   "embargo_days": 8,
   "embargo_offset_days": 9,
   "first_eligible_origin": "2026-10-31",
+  "embargo_rationale": "The production model was trained through cutoff T_cutoff = 2026-10-22. Because the forecasting horizon is 7 days (H = 7), forecasts generated at the training cutoff (2026-10-22) predict targets across 2026-10-23 through 2026-10-29. To prevent target-window overlap between training and evaluation, an 8-day embargo separation (T_cutoff + 8 days = 2026-10-30) is enforced. Therefore, October 30 is the 8th embargo day and final buffer date. The very first calendar date eligible to serve as an out-of-sample forecast origin is T_cutoff + 9 calendar days = October 31, 2026 (first_eligible_origin). Forecasts made at origin 2026-10-31 predict targets across 2026-11-01 through 2026-11-07, guaranteeing zero overlap with training targets.",
   "test_window_origins": 30,
   "test_period": [
     "2026-10-31",
@@ -14,9 +15,39 @@
   ],
   "required_target_end": "2026-12-06",
   "latest_available_date": "2026-10-22",
+  "required_post_cutoff_coverage_days": 45,
   "required_additional_days": 45,
+  "data_availability": {
+    "current_audit_date": "2026-11-09",
+    "latest_available_date": "2026-10-22",
+    "total_required_post_cutoff_coverage_days": 45,
+    "historical_elapsed_days": 18,
+    "historical_elapsed_range": [
+      "2026-10-23",
+      "2026-11-09"
+    ],
+    "future_unobservable_days": 27,
+    "future_unobservable_range": [
+      "2026-11-10",
+      "2026-12-06"
+    ],
+    "eligible_complete_evaluation_origins_currently_available": 3,
+    "eligible_complete_evaluation_origins_range": [
+      "2026-10-31",
+      "2026-11-02"
+    ],
+    "historical_elapsed_explanation": "18 calendar days (2026-10-23 through 2026-11-09) have elapsed in the physical calendar and can be collected now via meteorological data ingestion.",
+    "future_unobservable_explanation": "27 calendar days (2026-11-10 through 2026-12-06) lie in the physical future relative to the current audit date and cannot yet be observed or collected."
+  },
+  "preliminary_evaluation": {
+    "feasible": false,
+    "available_post_cutoff_days": 0,
+    "assessment": "An honest preliminary evaluation cannot be performed: zero post-cutoff observations exist in the available dataset (dataset ends 2026-10-22, training cutoff is 2026-10-22). Under strict chronological separation, the first eligible origin is 2026-10-31, which requires target observations through 2026-11-07. Even if all 18 elapsed calendar days through today (2026-11-09) were collected, at most 3 forecast origins (2026-10-31 to 2026-11-02) would have complete 7-day targets. Evaluating on only 3 origins violates the mandatory minimum sample size requirement (30 forecast origins) and provides insufficient statistical power for valid inference."
+  },
   "sample_counts": {
     "test_origins": 0,
+    "states_evaluated": 0,
+    "total_eval_samples": 0,
     "total_predictions": 0
   },
   "metrics": {},
@@ -26,5 +57,5 @@
     "training_overlap_checked": true,
     "independent": false
   },
-  "note": "Sufficient post-cutoff observations do not exist. Evaluation of a 30-day window requires verified observations through 2026-12-06, but dataset only reaches 2026-10-22. Exactly 45 additional days of observations are required."
+  "note": "Evaluation of a 30-day window requires 45 calendar days of post-cutoff data coverage (through 2026-12-06), comprising 18 historical elapsed days (2026-10-23 to 2026-11-09) and 27 future unobservable days (2026-11-10 to 2026-12-06). Currently, exactly 3 eligible complete evaluation origins exist (2026-10-31 to 2026-11-02), which cannot satisfy the mandatory 30-origin minimum sample size."
 }

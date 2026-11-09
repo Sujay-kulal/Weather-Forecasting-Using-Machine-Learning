@@ -10,8 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date as date_type
 import json
+import logging
 import math
 from threading import RLock
+import time
 from typing import Any, Optional
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -23,11 +25,14 @@ from cachetools import TTLCache
 
 from app.schemas import LocationOption
 
+logger = logging.getLogger(__name__)
 
 GEOCODING_URL = "https://geocoding-api.open-meteo.com/v1/search"
 FORECAST_URL = "https://api.open-meteo.com/v1/forecast"
 ARCHIVE_URL = "https://archive-api.open-meteo.com/v1/archive"
 REQUEST_TIMEOUT_SECONDS = 12
+MAX_REQUEST_ATTEMPTS = 2
+RETRY_BACKOFF_SECONDS = 0.5
 # Open-Meteo's 16-day window includes today, so the furthest future target is
 # 15 days ahead of the India-local current date.
 MAX_FORECAST_DAYS = 15
@@ -141,18 +146,55 @@ def _require_coordinates(latitude: float, longitude: float) -> tuple[float, floa
     return float(latitude), float(longitude)
 
 
-def _request_json(url: str) -> dict[str, Any]:
-    """Fetch one JSON object with a bounded timeout and safe error messages."""
-    try:
-        request = Request(url, headers={"User-Agent": "WeatherForecastingIndia/1.0"})
-        with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-    except (HTTPError, URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
-        raise WeatherProviderUnavailable("Open-Meteo is temporarily unavailable.") from exc
+def _request_json(
+    url: str,
+    *,
+    max_attempts: int = MAX_REQUEST_ATTEMPTS,
+    backoff_seconds: float = RETRY_BACKOFF_SECONDS,
+) -> dict[str, Any]:
+    """Fetch one JSON object with bounded retries, rate limit guarding, and safe error messages."""
+    last_exc: Optional[Exception] = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            request = Request(url, headers={"User-Agent": "WeatherForecastingIndia/1.0"})
+            with urlopen(request, timeout=REQUEST_TIMEOUT_SECONDS) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+            if not isinstance(payload, dict):
+                raise WeatherProviderUnavailable("Open-Meteo returned an invalid response.")
+            return payload
+        except HTTPError as exc:
+            last_exc = exc
+            # Rate limit handling (HTTP 429) - fail fast without aggressive looping
+            if exc.code == 429:
+                retry_after = exc.headers.get("Retry-After") if exc.headers else None
+                msg = (
+                    f"Open-Meteo rate limit exceeded (Retry-After: {retry_after})."
+                    if retry_after
+                    else "Open-Meteo rate limit exceeded. Please try again later."
+                )
+                logger.warning("Open-Meteo HTTP 429 rate limit reached for %s: %s", url, msg)
+                raise WeatherProviderUnavailable(msg) from exc
+            # Client errors (4xx other than 429) should never be retried
+            if 400 <= exc.code < 500:
+                logger.warning("Open-Meteo client error HTTP %d for %s", exc.code, url)
+                raise WeatherProviderUnavailable(f"Open-Meteo client error ({exc.code}).") from exc
+            # Transient server errors (5xx)
+            logger.warning(
+                "Open-Meteo transient HTTP %d error on attempt %d/%d for %s: %s",
+                exc.code, attempt, max_attempts, url, exc
+            )
+            if attempt < max_attempts:
+                time.sleep(backoff_seconds * (2 ** (attempt - 1)))
+        except (URLError, TimeoutError, OSError, json.JSONDecodeError) as exc:
+            last_exc = exc
+            logger.warning(
+                "Open-Meteo transient network/parse error on attempt %d/%d for %s: %s",
+                attempt, max_attempts, url, exc
+            )
+            if attempt < max_attempts:
+                time.sleep(backoff_seconds * (2 ** (attempt - 1)))
 
-    if not isinstance(payload, dict):
-        raise WeatherProviderUnavailable("Open-Meteo returned an invalid response.")
-    return payload
+    raise WeatherProviderUnavailable("Open-Meteo is temporarily unavailable.") from last_exc
 
 
 def _numeric(value: Any, field: str, *, required: bool = False) -> Optional[float]:

@@ -167,11 +167,11 @@ const API_ENDPOINTS: ApiEndpointSpec[] = [
   },
   {
     method: "GET",
-    path: "/weather/history",
-    params: "state: str, limit: int, offset: int, district?, location?",
+    path: "/weather/{state}",
+    params: "state: str, limit: int (def: 100), offset: int (def: 0)",
     returnType: "WeatherResponse",
     description:
-      "Queries historical weather time-series records supporting chronological pagination, location filtering, and statistical analysis.",
+      "Queries historical statewide weather time-series records supporting chronological pagination and statistical analysis. District and location observations accessible via /weather/{state}/{district}/{location}.",
   },
   {
     method: "GET",
@@ -202,7 +202,7 @@ export function MLDashboardPage() {
   const modelName = modelData?.model_name || "LightGBM";
   const features = modelData?.features || [];
   const selected = modelData?.metrics?.[modelName] || modelData?.metrics?.LightGBM;
-  const evalObj = (modelData as any)?.evaluation;
+  const evalObj = modelData?.evaluation;
   const trainPeriod = modelData?.train_period || ["2015-01-08", "2025-07-11"];
   const testPeriod = modelData?.test_period || ["2025-10-19", "2026-10-18"];
   const evaluationNote = modelData?.evaluation_note;
@@ -238,15 +238,15 @@ export function MLDashboardPage() {
         />
         <StatChip
           icon={<TargetIcon />}
-          label="Test-Set MAE"
+          label="Diagnostic MAE"
           value={selected?.MAE !== undefined ? `±${selected.MAE.toFixed(2)}°C` : "±1.16°C"}
-          sub="7-day horizon mean"
+          sub="Training-overlap (7-day horizon)"
         />
         <StatChip
           icon={<ChartIcon />}
-          label="Test-Set R²"
+          label="Diagnostic R²"
           value={selected?.R2 !== undefined ? selected.R2.toFixed(4) : "0.9697"}
-          sub="Variance explained"
+          sub="Training-overlap evaluation"
         />
         <StatChip
           icon={<SlidersIcon />}
@@ -403,7 +403,7 @@ export function MLDashboardPage() {
             <dd>Mean Squared Error (Regression L2)</dd>
           </div>
           <div className="meta-block">
-            <dt>Evaluation Error</dt>
+            <dt>Diagnostic Error</dt>
             <dd>MAE ±{selected?.MAE !== undefined ? selected.MAE.toFixed(2) : "1.16"}°C</dd>
           </div>
           <div className="meta-block">
@@ -514,7 +514,7 @@ export function MLDashboardPage() {
                   <td className="num">
                     {evalObj?.row_counts?.test ? evalObj.row_counts.test.toLocaleString() : "12,045"}
                   </td>
-                  <td>Unbiased out-of-time evaluation across all 4 seasons (MAE ±1.16°C, R² 0.9697)</td>
+                  <td>Diagnostic evaluation with training overlap (MAE ±1.16°C, R² 0.9697) — independent validation pending</td>
                 </tr>
               </tbody>
             </table>

@@ -5,7 +5,8 @@ import logging
 import argparse
 import urllib.request
 import urllib.error
-from datetime import datetime
+from datetime import datetime, date
+from typing import Optional
 from pathlib import Path
 
 # Make `app` importable
@@ -55,12 +56,21 @@ STATE_COORDS = {
     'West Bengal': (22.9868, 87.8550)
 }
 
+def get_india_today() -> date:
+    """Return the current calendar date in India timezone (Asia/Kolkata)."""
+    try:
+        from zoneinfo import ZoneInfo
+        return datetime.now(ZoneInfo("Asia/Kolkata")).date()
+    except Exception:
+        return datetime.now().date()
+
+
 def fetch_forecast_for_state(state: str, lat: float, lon: float, days_back: int = 7, max_retries: int = 5):
     """Fetch recent days using the Open-Meteo Forecast API with past_days."""
     url = (
         f"https://api.open-meteo.com/v1/forecast?"
         f"latitude={lat}&longitude={lon}&"
-        f"past_days={days_back}&forecast_days=1&"
+        f"past_days={days_back}&forecast_days=0&"
         f"daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,relative_humidity_2m_mean&"
         f"timezone=auto"
     )
@@ -158,7 +168,7 @@ class IngestionSummary(dict):
         return NotImplemented
 
 
-def update_weather(days_back: int = 7, session=None) -> IngestionSummary:
+def update_weather(days_back: int = 7, session=None, today: Optional[date] = None) -> IngestionSummary:
     """
     Ingest recent weather data using the Open-Meteo Forecast API (past_days)
     and perform an idempotent UPSERT into weather_data with per-state failure isolation.
@@ -172,7 +182,8 @@ def update_weather(days_back: int = 7, session=None) -> IngestionSummary:
         close_session = True
 
     total_states = len(STATE_COORDS)
-    logger.info(f"Starting weather update (days_back={days_back}) for {total_states} states...")
+    cutoff_today = today or get_india_today()
+    logger.info(f"Starting weather update (days_back={days_back}, cutoff_today={cutoff_today}) for {total_states} states...")
     added_or_updated_total = 0
     successful_states = []
     failed_states = []
@@ -208,6 +219,11 @@ def update_weather(days_back: int = 7, session=None) -> IngestionSummary:
                         continue
 
                     d = datetime.strptime(times[i], "%Y-%m-%d").date()
+                    if d >= cutoff_today:
+                        logger.info(
+                            f"[{state}] Skipping date {d}: incomplete current-day or future forecast-derived data (cutoff: {cutoff_today})"
+                        )
+                        continue
                     buffer.append({
                         "state": state,
                         "district": "",

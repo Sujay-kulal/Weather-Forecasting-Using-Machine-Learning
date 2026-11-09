@@ -36,13 +36,7 @@ import {
   XIcon,
 } from "../components/icons";
 
-interface ExtendedPredictionRecord extends PredictionRecord {
-  model_version?: string;
-  actual_temp?: number | null;
-}
-
 const PAGE_SIZE_OPTIONS = [25, 50, 100];
-const CONFORMAL_Q = 2.84; // ±2.84°C empirical 90% conformal interval
 
 function prettyDate(iso: string): string {
   if (!iso) return "—";
@@ -74,9 +68,11 @@ function computeHorizonDate(baseIso: string, dayOffset: number): string {
 export function PredictionHistoryPage() {
   const states = useFetch(getStates, []);
   const modelInfo = useFetch(getModelInfo, []);
+  const isCalibrated = modelInfo.data?.interval_status === "calibrated" && typeof modelInfo.data?.q === "number";
+  const conformalQ = isCalibrated ? (modelInfo.data!.q as number) : null;
 
   // Records and Loading State
-  const [records, setRecords] = useState<ExtendedPredictionRecord[]>([]);
+  const [records, setRecords] = useState<PredictionRecord[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
@@ -91,7 +87,7 @@ export function PredictionHistoryPage() {
   const [currentPage, setCurrentPage] = useState<number>(1);
 
   // Detail Modal State
-  const [selectedRecord, setSelectedRecord] = useState<ExtendedPredictionRecord | null>(null);
+  const [selectedRecord, setSelectedRecord] = useState<PredictionRecord | null>(null);
 
   // Auto-fetch predictions on mount
   useEffect(() => {
@@ -115,9 +111,9 @@ export function PredictionHistoryPage() {
     try {
       // Fetch up to 500 stored predictions to enable client-side instant filtering & full pagination
       const resp = await getPredictions(500, 0);
-      const rows = (resp.predictions as ExtendedPredictionRecord[]) ?? [];
+      const rows = resp.predictions ?? [];
       setRecords(rows);
-      setTotalCount((resp as any).total ?? resp.count ?? rows.length);
+      setTotalCount(resp.total ?? resp.count ?? rows.length);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -699,8 +695,12 @@ export function PredictionHistoryPage() {
                         day: `Day ${i + 1}`,
                         date: computeHorizonDate(selectedRecord.forecast_date, i + 1),
                         temp: Number(temp.toFixed(2)),
-                        upper: Number((temp + CONFORMAL_Q).toFixed(2)),
-                        lower: Number((temp - CONFORMAL_Q).toFixed(2)),
+                        ...(isCalibrated && conformalQ !== null
+                          ? {
+                              upper: Number((temp + conformalQ).toFixed(2)),
+                              lower: Number((temp - conformalQ).toFixed(2)),
+                            }
+                          : {}),
                       }))}
                       margin={{ top: 10, right: 20, bottom: 5, left: 0 }}
                     >
@@ -752,7 +752,11 @@ export function PredictionHistoryPage() {
                       <th>Valid Date</th>
                       <th className="num">Predicted Avg Temp (°C)</th>
                       <th className="num">Est. Diurnal (Min – Max)</th>
-                      <th>90% Confidence Interval</th>
+                      <th>
+                        {isCalibrated && conformalQ !== null
+                          ? `90% Confidence Interval (±${conformalQ.toFixed(2)}°C)`
+                          : "Conformal Prediction Interval"}
+                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -760,8 +764,8 @@ export function PredictionHistoryPage() {
                       const dayDate = computeHorizonDate(selectedRecord.forecast_date, i + 1);
                       const estMin = (temp - 3.5).toFixed(1);
                       const estMax = (temp + 3.5).toFixed(1);
-                      const ciLow = (temp - CONFORMAL_Q).toFixed(1);
-                      const ciHigh = (temp + CONFORMAL_Q).toFixed(1);
+                      const ciLow = conformalQ !== null ? (temp - conformalQ).toFixed(1) : null;
+                      const ciHigh = conformalQ !== null ? (temp + conformalQ).toFixed(1) : null;
 
                       return (
                         <tr key={i}>
@@ -776,9 +780,22 @@ export function PredictionHistoryPage() {
                             {estMin}°C – {estMax}°C
                           </td>
                           <td>
-                            <span style={{ fontSize: "11.5px", color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
-                              [{ciLow}°C, {ciHigh}°C]
-                            </span>
+                            {isCalibrated && ciLow !== null && ciHigh !== null ? (
+                              <span style={{ fontSize: "11.5px", color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
+                                [{ciLow}°C, {ciHigh}°C]
+                              </span>
+                            ) : (
+                              <span
+                                style={{
+                                  fontSize: "11.5px",
+                                  color: "var(--text-muted)",
+                                  fontStyle: "italic",
+                                }}
+                                title="Conformal intervals omitted: interval_status is not_calibrated_for_current_artifact"
+                              >
+                                Uncalibrated for artifact
+                              </span>
+                            )}
                           </td>
                         </tr>
                       );
@@ -803,6 +820,7 @@ export function PredictionHistoryPage() {
                 <CalendarIcon style={{ width: 14, height: 14, color: "var(--text-faint)" }} />
                 <span>
                   Audit Verification: Stored in PostgreSQL <code>predictions</code> table on inference request. Output array contains 7 joint multi-output predictions.
+                  {!isCalibrated && " Empirical 90% confidence intervals are withheld because the active model artifact has not completed residual calibration (interval_status: not_calibrated_for_current_artifact)."}
                 </span>
               </div>
             </div>

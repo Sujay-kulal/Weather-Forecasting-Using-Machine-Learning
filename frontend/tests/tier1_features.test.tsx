@@ -243,7 +243,7 @@ describe("Tier 1: Feature Coverage (F1 to F15)", () => {
       assertContains(html, "/predict");
       assertContains(html, "/model-info");
       assertContains(html, "/weather/{state}/recent");
-      assertContains(html, "/weather/history");
+      assertContains(html, "/weather/{state}");
       assertContains(html, "/health");
 
       // Verify deployment cards
@@ -301,16 +301,16 @@ describe("Tier 1: Feature Coverage (F1 to F15)", () => {
 
       // PageHead and title
       assertContains(html, "Model Evaluation &amp; Benchmarking");
-      assertContains(html, "Diagnostic Overlap (Unvalidated)");
+      assertContains(html, "Diagnostic — Pending Independent Validation");
       assertContains(html, "Artifact: weather_model_v3.joblib");
 
       // Hero KPI tiles
       assertContains(html, "Production Model");
       assertContains(html, "LightGBM Multi-Output");
-      assertContains(html, "Overall Test MAE");
-      assertContains(html, "Overall RMSE");
-      assertContains(html, "R² Score");
-      assertContains(html, "Baseline Skill Score");
+      assertContains(html, "Diagnostic MAE");
+      assertContains(html, "Diagnostic RMSE");
+      assertContains(html, "Diagnostic R²");
+      assertContains(html, "Diagnostic Skill Score");
     });
   });
 

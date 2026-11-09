@@ -130,3 +130,135 @@ def test_constraint_exists_helper():
 
     mock_conn.execute.side_effect = RuntimeError("Syntax error or not postgres")
     assert _constraint_exists(mock_conn, "uq_test") is False
+
+
+def test_fresh_database_initialization():
+    """Verify fresh database initialization creates all core ORM tables and columns."""
+    from sqlalchemy import inspect
+    from app.database import init_db
+
+    fresh_engine = create_engine("sqlite:///:memory:")
+    insp_before = inspect(fresh_engine)
+    assert len(insp_before.get_table_names()) == 0
+
+    init_db(fresh_engine)
+
+    insp_after = inspect(fresh_engine)
+    tables = set(insp_after.get_table_names())
+    assert {"weather_data", "predictions", "weather_location_metadata", "weather_import_batches"}.issubset(tables)
+
+    weather_cols = {c["name"] for c in insp_after.get_columns("weather_data")}
+    assert {"id", "date", "state", "district", "location", "temp_max", "temp_min", "temp_avg", "humidity", "rainfall"}.issubset(weather_cols)
+
+    pred_cols = {c["name"] for c in insp_after.get_columns("predictions")}
+    assert {"id", "state", "district", "location", "forecast_date", "model_version", "actual_temp"}.issubset(pred_cols)
+
+
+def test_migration_against_existing_legacy_database_schema():
+    """Verify migration correctly upgrades an existing schema that lacks new columns."""
+    mock_engine = MagicMock()
+    mock_conn = MagicMock()
+    mock_engine.begin.return_value.__enter__.return_value = mock_conn
+    mock_conn.execute.return_value.scalar.return_value = None
+
+    executed_ddl = []
+    def mock_execute(stmt, *args, **kwargs):
+        executed_ddl.append(str(stmt))
+        res = MagicMock()
+        res.scalar.return_value = None
+        return res
+
+    mock_conn.execute.side_effect = mock_execute
+
+    migrate(mock_engine)
+
+    # Verify alter table additions for all modern columns
+    assert any("ALTER TABLE weather_data ADD COLUMN IF NOT EXISTS district" in s for s in executed_ddl)
+    assert any("ALTER TABLE weather_data ADD COLUMN IF NOT EXISTS location" in s for s in executed_ddl)
+    assert any("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS district" in s for s in executed_ddl)
+    assert any("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS location" in s for s in executed_ddl)
+    assert any("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS model_version" in s for s in executed_ddl)
+    assert any("ALTER TABLE predictions ADD COLUMN IF NOT EXISTS actual_temp" in s for s in executed_ddl)
+
+
+def test_repeated_migration_execution_is_idempotent():
+    """Verify migrate() can be executed multiple times without failure or state corruption."""
+    mock_engine = MagicMock()
+    mock_conn = MagicMock()
+    mock_engine.begin.return_value.__enter__.return_value = mock_conn
+    mock_conn.execute.return_value.scalar.return_value = None
+
+    # First run
+    migrate(mock_engine)
+
+    # Second run (simulating existing constraints)
+    mock_conn.execute.return_value.scalar.return_value = 1
+    migrate(mock_engine)
+
+    # Third run (simulating duplicate constraint race condition)
+    class DuplicateConstraintError(DatabaseError):
+        pass
+
+    def mock_execute_dup(stmt, *args, **kwargs):
+        if "ADD CONSTRAINT" in str(stmt):
+            raise DuplicateConstraintError("already exists", {}, None)
+        res = MagicMock()
+        res.scalar.return_value = None
+        return res
+
+    mock_conn.execute.side_effect = mock_execute_dup
+    migrate(mock_engine)
+
+
+def test_existing_database_data_preservation():
+    """Verify init_db and schema initialization preserve existing table records."""
+    from app.database import init_db
+
+    mem_engine = create_engine("sqlite:///:memory:")
+    # Initialize schema
+    init_db(mem_engine)
+
+    # Insert sample records
+    with mem_engine.begin() as conn:
+        conn.execute(text(
+            "INSERT INTO weather_data (date, state, district, location, temp_max, temp_min, temp_avg, humidity, rainfall) "
+            "VALUES ('2026-10-01', 'Karnataka', '', '', 31.5, 22.0, 26.75, 65.0, 0.0), "
+            "       ('2026-10-02', 'Maharashtra', '', '', 33.0, 24.0, 28.5, 70.0, 2.5);"
+        ))
+
+    # Verify records exist before repeated init
+    with mem_engine.connect() as conn:
+        count_before = conn.execute(text("SELECT count(*) FROM weather_data")).scalar()
+        assert count_before == 2
+
+    # Re-run init_db (must NOT drop or truncate existing data)
+    init_db(mem_engine)
+
+    with mem_engine.connect() as conn:
+        rows = conn.execute(text("SELECT state, temp_avg FROM weather_data ORDER BY date")).fetchall()
+        assert len(rows) == 2
+        assert rows[0] == ("Karnataka", 26.75)
+        assert rows[1] == ("Maharashtra", 28.5)
+
+
+def test_migration_failure_produces_nonzero_exit_status(capsys):
+    """Verify main() catches fatal database migration failures and returns nonzero status (1)."""
+    mock_engine = MagicMock()
+    mock_engine.url.host = "db"
+    mock_conn = MagicMock()
+    mock_engine.begin.return_value.__enter__.return_value = mock_conn
+
+    def mock_execute_fail(stmt, *args, **kwargs):
+        if "ALTER TABLE weather_data" in str(stmt):
+            raise DatabaseError("disk failure or permission denied", {}, None)
+        res = MagicMock()
+        res.scalar.return_value = None
+        return res
+
+    mock_conn.execute.side_effect = mock_execute_fail
+
+    code = main(["--apply", "--allow-host", "db"], target_engine=mock_engine)
+    assert code == 1
+
+    captured = capsys.readouterr()
+    assert "Database migration failed" in captured.err
