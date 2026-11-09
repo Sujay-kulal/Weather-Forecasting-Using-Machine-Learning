@@ -13,6 +13,8 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -30,7 +32,16 @@ logger = logging.getLogger("main")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Startup: create tables if missing and verify PostgreSQL connectivity."""
-    init_db()
+    try:
+        init_db()
+    except Exception as exc:
+        logger.warning(
+            "Database initialization deferred or failed during startup (%s): %s. "
+            "Server will start in degraded mode.",
+            type(exc).__name__,
+            exc,
+        )
+
     if not check_connection():
         logger.error("Cannot connect to PostgreSQL - check DATABASE_URL in backend/.env")
     else:
@@ -107,15 +118,69 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     )
 
 
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    content = {
+        "type": "about:blank",
+        "title": "Unprocessable Entity",
+        "status": 422,
+        "detail": jsonable_encoder(exc.errors()),
+        "instance": request.url.path,
+    }
+    return JSONResponse(
+        status_code=422,
+        content=content,
+        headers={"Content-Type": "application/problem+json"},
+    )
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    logger.error("Unhandled internal server error at %s: %s", request.url.path, exc, exc_info=True)
+    content = {
+        "type": "about:blank",
+        "title": "Internal Server Error",
+        "status": 500,
+        "detail": "An internal server error occurred.",
+        "instance": request.url.path,
+    }
+    return JSONResponse(
+        status_code=500,
+        content=content,
+        headers={"Content-Type": "application/problem+json"},
+    )
+
+
+def sanitize_cors_origins(origins_raw: str | list[str], allow_credentials: bool = True) -> list[str]:
+    """Parse and sanitize allowed CORS origins, rejecting wildcard '*' when credentials are enabled."""
+    if isinstance(origins_raw, str):
+        origins = [o.strip() for o in origins_raw.split(",") if o.strip()]
+    else:
+        origins = [str(o).strip() for o in origins_raw if str(o).strip()]
+
+    if allow_credentials:
+        safe_origins = [o for o in origins if o != "*"]
+        if len(safe_origins) < len(origins):
+            logger.warning("CORS wildcard '*' was rejected because allow_credentials is True.")
+        return safe_origins
+    return origins
+
+
+def parse_and_validate_cors_origins(origins_raw: str | list[str], allow_credentials: bool = True) -> list[str]:
+    """Parse and validate CORS origins ensuring wildcard '*' cannot be combined with allow_credentials=True."""
+    return sanitize_cors_origins(origins_raw, allow_credentials=allow_credentials)
+
+
 # CORS - allow local dev servers AND production deployments.
 # Override via env var:  CORS_ORIGINS=https://your-app.vercel.app
 origins_env = os.environ.get(
     "CORS_ORIGINS",
     "http://localhost:3000,http://localhost:5173,"
     "http://127.0.0.1:3000,http://127.0.0.1:5173,"
+    "http://localhost:8080,http://127.0.0.1:8080,"
     "https://weather-forecasting-using-machine.onrender.com"
 )
-origins_list = [o.strip() for o in origins_env.split(",") if o.strip()]
+origins_list = sanitize_cors_origins(origins_env, allow_credentials=True)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins_list,

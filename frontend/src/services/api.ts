@@ -134,8 +134,24 @@ export function getModelInfo(): Promise<ModelInfoResponse> {
   return request<ModelInfoResponse>("/model-info", { cache: "no-store" });
 }
 
-// ---------------- GET /forecast/all?date= ----------------
-export function getForecastAll(date?: string | number): Promise<Record<string, number>> {
-  const query = date != null ? `?date=${encodeURIComponent(String(date))}` : "";
+// ---------------- GET /forecast/all?day=&date= ----------------
+export function getForecastAll(
+  dayOrDate?: number | string,
+  date?: string
+): Promise<Record<string, number>> {
+  const params = new URLSearchParams();
+  if (typeof dayOrDate === "number") {
+    params.set("day", String(dayOrDate));
+    if (date) params.set("date", date);
+  } else if (typeof dayOrDate === "string") {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dayOrDate)) {
+      params.set("date", dayOrDate);
+    } else if (!isNaN(Number(dayOrDate))) {
+      params.set("day", dayOrDate);
+    } else {
+      params.set("date", dayOrDate);
+    }
+  }
+  const query = params.toString() ? `?${params.toString()}` : "";
   return request<Record<string, number>>(`/forecast/all${query}`);
 }

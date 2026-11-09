@@ -4,7 +4,7 @@ from pathlib import Path
 from sqlalchemy import text
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from app.database import engine
+from app.database import engine, init_db
 
 
 def _constraint_exists(conn, constraint_name: str) -> bool:
@@ -32,6 +32,8 @@ def _is_duplicate_constraint_error(exc: Exception) -> bool:
 
 def migrate(target_engine=None):
     eng = target_engine or engine
+    # Ensure all base ORM tables exist before running ALTER TABLE migrations
+    init_db(eng)
     with eng.begin() as conn:
         conn.execute(text("ALTER TABLE weather_data ADD COLUMN IF NOT EXISTS district VARCHAR(100) NOT NULL DEFAULT '';"))
         conn.execute(text("ALTER TABLE weather_data ADD COLUMN IF NOT EXISTS location VARCHAR(100) NOT NULL DEFAULT '';"))
@@ -137,7 +139,12 @@ def main(argv=None, target_engine=None):
         print("Dry-run mode: migrations checked but not applied. Pass --apply to execute.")
         return 0
 
-    migrate(eng)
+    try:
+        migrate(eng)
+    except Exception as exc:
+        print(f"ERROR: Database migration failed: {exc}", file=sys.stderr)
+        return 1
+
     print("Migration successful")
     return 0
 

@@ -1,8 +1,8 @@
-// frontend/tests/tier1_features.test.tsx
+// tests/tier1_features.test.tsx
 import { describe, it } from "node:test";
 import assert2 from "node:assert/strict";
 
-// frontend/tests/mocks/testUtils.tsx
+// tests/mocks/testUtils.tsx
 import { renderToStaticMarkup } from "react-dom/server";
 import assert from "node:assert/strict";
 function renderComponent(element) {
@@ -16,10 +16,10 @@ Actual snippet: ${html.slice(0, 300)}...`
   );
 }
 
-// frontend/src/components/IndiaMap.tsx
+// src/components/IndiaMap.tsx
 import { useEffect, useMemo, useRef, useState } from "react";
 
-// frontend/tests/mocks/leafletMock.tsx
+// tests/mocks/leafletMock.tsx
 import { jsx } from "react/jsx-runtime";
 function MapContainer(props) {
   return /* @__PURE__ */ jsx(
@@ -96,7 +96,7 @@ var L = {
 };
 var leafletMock_default = L;
 
-// frontend/src/services/api.ts
+// src/services/api.ts
 var BASE_URL = "http://127.0.0.1:8000";
 var ApiError = class extends Error {
   status;
@@ -165,12 +165,25 @@ function getPredictions(limit = 50, offset = 0) {
 function getModelInfo() {
   return request("/model-info", { cache: "no-store" });
 }
-function getForecastAll(date) {
-  const query = date != null ? `?date=${encodeURIComponent(String(date))}` : "";
+function getForecastAll(dayOrDate, date) {
+  const params = new URLSearchParams();
+  if (typeof dayOrDate === "number") {
+    params.set("day", String(dayOrDate));
+    if (date) params.set("date", date);
+  } else if (typeof dayOrDate === "string") {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dayOrDate)) {
+      params.set("date", dayOrDate);
+    } else if (!isNaN(Number(dayOrDate))) {
+      params.set("day", dayOrDate);
+    } else {
+      params.set("date", dayOrDate);
+    }
+  }
+  const query = params.toString() ? `?${params.toString()}` : "";
   return request(`/forecast/all${query}`);
 }
 
-// frontend/src/services/cityWeather.ts
+// src/services/cityWeather.ts
 var INDIAN_CITIES = [
   // ─── METROS ────────────────────────────────────────────────
   { name: "Mumbai", state: "Maharashtra", lat: 19.076, lng: 72.8777 },
@@ -483,10 +496,12 @@ async function fetchAllCityWeather() {
   return { cities: allResults, failedChunks, totalChunks: chunks.length };
 }
 
-// frontend/src/components/icons.tsx
+// src/components/icons.tsx
 import { jsx as jsx2, jsxs } from "react/jsx-runtime";
 function base(props) {
   return {
+    width: props.width ?? 16,
+    height: props.height ?? 16,
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
@@ -652,7 +667,7 @@ function FilterIcon(props) {
   return /* @__PURE__ */ jsx2("svg", { ...base(props), children: /* @__PURE__ */ jsx2("polygon", { points: "22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" }) });
 }
 
-// frontend/src/components/ui.tsx
+// src/components/ui.tsx
 import { jsx as jsx3, jsxs as jsxs2 } from "react/jsx-runtime";
 function Card({ title, subtitle, icon, action, children, className }) {
   return /* @__PURE__ */ jsxs2("section", { className: `panel ${className ?? ""}`, children: [
@@ -742,7 +757,7 @@ function EmptyNote(props) {
   ] });
 }
 
-// frontend/src/components/IndiaMap.tsx
+// src/components/IndiaMap.tsx
 import { jsx as jsx4, jsxs as jsxs3 } from "react/jsx-runtime";
 function normalizeStateName(raw) {
   const s = raw.trim();
@@ -935,6 +950,23 @@ function MapFlyToController({ flyTarget }) {
   }, [flyTarget, map]);
   return null;
 }
+function MapResizeHandler() {
+  const map = useMap();
+  useEffect(() => {
+    const handleResize = () => {
+      map.invalidateSize();
+    };
+    window.addEventListener("resize", handleResize);
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 250);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      clearTimeout(timer);
+    };
+  }, [map]);
+  return null;
+}
 function IndiaMap({
   onSelectState,
   selectedState,
@@ -968,22 +1000,9 @@ function IndiaMap({
     setLoading(true);
     async function loadForecasts() {
       try {
-        const BASE_URL2 = "http://127.0.0.1:8000";
-        const res = await fetch(`${BASE_URL2}/forecast/all?day=${forecastDay}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (!cancelled) {
-            setForecasts(data);
-            setError(null);
-          }
-          return;
-        }
-      } catch {
-      }
-      try {
-        const fallbackData = await getForecastAll(forecastDay);
+        const data = await getForecastAll(forecastDay);
         if (!cancelled) {
-          setForecasts(fallbackData);
+          setForecasts(data);
           setError(null);
         }
       } catch (err) {
@@ -1306,6 +1325,7 @@ function IndiaMap({
         },
         children: [
           /* @__PURE__ */ jsx4(MapFlyToController, { flyTarget }),
+          /* @__PURE__ */ jsx4(MapResizeHandler, {}),
           /* @__PURE__ */ jsx4(ZoomControl, { position: "topright" }),
           /* @__PURE__ */ jsx4(AttributionControl, { position: "bottomright" }),
           /* @__PURE__ */ jsxs3(LayersControl, { position: "topright", children: [
@@ -1491,7 +1511,7 @@ function CityMarkers({
   }) });
 }
 
-// frontend/src/pages/IndiaMapPage.tsx
+// src/pages/IndiaMapPage.tsx
 import { useEffect as useEffect2, useState as useState2 } from "react";
 import { Fragment, jsx as jsx5, jsxs as jsxs4 } from "react/jsx-runtime";
 var KEY_STATES = [
@@ -1552,26 +1572,15 @@ function IndiaMapPage({
         }
       }
       try {
-        const BASE_URL2 = "http://127.0.0.1:8000";
-        const forecastRes = await fetch(`${BASE_URL2}/forecast/all?day=${forecastDay}`);
-        if (forecastRes.ok) {
-          const allForecasts = await forecastRes.json();
-          if (!cancelled) {
-            const val = allForecasts[normState] ?? allForecasts[selectedState];
-            setForecastTemp(val !== void 0 ? val : null);
-          }
-        } else {
-          throw new Error("Failed to load forecast");
+        const allForecasts = await getForecastAll(forecastDay);
+        if (!cancelled) {
+          const val = allForecasts[normState] ?? allForecasts[selectedState];
+          setForecastTemp(val !== void 0 ? val : null);
         }
-      } catch {
-        try {
-          const fallbackForecasts = await getForecastAll(forecastDay);
-          if (!cancelled) {
-            const val = fallbackForecasts[normState] ?? fallbackForecasts[selectedState];
-            setForecastTemp(val !== void 0 ? val : null);
-          }
-        } catch {
-          if (!cancelled) setForecastTemp(null);
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("Could not load day forecast for state:", selectedState, err);
+          setForecastTemp(null);
         }
       } finally {
         if (!cancelled) {
@@ -1867,7 +1876,7 @@ function IndiaMapPage({
   ] });
 }
 
-// frontend/tests/mocks/apiFixtures.ts
+// tests/mocks/apiFixtures.ts
 var SAMPLE_STATES = [
   "Andhra Pradesh",
   "Arunachal Pradesh",
@@ -2024,7 +2033,7 @@ function getMockPredictions(count = 20) {
   };
 }
 
-// frontend/tests/mocks/useFetchMock.ts
+// tests/mocks/useFetchMock.ts
 var globalOverride = null;
 function useFetch(fn, deps) {
   if (globalOverride !== null) {
@@ -2066,7 +2075,7 @@ function useFetch(fn, deps) {
   } };
 }
 
-// frontend/src/pages/MLDashboardPage.tsx
+// src/pages/MLDashboardPage.tsx
 import { jsx as jsx6, jsxs as jsxs5 } from "react/jsx-runtime";
 var FEATURE_TAXONOMY = [
   {
@@ -2165,10 +2174,10 @@ var API_ENDPOINTS = [
   },
   {
     method: "GET",
-    path: "/weather/history",
-    params: "state: str, limit: int, offset: int, district?, location?",
+    path: "/weather/{state}",
+    params: "state: str, limit: int (def: 100), offset: int (def: 0)",
     returnType: "WeatherResponse",
-    description: "Queries historical weather time-series records supporting chronological pagination, location filtering, and statistical analysis."
+    description: "Queries historical statewide weather time-series records supporting chronological pagination and statistical analysis. District and location observations accessible via /weather/{state}/{district}/{location}."
   },
   {
     method: "GET",
@@ -2222,18 +2231,18 @@ function MLDashboardPage() {
         StatChip,
         {
           icon: /* @__PURE__ */ jsx6(TargetIcon, {}),
-          label: "Test-Set MAE",
+          label: "Diagnostic MAE",
           value: selected?.MAE !== void 0 ? `\xB1${selected.MAE.toFixed(2)}\xB0C` : "\xB11.16\xB0C",
-          sub: "7-day horizon mean"
+          sub: "Training-overlap (7-day horizon)"
         }
       ),
       /* @__PURE__ */ jsx6(
         StatChip,
         {
           icon: /* @__PURE__ */ jsx6(ChartIcon, {}),
-          label: "Test-Set R\xB2",
+          label: "Diagnostic R\xB2",
           value: selected?.R2 !== void 0 ? selected.R2.toFixed(4) : "0.9697",
-          sub: "Variance explained"
+          sub: "Training-overlap evaluation"
         }
       ),
       /* @__PURE__ */ jsx6(
@@ -2379,7 +2388,7 @@ function MLDashboardPage() {
               /* @__PURE__ */ jsx6("dd", { children: "Mean Squared Error (Regression L2)" })
             ] }),
             /* @__PURE__ */ jsxs5("div", { className: "meta-block", children: [
-              /* @__PURE__ */ jsx6("dt", { children: "Evaluation Error" }),
+              /* @__PURE__ */ jsx6("dt", { children: "Diagnostic Error" }),
               /* @__PURE__ */ jsxs5("dd", { children: [
                 "MAE \xB1",
                 selected?.MAE !== void 0 ? selected.MAE.toFixed(2) : "1.16",
@@ -2483,7 +2492,7 @@ function MLDashboardPage() {
                   ] }),
                   /* @__PURE__ */ jsx6("td", { children: "1 Full Year" }),
                   /* @__PURE__ */ jsx6("td", { className: "num", children: evalObj?.row_counts?.test ? evalObj.row_counts.test.toLocaleString() : "12,045" }),
-                  /* @__PURE__ */ jsx6("td", { children: "Unbiased out-of-time evaluation across all 4 seasons (MAE \xB11.16\xB0C, R\xB2 0.9697)" })
+                  /* @__PURE__ */ jsx6("td", { children: "Diagnostic evaluation with training overlap (MAE \xB11.16\xB0C, R\xB2 0.9697) \u2014 independent validation pending" })
                 ] })
               ] })
             ] }) })
@@ -2617,7 +2626,7 @@ function MLDashboardPage() {
   ] });
 }
 
-// frontend/src/pages/WeatherHistoryPage.tsx
+// src/pages/WeatherHistoryPage.tsx
 import { useEffect as useEffect3, useMemo as useMemo2, useState as useState3 } from "react";
 import {
   Bar,
@@ -2889,11 +2898,6 @@ function WeatherHistoryPage() {
     return [...filteredRecords].sort((a, b) => {
       if (sortKey === "date") {
         return sortOrder === "asc" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date);
-      }
-      if (sortKey === "wind_speed") {
-        const aVal2 = a.wind_speed ?? 0;
-        const bVal2 = b.wind_speed ?? 0;
-        return sortOrder === "asc" ? aVal2 - bVal2 : bVal2 - aVal2;
       }
       const aVal = a[sortKey] ?? 0;
       const bVal = b[sortKey] ?? 0;
@@ -3588,34 +3592,6 @@ function WeatherHistoryPage() {
                     }
                   )
                 }
-              ),
-              /* @__PURE__ */ jsx7(
-                "th",
-                {
-                  className: "num",
-                  onClick: () => toggleSort("wind_speed"),
-                  style: { cursor: "pointer", userSelect: "none" },
-                  role: "button",
-                  tabIndex: 0,
-                  onKeyDown: (e) => {
-                    if (e.key === "Enter" || e.key === " ") toggleSort("wind_speed");
-                  },
-                  children: /* @__PURE__ */ jsxs6(
-                    "div",
-                    {
-                      style: {
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "flex-end",
-                        width: "100%"
-                      },
-                      children: [
-                        /* @__PURE__ */ jsx7("span", { children: "Wind Speed" }),
-                        renderSortIndicator("wind_speed")
-                      ]
-                    }
-                  )
-                }
               )
             ] }) }),
             /* @__PURE__ */ jsx7("tbody", { children: paginatedRows.map((r) => /* @__PURE__ */ jsxs6("tr", { children: [
@@ -3627,8 +3603,7 @@ function WeatherHistoryPage() {
                 r.humidity.toFixed(0),
                 " %"
               ] }),
-              /* @__PURE__ */ jsx7("td", { className: "num", children: r.rainfall.toFixed(1) }),
-              /* @__PURE__ */ jsx7("td", { className: "num", style: { color: "var(--text-faint)" }, children: r.wind_speed != null ? `${Number(r.wind_speed).toFixed(1)} km/h` : "\u2014" })
+              /* @__PURE__ */ jsx7("td", { className: "num", children: r.rainfall.toFixed(1) })
             ] }, `${r.date}-${r.state}-${r.district || ""}-${r.location || ""}`)) })
           ] }) }),
           /* @__PURE__ */ jsxs6(
@@ -3742,7 +3717,7 @@ function WeatherHistoryPage() {
   ] });
 }
 
-// frontend/src/pages/ModelPerformancePage.tsx
+// src/pages/ModelPerformancePage.tsx
 import { useState as useState4 } from "react";
 import {
   Bar as Bar2,
@@ -3807,12 +3782,12 @@ function ModelPerformancePage() {
     target,
     features,
     metrics,
-    train_period,
+    // train_period not destructured — unused after diagnostic labeling correction
     test_period,
     metrics_status,
-    evaluation_note
+    evaluation_note,
+    validated_for_artifact
   } = info.data;
-  const validated_for_artifact = info.data.validated_for_artifact;
   const selected = metrics[model_name] ?? metrics["LightGBM"];
   const isValidated = metrics_status === "validated_for_current_artifact" || validated_for_artifact === true;
   const rawByHorizon = selected?.by_horizon;
@@ -3840,7 +3815,7 @@ function ModelPerformancePage() {
       RMSE: Number((metrics["LightGBM"]?.RMSE ?? 1.5731).toFixed(4)),
       R2: Number((metrics["LightGBM"]?.R2 ?? 0.9697).toFixed(4)),
       skill: "+19.1%",
-      status: isValidated ? "Production Validated" : "Evaluated Test Overlap",
+      status: isValidated ? "Production Validated" : "Diagnostic (Training Overlap)",
       statusVariant: isValidated ? "success" : "warning"
     },
     {
@@ -3848,11 +3823,11 @@ function ModelPerformancePage() {
       shortName: "Random Forest",
       type: "Tuned Ensemble Benchmark",
       isProduction: false,
-      MAE: Number((metrics["Random Forest"]?.MAE ?? 1.2842).toFixed(4)),
-      RMSE: Number((metrics["Random Forest"]?.RMSE ?? 1.7145).toFixed(4)),
-      R2: Number((metrics["Random Forest"]?.R2 ?? 0.9634).toFixed(4)),
+      MAE: Number(((metrics["Random Forest"] ?? metrics["RandomForest"])?.MAE ?? 1.2842).toFixed(4)),
+      RMSE: Number(((metrics["Random Forest"] ?? metrics["RandomForest"])?.RMSE ?? 1.7145).toFixed(4)),
+      R2: Number(((metrics["Random Forest"] ?? metrics["RandomForest"])?.R2 ?? 0.9634).toFixed(4)),
       skill: "+10.7%",
-      status: "Candidate Benchmark",
+      status: metrics["Random Forest"] || metrics["RandomForest"] ? "Evaluated Benchmark" : "Candidate Benchmark (Pre-Audit)",
       statusVariant: "neutral"
     },
     {
@@ -3860,11 +3835,11 @@ function ModelPerformancePage() {
       shortName: "Linear Reg",
       type: "Multivariate Linear Baseline",
       isProduction: false,
-      MAE: Number((metrics["Linear Regression"]?.MAE ?? 1.3512).toFixed(4)),
-      RMSE: Number((metrics["Linear Regression"]?.RMSE ?? 1.7963).toFixed(4)),
-      R2: Number((metrics["Linear Regression"]?.R2 ?? 0.9592).toFixed(4)),
+      MAE: Number(((metrics["Linear Regression"] ?? metrics["LinearRegression"])?.MAE ?? 1.3512).toFixed(4)),
+      RMSE: Number(((metrics["Linear Regression"] ?? metrics["LinearRegression"])?.RMSE ?? 1.7963).toFixed(4)),
+      R2: Number(((metrics["Linear Regression"] ?? metrics["LinearRegression"])?.R2 ?? 0.9592).toFixed(4)),
       skill: "+6.1%",
-      status: "Linear Baseline",
+      status: metrics["Linear Regression"] || metrics["LinearRegression"] ? "Evaluated Baseline" : "Linear Baseline (Pre-Audit)",
       statusVariant: "neutral"
     },
     {
@@ -3902,8 +3877,8 @@ function ModelPerformancePage() {
       PageHead,
       {
         title: "Model Evaluation & Benchmarking",
-        desc: "Rigorous empirical evaluation of the production LightGBM multi-output model against baseline benchmarks on out-of-time test partitions.",
-        badge: /* @__PURE__ */ jsx8(Badge, { variant: isValidated ? "success" : "warning", children: isValidated ? "Production Validated" : "Diagnostic Overlap (Unvalidated)" }),
+        desc: "Diagnostic evaluation of the LightGBM multi-output model against baseline benchmarks. Metrics below are from training-overlapping data and have not been independently validated.",
+        badge: /* @__PURE__ */ jsx8(Badge, { variant: isValidated ? "success" : "warning", children: isValidated ? "Production Validated" : "Diagnostic \u2014 Pending Independent Validation" }),
         children: /* @__PURE__ */ jsx8(Badge, { neutral: true, children: "Artifact: weather_model_v3.joblib" })
       }
     ),
@@ -3921,36 +3896,36 @@ function ModelPerformancePage() {
         StatChip,
         {
           icon: /* @__PURE__ */ jsx8(TargetIcon, {}),
-          label: "Overall Test MAE",
+          label: "Diagnostic MAE",
           value: `\xB1${overallMae.toFixed(2)}\xB0C`,
-          sub: "Mean absolute error (All Horizons)"
+          sub: "Training-overlap evaluation (all horizons)"
         }
       ),
       /* @__PURE__ */ jsx8(
         StatChip,
         {
           icon: /* @__PURE__ */ jsx8(TargetIcon, {}),
-          label: "Overall RMSE",
+          label: "Diagnostic RMSE",
           value: `${overallRmse.toFixed(2)}\xB0C`,
-          sub: "Root mean squared error"
+          sub: "Training-overlap evaluation"
         }
       ),
       /* @__PURE__ */ jsx8(
         StatChip,
         {
           icon: /* @__PURE__ */ jsx8(ChartIcon, {}),
-          label: "R\xB2 Score",
+          label: "Diagnostic R\xB2",
           value: overallR2.toFixed(4),
-          sub: "Explained target variance"
+          sub: "Training-overlap evaluation"
         }
       ),
       /* @__PURE__ */ jsx8(
         StatChip,
         {
           icon: /* @__PURE__ */ jsx8(ArrowUpIcon, {}),
-          label: "Baseline Skill Score",
+          label: "Diagnostic Skill Score",
           value: "+19.1% vs Persistence",
-          sub: "Relative MAE reduction vs naive"
+          sub: "Relative MAE reduction (training-overlap)"
         }
       ),
       /* @__PURE__ */ jsx8(
@@ -3958,28 +3933,24 @@ function ModelPerformancePage() {
         {
           icon: /* @__PURE__ */ jsx8(CheckIcon, {}),
           label: "Conformal Coverage",
-          value: `${coveragePercent}%`,
-          sub: `Target 90% (q = \xB1${conformalQ}\xB0C)`
+          value: info.data.coverage_90 ? `${coveragePercent}%` : "Pending",
+          sub: info.data.coverage_90 ? `Target 90% (q = \xB1${conformalQ}\xB0C)` : "Not yet calibrated for current artifact"
         }
       )
     ] }),
-    /* @__PURE__ */ jsx8("div", { className: "advisory-callout", role: "region", "aria-label": "Evaluation Safeguards", children: /* @__PURE__ */ jsxs7("div", { style: { display: "flex", alignItems: "flex-start", gap: 10 }, children: [
-      /* @__PURE__ */ jsx8(DatabaseIcon, { style: { width: 20, height: 20, color: "var(--accent)", flexShrink: 0, marginTop: 2 } }),
+    /* @__PURE__ */ jsx8("div", { className: "advisory-callout", role: "region", "aria-label": "Evaluation Safeguards", style: { borderLeft: "4px solid var(--warning-border)" }, children: /* @__PURE__ */ jsxs7("div", { style: { display: "flex", alignItems: "flex-start", gap: 10 }, children: [
+      /* @__PURE__ */ jsx8(DatabaseIcon, { style: { width: 20, height: 20, color: "var(--warning)", flexShrink: 0, marginTop: 2 } }),
       /* @__PURE__ */ jsxs7("div", { children: [
-        /* @__PURE__ */ jsx8("strong", { style: { fontSize: "14px", display: "block", marginBottom: 4 }, children: "Out-of-Time Evaluation Protocol & Anti-Leakage Embargo Safeguards" }),
+        /* @__PURE__ */ jsx8("strong", { style: { fontSize: "14px", display: "block", marginBottom: 4 }, children: "\u26A0 Diagnostic Metrics \u2014 Independent Validation Pending" }),
         /* @__PURE__ */ jsxs7("p", { style: { margin: "0 0 6px 0", color: "var(--text-secondary)", lineHeight: 1.55 }, children: [
-          "The multi-output LightGBM model is evaluated on a strictly chronological out-of-time test window from",
+          "The metrics on this page are ",
+          /* @__PURE__ */ jsx8("strong", { children: "diagnostic scores from an evaluation where the recorded training cutoff overlaps the test window" }),
+          ". They should not be interpreted as independently validated forecasting accuracy. The test window spans",
           " ",
           /* @__PURE__ */ jsx8("strong", { children: test_period[0] }),
           " to ",
           /* @__PURE__ */ jsx8("strong", { children: test_period[1] }),
-          " (12,045 samples across all 34 Indian states and Union Territories). A mandatory ",
-          /* @__PURE__ */ jsx8("strong", { children: "8-day anti-leakage embargo" }),
-          " buffer strictly isolates the training partition (",
-          train_period[0],
-          " \u2192 ",
-          train_period[1],
-          ", 126,654 rows) from the test set, preventing multi-step autoregressive leakage."
+          ", but independent out-of-sample validation on a strictly unseen partition has not yet been completed."
         ] }),
         /* @__PURE__ */ jsxs7("div", { style: { display: "flex", gap: 16, flexWrap: "wrap", fontSize: "12px", color: "var(--text-muted)", marginTop: 6 }, children: [
           /* @__PURE__ */ jsxs7("span", { children: [
@@ -4007,7 +3978,7 @@ function ModelPerformancePage() {
       Card,
       {
         title: "Horizon-by-Horizon Performance Breakdown (Day 1 through Day 7)",
-        subtitle: "Detailed meteorological error growth across consecutive forecast lead times. Demonstrates sustained accuracy across the 7-day trajectory.",
+        subtitle: "Diagnostic error growth across forecast lead times. These scores are from training-overlapping evaluation and are not independently validated.",
         icon: /* @__PURE__ */ jsx8(CalendarIcon, {}),
         children: [
           /* @__PURE__ */ jsx8(
@@ -4174,7 +4145,7 @@ function ModelPerformancePage() {
       Card,
       {
         title: "Model Architecture Benchmark Comparison",
-        subtitle: "Comparing production LightGBM Multi-Output against machine learning benchmarks and climatological baselines.",
+        subtitle: "Diagnostic comparison of LightGBM against benchmarks. All metrics are from training-overlapping evaluation; relative rankings have not been independently confirmed.",
         icon: /* @__PURE__ */ jsx8(TargetIcon, {}),
         action: /* @__PURE__ */ jsxs7("div", { style: { display: "inline-flex", background: "var(--bg-surface-subtle)", padding: 3, borderRadius: "var(--radius-md)" }, children: [
           /* @__PURE__ */ jsx8(
@@ -4324,7 +4295,7 @@ function ModelPerformancePage() {
   ] });
 }
 
-// frontend/src/pages/PredictionHistoryPage.tsx
+// src/pages/PredictionHistoryPage.tsx
 import { useEffect as useEffect4, useState as useState5 } from "react";
 import {
   CartesianGrid as CartesianGrid3,
@@ -4338,7 +4309,6 @@ import {
 } from "recharts";
 import { jsx as jsx9, jsxs as jsxs8 } from "react/jsx-runtime";
 var PAGE_SIZE_OPTIONS = [25, 50, 100];
-var CONFORMAL_Q = 2.84;
 function prettyDate2(iso) {
   if (!iso) return "\u2014";
   const parts = iso.split("-").map(Number);
@@ -4367,6 +4337,8 @@ function computeHorizonDate(baseIso, dayOffset) {
 function PredictionHistoryPage() {
   const states = useFetch(getStates, []);
   const modelInfo = useFetch(getModelInfo, []);
+  const isCalibrated = modelInfo.data?.interval_status === "calibrated" && typeof modelInfo.data?.q === "number";
+  const conformalQ = isCalibrated ? modelInfo.data.q : null;
   const [records, setRecords] = useState5([]);
   const [totalCount, setTotalCount] = useState5(0);
   const [loading, setLoading] = useState5(true);
@@ -4970,8 +4942,10 @@ function PredictionHistoryPage() {
                         day: `Day ${i + 1}`,
                         date: computeHorizonDate(selectedRecord.forecast_date, i + 1),
                         temp: Number(temp.toFixed(2)),
-                        upper: Number((temp + CONFORMAL_Q).toFixed(2)),
-                        lower: Number((temp - CONFORMAL_Q).toFixed(2))
+                        ...isCalibrated && conformalQ !== null ? {
+                          upper: Number((temp + conformalQ).toFixed(2)),
+                          lower: Number((temp - conformalQ).toFixed(2))
+                        } : {}
                       })),
                       margin: { top: 10, right: 20, bottom: 5, left: 0 },
                       children: [
@@ -5028,14 +5002,14 @@ function PredictionHistoryPage() {
                     /* @__PURE__ */ jsx9("th", { children: "Valid Date" }),
                     /* @__PURE__ */ jsx9("th", { className: "num", children: "Predicted Avg Temp (\xB0C)" }),
                     /* @__PURE__ */ jsx9("th", { className: "num", children: "Est. Diurnal (Min \u2013 Max)" }),
-                    /* @__PURE__ */ jsx9("th", { children: "90% Confidence Interval" })
+                    /* @__PURE__ */ jsx9("th", { children: isCalibrated && conformalQ !== null ? `90% Confidence Interval (\xB1${conformalQ.toFixed(2)}\xB0C)` : "Conformal Prediction Interval" })
                   ] }) }),
                   /* @__PURE__ */ jsx9("tbody", { children: selectedRecord.predicted_temp_avg.map((temp, i) => {
                     const dayDate = computeHorizonDate(selectedRecord.forecast_date, i + 1);
                     const estMin = (temp - 3.5).toFixed(1);
                     const estMax = (temp + 3.5).toFixed(1);
-                    const ciLow = (temp - CONFORMAL_Q).toFixed(1);
-                    const ciHigh = (temp + CONFORMAL_Q).toFixed(1);
+                    const ciLow = conformalQ !== null ? (temp - conformalQ).toFixed(1) : null;
+                    const ciHigh = conformalQ !== null ? (temp + conformalQ).toFixed(1) : null;
                     return /* @__PURE__ */ jsxs8("tr", { children: [
                       /* @__PURE__ */ jsx9("td", { children: /* @__PURE__ */ jsxs8(Badge, { neutral: true, children: [
                         "Day ",
@@ -5055,13 +5029,24 @@ function PredictionHistoryPage() {
                         estMax,
                         "\xB0C"
                       ] }),
-                      /* @__PURE__ */ jsx9("td", { children: /* @__PURE__ */ jsxs8("span", { style: { fontSize: "11.5px", color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }, children: [
+                      /* @__PURE__ */ jsx9("td", { children: isCalibrated && ciLow !== null && ciHigh !== null ? /* @__PURE__ */ jsxs8("span", { style: { fontSize: "11.5px", color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }, children: [
                         "[",
                         ciLow,
                         "\xB0C, ",
                         ciHigh,
                         "\xB0C]"
-                      ] }) })
+                      ] }) : /* @__PURE__ */ jsx9(
+                        "span",
+                        {
+                          style: {
+                            fontSize: "11.5px",
+                            color: "var(--text-muted)",
+                            fontStyle: "italic"
+                          },
+                          title: "Conformal intervals omitted: interval_status is not_calibrated_for_current_artifact",
+                          children: "Uncalibrated for artifact"
+                        }
+                      ) })
                     ] }, i);
                   }) })
                 ] }) }),
@@ -5083,7 +5068,8 @@ function PredictionHistoryPage() {
                       /* @__PURE__ */ jsxs8("span", { children: [
                         "Audit Verification: Stored in PostgreSQL ",
                         /* @__PURE__ */ jsx9("code", { children: "predictions" }),
-                        " table on inference request. Output array contains 7 joint multi-output predictions."
+                        " table on inference request. Output array contains 7 joint multi-output predictions.",
+                        !isCalibrated && " Empirical 90% confidence intervals are withheld because the active model artifact has not completed residual calibration (interval_status: not_calibrated_for_current_artifact)."
                       ] })
                     ]
                   }
@@ -5118,7 +5104,7 @@ function PredictionHistoryPage() {
   ] });
 }
 
-// frontend/tests/tier1_features.test.tsx
+// tests/tier1_features.test.tsx
 import { jsx as jsx10 } from "react/jsx-runtime";
 describe("Tier 1: Feature Coverage (F1 to F15)", () => {
   describe("F1: IndiaMap Shell & Layout", () => {
@@ -5302,7 +5288,7 @@ describe("Tier 1: Feature Coverage (F1 to F15)", () => {
       assertContains(html, "/predict");
       assertContains(html, "/model-info");
       assertContains(html, "/weather/{state}/recent");
-      assertContains(html, "/weather/history");
+      assertContains(html, "/weather/{state}");
       assertContains(html, "/health");
       assertContains(html, "PostgreSQL Durability");
       assertContains(html, "Caching &amp; Concurrency");
@@ -5342,14 +5328,14 @@ describe("Tier 1: Feature Coverage (F1 to F15)", () => {
     it("renders page head, validation badges, hero metrics, and evaluation banner", () => {
       const html = renderComponent(/* @__PURE__ */ jsx10(ModelPerformancePage, {}));
       assertContains(html, "Model Evaluation &amp; Benchmarking");
-      assertContains(html, "Diagnostic Overlap (Unvalidated)");
+      assertContains(html, "Diagnostic \u2014 Pending Independent Validation");
       assertContains(html, "Artifact: weather_model_v3.joblib");
       assertContains(html, "Production Model");
       assertContains(html, "LightGBM Multi-Output");
-      assertContains(html, "Overall Test MAE");
-      assertContains(html, "Overall RMSE");
-      assertContains(html, "R\xB2 Score");
-      assertContains(html, "Baseline Skill Score");
+      assertContains(html, "Diagnostic MAE");
+      assertContains(html, "Diagnostic RMSE");
+      assertContains(html, "Diagnostic R\xB2");
+      assertContains(html, "Diagnostic Skill Score");
     });
   });
   describe("F13: Model Baseline Comparison Visuals", () => {

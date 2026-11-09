@@ -257,7 +257,7 @@ export default function App() {
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 16, fontSize: 11.5 }}>
             <span>Architecture: React 18 · FastAPI · PostgreSQL · LightGBM</span>
-            <span>Test-Set MAE: ±1.25°C</span>
+            <span>Diagnostic MAE: ±1.16°C (validation pending)</span>
           </div>
         </footer>
       </div>

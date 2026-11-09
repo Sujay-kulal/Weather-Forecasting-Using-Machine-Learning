@@ -13,8 +13,6 @@ import {
   ApiError,
   getRecentWeather,
   getStates,
-  getDistricts,
-  getLocations,
   predict,
 } from "../services/api";
 import { useFetch } from "../hooks/useFetch";
@@ -199,8 +197,6 @@ export interface ForecastPageProps {
 export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
   const states = useFetch(getStates, []);
   const [state, setState] = useState(selectedState || "");
-  const [district, setDistrict] = useState("");
-  const [location, setLocation] = useState("");
   const [date, setDate] = useState("");
   const [dateTouched, setDateTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -211,8 +207,6 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
   useEffect(() => {
     if (selectedState && selectedState !== state) {
       setState(selectedState);
-      setDistrict("");
-      setLocation("");
       setDateTouched(false);
       setResult(null);
       setPredictError(null);
@@ -221,30 +215,10 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedState]);
 
-  const districtsFetch = useFetch(
-    () => (state ? getDistricts(state) : Promise.resolve(null)),
-    [state]
-  );
-
-  const locationsFetch = useFetch(
-    () => (state && district ? getLocations(state, district) : Promise.resolve(null)),
-    [state, district]
-  );
-
-  const hasDistricts = (districtsFetch.data?.districts.length ?? 0) > 0;
-  const hasLocations = (locationsFetch.data?.locations.length ?? 0) > 0;
-
-  // Recent 30 records for the selected state/location
+  // Recent 30 records for the selected state
   const recent = useFetch(
-    () => {
-      if (!state) return Promise.resolve(null);
-      if (hasDistricts) {
-        if (!district || !location) return Promise.resolve(null);
-        return getRecentWeather(state, 30, district, location);
-      }
-      return getRecentWeather(state, 30);
-    },
-    [state, district, location, hasDistricts]
+    () => (state ? getRecentWeather(state, 30) : Promise.resolve(null)),
+    [state]
   );
 
   const recentRecords = recent.data?.records ?? [];
@@ -258,7 +232,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state, recent.loading]);
 
-  const canSubmit = state && date && (!hasDistricts || location);
+  const canSubmit = Boolean(state && date);
 
   async function requestPrediction() {
     if (!canSubmit) return;
@@ -267,7 +241,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
     setResult(null);
     setSelectedDayIndex(0);
     try {
-      const prediction = await predict(state, date, district, location);
+      const prediction = await predict(state, date);
       setResult(prediction);
     } catch (err) {
       const apiErr = err as ApiError;
@@ -288,7 +262,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
     await requestPrediction();
   }
 
-  const locStr = location ? `${state} › ${district} › ${location}` : state;
+  const locStr = state;
   const dailyForecasts = result ? resolveDailyForecasts(result) : [];
   const currentDay = dailyForecasts[selectedDayIndex] || dailyForecasts[0];
 
@@ -296,7 +270,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <PageHead
         title="Weather Forecast Dashboard"
-        desc="Machine learning-based seven-day multi-parameter atmospheric temperature forecasts across Indian states and districts."
+        desc="Machine learning-based seven-day multi-parameter atmospheric temperature forecasts across 33 Indian states and union territories."
         badge={
           state ? (
             <Badge variant="info">
@@ -333,8 +307,6 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                   value={state}
                   onChange={(e) => {
                     setState(e.target.value);
-                    setDistrict("");
-                    setLocation("");
                     setDateTouched(false);
                     setResult(null);
                     setPredictError(null);
@@ -345,7 +317,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                   <option value="" disabled>
                     Choose Indian State…
                   </option>
-                  {states.data?.states.map((s) => (
+                  {states.data?.states.filter((s) => s !== "Other").map((s) => (
                     <option key={s} value={s}>
                       {s}
                     </option>
@@ -354,80 +326,9 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
               )}
             </label>
 
-            {hasDistricts && (
-              <label className="field">
-                <span>
-                  <span>2. District</span>
-                  <span style={{ color: "var(--danger)" }}>*</span>
-                </span>
-                {districtsFetch.loading ? (
-                  <Skeleton rows={1} />
-                ) : districtsFetch.error ? (
-                  <ErrorBanner message={districtsFetch.error.message} onRetry={districtsFetch.retry} />
-                ) : (
-                  <select
-                    value={district}
-                    onChange={(e) => {
-                      setDistrict(e.target.value);
-                      setLocation("");
-                      setDateTouched(false);
-                      setResult(null);
-                      setPredictError(null);
-                      setSelectedDayIndex(0);
-                    }}
-                    required
-                  >
-                    <option value="" disabled>
-                      Choose District…
-                    </option>
-                    {districtsFetch.data?.districts.map((d) => (
-                      <option key={d} value={d}>
-                        {d}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </label>
-            )}
-
-            {district && hasLocations && (
-              <label className="field">
-                <span>
-                  <span>3. Location Station</span>
-                  <span style={{ color: "var(--danger)" }}>*</span>
-                </span>
-                {locationsFetch.loading ? (
-                  <Skeleton rows={1} />
-                ) : locationsFetch.error ? (
-                  <ErrorBanner message={locationsFetch.error.message} onRetry={locationsFetch.retry} />
-                ) : (
-                  <select
-                    value={location}
-                    onChange={(e) => {
-                      setLocation(e.target.value);
-                      setDateTouched(false);
-                      setResult(null);
-                      setPredictError(null);
-                      setSelectedDayIndex(0);
-                    }}
-                    required
-                  >
-                    <option value="" disabled>
-                      Choose Station Location…
-                    </option>
-                    {locationsFetch.data?.locations.map((l) => (
-                      <option key={l} value={l}>
-                        {l}
-                      </option>
-                    ))}
-                  </select>
-                )}
-              </label>
-            )}
-
             <label className="field">
               <span>
-                <span>Forecast Target Date</span>
+                <span>2. Forecast Target Date</span>
                 <span style={{ color: "var(--danger)" }}>*</span>
               </span>
               <input
@@ -467,7 +368,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                 border: "1px solid var(--border-subtle)",
               }}
             >
-              <strong>Evaluation Note:</strong> Forecasts use lag features, seasonal encoding, and a trained LightGBM multi-output regressor to infer the next 7 daily temperatures.
+              <strong>Operational Scope:</strong> ML forecasts are generated exclusively for statewide series across the 33 validated Indian states and union territories. For district- and station-level historical weather observations, visit the Weather History module.
             </div>
           </form>
         </div>
@@ -687,8 +588,8 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                   <dd>{result.model}</dd>
                 </div>
                 <div className="meta-block">
-                  <dt>Historical Error (MAE)</dt>
-                  <dd>± {result.typical_error_mae != null ? result.typical_error_mae.toFixed(3) : "1.250"} °C</dd>
+                  <dt>Diagnostic MAE (Training Overlap)</dt>
+                  <dd>± {result.typical_error_mae != null ? result.typical_error_mae.toFixed(3) : "1.164"} °C</dd>
                 </div>
               </dl>
             </div>

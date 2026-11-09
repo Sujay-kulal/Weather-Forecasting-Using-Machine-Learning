@@ -8,7 +8,7 @@ var __export = (target, all) => {
     __defProp(target, name, { get: all[name], enumerable: true });
 };
 
-// frontend/tests/mocks/apiFixtures.ts
+// tests/mocks/apiFixtures.ts
 function getMockStates() {
   return { states: SAMPLE_STATES };
 }
@@ -135,7 +135,7 @@ function getMockPredictions(count = 20) {
 }
 var SAMPLE_STATES;
 var init_apiFixtures = __esm({
-  "frontend/tests/mocks/apiFixtures.ts"() {
+  "tests/mocks/apiFixtures.ts"() {
     "use strict";
     SAMPLE_STATES = [
       "Andhra Pradesh",
@@ -171,7 +171,7 @@ var init_apiFixtures = __esm({
   }
 });
 
-// frontend/tests/mocks/useFetchMock.ts
+// tests/mocks/useFetchMock.ts
 function resetMockFetchOverride() {
   globalOverride = null;
 }
@@ -216,14 +216,14 @@ function useFetch(fn, deps) {
 }
 var globalOverride;
 var init_useFetchMock = __esm({
-  "frontend/tests/mocks/useFetchMock.ts"() {
+  "tests/mocks/useFetchMock.ts"() {
     "use strict";
     init_apiFixtures();
     globalOverride = null;
   }
 });
 
-// frontend/src/services/api.ts
+// src/services/api.ts
 async function request(path, init) {
   let response;
   try {
@@ -297,13 +297,26 @@ function getPredictions(limit = 50, offset = 0) {
 function getModelInfo() {
   return request("/model-info", { cache: "no-store" });
 }
-function getForecastAll(date) {
-  const query = date != null ? `?date=${encodeURIComponent(String(date))}` : "";
+function getForecastAll(dayOrDate, date) {
+  const params = new URLSearchParams();
+  if (typeof dayOrDate === "number") {
+    params.set("day", String(dayOrDate));
+    if (date) params.set("date", date);
+  } else if (typeof dayOrDate === "string") {
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dayOrDate)) {
+      params.set("date", dayOrDate);
+    } else if (!isNaN(Number(dayOrDate))) {
+      params.set("day", dayOrDate);
+    } else {
+      params.set("date", dayOrDate);
+    }
+  }
+  const query = params.toString() ? `?${params.toString()}` : "";
   return request(`/forecast/all${query}`);
 }
 var BASE_URL, ApiError;
 var init_api = __esm({
-  "frontend/src/services/api.ts"() {
+  "src/services/api.ts"() {
     "use strict";
     BASE_URL = "http://127.0.0.1:8000";
     ApiError = class extends Error {
@@ -316,10 +329,12 @@ var init_api = __esm({
   }
 });
 
-// frontend/src/components/icons.tsx
+// src/components/icons.tsx
 import { jsx, jsxs } from "react/jsx-runtime";
 function base(props) {
   return {
+    width: props.width ?? 16,
+    height: props.height ?? 16,
     viewBox: "0 0 24 24",
     fill: "none",
     stroke: "currentColor",
@@ -514,12 +529,12 @@ function FilterIcon(props) {
   return /* @__PURE__ */ jsx("svg", { ...base(props), children: /* @__PURE__ */ jsx("polygon", { points: "22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" }) });
 }
 var init_icons = __esm({
-  "frontend/src/components/icons.tsx"() {
+  "src/components/icons.tsx"() {
     "use strict";
   }
 });
 
-// frontend/src/components/ui.tsx
+// src/components/ui.tsx
 import { jsx as jsx2, jsxs as jsxs2 } from "react/jsx-runtime";
 function Card({ title, subtitle, icon, action, children, className }) {
   return /* @__PURE__ */ jsxs2("section", { className: `panel ${className ?? ""}`, children: [
@@ -609,13 +624,13 @@ function EmptyNote(props) {
   ] });
 }
 var init_ui = __esm({
-  "frontend/src/components/ui.tsx"() {
+  "src/components/ui.tsx"() {
     "use strict";
     init_icons();
   }
 });
 
-// frontend/src/pages/ForecastPage.tsx
+// src/pages/ForecastPage.tsx
 var ForecastPage_exports = {};
 __export(ForecastPage_exports, {
   ForecastPage: () => ForecastPage
@@ -762,8 +777,6 @@ function minVal(a, b) {
 function ForecastPage({ selectedState } = {}) {
   const states = useFetch(getStates, []);
   const [state, setState] = useState2(selectedState || "");
-  const [district, setDistrict] = useState2("");
-  const [location, setLocation] = useState2("");
   const [date, setDate] = useState2("");
   const [dateTouched, setDateTouched] = useState2(false);
   const [submitting, setSubmitting] = useState2(false);
@@ -773,34 +786,15 @@ function ForecastPage({ selectedState } = {}) {
   useEffect2(() => {
     if (selectedState && selectedState !== state) {
       setState(selectedState);
-      setDistrict("");
-      setLocation("");
       setDateTouched(false);
       setResult(null);
       setPredictError(null);
       setSelectedDayIndex(0);
     }
   }, [selectedState]);
-  const districtsFetch = useFetch(
-    () => state ? getDistricts(state) : Promise.resolve(null),
-    [state]
-  );
-  const locationsFetch = useFetch(
-    () => state && district ? getLocations(state, district) : Promise.resolve(null),
-    [state, district]
-  );
-  const hasDistricts = (districtsFetch.data?.districts.length ?? 0) > 0;
-  const hasLocations = (locationsFetch.data?.locations.length ?? 0) > 0;
   const recent = useFetch(
-    () => {
-      if (!state) return Promise.resolve(null);
-      if (hasDistricts) {
-        if (!district || !location) return Promise.resolve(null);
-        return getRecentWeather(state, 30, district, location);
-      }
-      return getRecentWeather(state, 30);
-    },
-    [state, district, location, hasDistricts]
+    () => state ? getRecentWeather(state, 30) : Promise.resolve(null),
+    [state]
   );
   const recentRecords = recent.data?.records ?? [];
   const latest = recentRecords.length > 0 ? recentRecords[recentRecords.length - 1] : null;
@@ -809,7 +803,7 @@ function ForecastPage({ selectedState } = {}) {
       setDate(nextDay(recentRecords[recentRecords.length - 1].date));
     }
   }, [state, recent.loading]);
-  const canSubmit = state && date && (!hasDistricts || location);
+  const canSubmit = Boolean(state && date);
   async function requestPrediction() {
     if (!canSubmit) return;
     setSubmitting(true);
@@ -817,7 +811,7 @@ function ForecastPage({ selectedState } = {}) {
     setResult(null);
     setSelectedDayIndex(0);
     try {
-      const prediction = await predict(state, date, district, location);
+      const prediction = await predict(state, date);
       setResult(prediction);
     } catch (err) {
       const apiErr = err;
@@ -836,7 +830,7 @@ function ForecastPage({ selectedState } = {}) {
     e.preventDefault();
     await requestPrediction();
   }
-  const locStr = location ? `${state} \u203A ${district} \u203A ${location}` : state;
+  const locStr = state;
   const dailyForecasts = result ? resolveDailyForecasts(result) : [];
   const currentDay = dailyForecasts[selectedDayIndex] || dailyForecasts[0];
   return /* @__PURE__ */ jsxs3("div", { style: { display: "flex", flexDirection: "column", gap: 20 }, children: [
@@ -844,7 +838,7 @@ function ForecastPage({ selectedState } = {}) {
       PageHead,
       {
         title: "Weather Forecast Dashboard",
-        desc: "Machine learning-based seven-day multi-parameter atmospheric temperature forecasts across Indian states and districts.",
+        desc: "Machine learning-based seven-day multi-parameter atmospheric temperature forecasts across 33 Indian states and union territories.",
         badge: state ? /* @__PURE__ */ jsx3(Badge, { variant: "info", children: locStr }) : void 0
       }
     ),
@@ -869,8 +863,6 @@ function ForecastPage({ selectedState } = {}) {
                 value: state,
                 onChange: (e) => {
                   setState(e.target.value);
-                  setDistrict("");
-                  setLocation("");
                   setDateTouched(false);
                   setResult(null);
                   setPredictError(null);
@@ -879,63 +871,14 @@ function ForecastPage({ selectedState } = {}) {
                 required: true,
                 children: [
                   /* @__PURE__ */ jsx3("option", { value: "", disabled: true, children: "Choose Indian State\u2026" }),
-                  states.data?.states.map((s) => /* @__PURE__ */ jsx3("option", { value: s, children: s }, s))
-                ]
-              }
-            )
-          ] }),
-          hasDistricts && /* @__PURE__ */ jsxs3("label", { className: "field", children: [
-            /* @__PURE__ */ jsxs3("span", { children: [
-              /* @__PURE__ */ jsx3("span", { children: "2. District" }),
-              /* @__PURE__ */ jsx3("span", { style: { color: "var(--danger)" }, children: "*" })
-            ] }),
-            districtsFetch.loading ? /* @__PURE__ */ jsx3(Skeleton, { rows: 1 }) : districtsFetch.error ? /* @__PURE__ */ jsx3(ErrorBanner, { message: districtsFetch.error.message, onRetry: districtsFetch.retry }) : /* @__PURE__ */ jsxs3(
-              "select",
-              {
-                value: district,
-                onChange: (e) => {
-                  setDistrict(e.target.value);
-                  setLocation("");
-                  setDateTouched(false);
-                  setResult(null);
-                  setPredictError(null);
-                  setSelectedDayIndex(0);
-                },
-                required: true,
-                children: [
-                  /* @__PURE__ */ jsx3("option", { value: "", disabled: true, children: "Choose District\u2026" }),
-                  districtsFetch.data?.districts.map((d) => /* @__PURE__ */ jsx3("option", { value: d, children: d }, d))
-                ]
-              }
-            )
-          ] }),
-          district && hasLocations && /* @__PURE__ */ jsxs3("label", { className: "field", children: [
-            /* @__PURE__ */ jsxs3("span", { children: [
-              /* @__PURE__ */ jsx3("span", { children: "3. Location Station" }),
-              /* @__PURE__ */ jsx3("span", { style: { color: "var(--danger)" }, children: "*" })
-            ] }),
-            locationsFetch.loading ? /* @__PURE__ */ jsx3(Skeleton, { rows: 1 }) : locationsFetch.error ? /* @__PURE__ */ jsx3(ErrorBanner, { message: locationsFetch.error.message, onRetry: locationsFetch.retry }) : /* @__PURE__ */ jsxs3(
-              "select",
-              {
-                value: location,
-                onChange: (e) => {
-                  setLocation(e.target.value);
-                  setDateTouched(false);
-                  setResult(null);
-                  setPredictError(null);
-                  setSelectedDayIndex(0);
-                },
-                required: true,
-                children: [
-                  /* @__PURE__ */ jsx3("option", { value: "", disabled: true, children: "Choose Station Location\u2026" }),
-                  locationsFetch.data?.locations.map((l) => /* @__PURE__ */ jsx3("option", { value: l, children: l }, l))
+                  states.data?.states.filter((s) => s !== "Other").map((s) => /* @__PURE__ */ jsx3("option", { value: s, children: s }, s))
                 ]
               }
             )
           ] }),
           /* @__PURE__ */ jsxs3("label", { className: "field", children: [
             /* @__PURE__ */ jsxs3("span", { children: [
-              /* @__PURE__ */ jsx3("span", { children: "Forecast Target Date" }),
+              /* @__PURE__ */ jsx3("span", { children: "2. Forecast Target Date" }),
               /* @__PURE__ */ jsx3("span", { style: { color: "var(--danger)" }, children: "*" })
             ] }),
             /* @__PURE__ */ jsx3(
@@ -960,7 +903,7 @@ function ForecastPage({ selectedState } = {}) {
               disabled: submitting || !canSubmit,
               style: { width: "100%", marginTop: 6 },
               children: [
-                /* @__PURE__ */ jsx3(SparkIcon, {}),
+                /* @__PURE__ */ jsx3(SparkIcon, { style: { width: 16, height: 16, flexShrink: 0 } }),
                 submitting ? "Computing Model Inference\u2026" : "Generate 7-Day Forecast"
               ]
             }
@@ -978,8 +921,8 @@ function ForecastPage({ selectedState } = {}) {
                 border: "1px solid var(--border-subtle)"
               },
               children: [
-                /* @__PURE__ */ jsx3("strong", { children: "Evaluation Note:" }),
-                " Forecasts use lag features, seasonal encoding, and a trained LightGBM multi-output regressor to infer the next 7 daily temperatures."
+                /* @__PURE__ */ jsx3("strong", { children: "Operational Scope:" }),
+                " ML forecasts are generated exclusively for statewide series across the 33 validated Indian states and union territories. For district- and station-level historical weather observations, visit the Weather History module."
               ]
             }
           )
@@ -1218,10 +1161,10 @@ function ForecastPage({ selectedState } = {}) {
               /* @__PURE__ */ jsx3("dd", { children: result.model })
             ] }),
             /* @__PURE__ */ jsxs3("div", { className: "meta-block", children: [
-              /* @__PURE__ */ jsx3("dt", { children: "Historical Error (MAE)" }),
+              /* @__PURE__ */ jsx3("dt", { children: "Diagnostic MAE (Training Overlap)" }),
               /* @__PURE__ */ jsxs3("dd", { children: [
                 "\xB1 ",
-                result.typical_error_mae != null ? result.typical_error_mae.toFixed(3) : "1.250",
+                result.typical_error_mae != null ? result.typical_error_mae.toFixed(3) : "1.164",
                 " \xB0C"
               ] })
             ] })
@@ -1452,7 +1395,7 @@ function buildChartData(records, result) {
   return rows;
 }
 var init_ForecastPage = __esm({
-  "frontend/src/pages/ForecastPage.tsx"() {
+  "src/pages/ForecastPage.tsx"() {
     "use strict";
     init_api();
     init_useFetchMock();
@@ -1461,7 +1404,7 @@ var init_ForecastPage = __esm({
   }
 });
 
-// frontend/src/pages/WeatherHistoryPage.tsx
+// src/pages/WeatherHistoryPage.tsx
 var WeatherHistoryPage_exports = {};
 __export(WeatherHistoryPage_exports, {
   WeatherHistoryPage: () => WeatherHistoryPage
@@ -1735,11 +1678,6 @@ function WeatherHistoryPage() {
     return [...filteredRecords].sort((a, b) => {
       if (sortKey === "date") {
         return sortOrder === "asc" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date);
-      }
-      if (sortKey === "wind_speed") {
-        const aVal2 = a.wind_speed ?? 0;
-        const bVal2 = b.wind_speed ?? 0;
-        return sortOrder === "asc" ? aVal2 - bVal2 : bVal2 - aVal2;
       }
       const aVal = a[sortKey] ?? 0;
       const bVal = b[sortKey] ?? 0;
@@ -2434,34 +2372,6 @@ function WeatherHistoryPage() {
                     }
                   )
                 }
-              ),
-              /* @__PURE__ */ jsx4(
-                "th",
-                {
-                  className: "num",
-                  onClick: () => toggleSort("wind_speed"),
-                  style: { cursor: "pointer", userSelect: "none" },
-                  role: "button",
-                  tabIndex: 0,
-                  onKeyDown: (e) => {
-                    if (e.key === "Enter" || e.key === " ") toggleSort("wind_speed");
-                  },
-                  children: /* @__PURE__ */ jsxs4(
-                    "div",
-                    {
-                      style: {
-                        display: "inline-flex",
-                        alignItems: "center",
-                        justifyContent: "flex-end",
-                        width: "100%"
-                      },
-                      children: [
-                        /* @__PURE__ */ jsx4("span", { children: "Wind Speed" }),
-                        renderSortIndicator("wind_speed")
-                      ]
-                    }
-                  )
-                }
               )
             ] }) }),
             /* @__PURE__ */ jsx4("tbody", { children: paginatedRows.map((r) => /* @__PURE__ */ jsxs4("tr", { children: [
@@ -2473,8 +2383,7 @@ function WeatherHistoryPage() {
                 r.humidity.toFixed(0),
                 " %"
               ] }),
-              /* @__PURE__ */ jsx4("td", { className: "num", children: r.rainfall.toFixed(1) }),
-              /* @__PURE__ */ jsx4("td", { className: "num", style: { color: "var(--text-faint)" }, children: r.wind_speed != null ? `${Number(r.wind_speed).toFixed(1)} km/h` : "\u2014" })
+              /* @__PURE__ */ jsx4("td", { className: "num", children: r.rainfall.toFixed(1) })
             ] }, `${r.date}-${r.state}-${r.district || ""}-${r.location || ""}`)) })
           ] }) }),
           /* @__PURE__ */ jsxs4(
@@ -2589,7 +2498,7 @@ function WeatherHistoryPage() {
 }
 var TOTAL_DB_RECORDS, FETCH_PAGE_SIZE;
 var init_WeatherHistoryPage = __esm({
-  "frontend/src/pages/WeatherHistoryPage.tsx"() {
+  "src/pages/WeatherHistoryPage.tsx"() {
     "use strict";
     init_api();
     init_useFetchMock();
@@ -2600,7 +2509,7 @@ var init_WeatherHistoryPage = __esm({
   }
 });
 
-// frontend/src/pages/ModelPerformancePage.tsx
+// src/pages/ModelPerformancePage.tsx
 var ModelPerformancePage_exports = {};
 __export(ModelPerformancePage_exports, {
   ModelPerformancePage: () => ModelPerformancePage
@@ -2660,12 +2569,12 @@ function ModelPerformancePage() {
     target,
     features,
     metrics,
-    train_period,
+    // train_period not destructured — unused after diagnostic labeling correction
     test_period,
     metrics_status,
-    evaluation_note
+    evaluation_note,
+    validated_for_artifact
   } = info.data;
-  const validated_for_artifact = info.data.validated_for_artifact;
   const selected = metrics[model_name] ?? metrics["LightGBM"];
   const isValidated = metrics_status === "validated_for_current_artifact" || validated_for_artifact === true;
   const rawByHorizon = selected?.by_horizon;
@@ -2693,7 +2602,7 @@ function ModelPerformancePage() {
       RMSE: Number((metrics["LightGBM"]?.RMSE ?? 1.5731).toFixed(4)),
       R2: Number((metrics["LightGBM"]?.R2 ?? 0.9697).toFixed(4)),
       skill: "+19.1%",
-      status: isValidated ? "Production Validated" : "Evaluated Test Overlap",
+      status: isValidated ? "Production Validated" : "Diagnostic (Training Overlap)",
       statusVariant: isValidated ? "success" : "warning"
     },
     {
@@ -2701,11 +2610,11 @@ function ModelPerformancePage() {
       shortName: "Random Forest",
       type: "Tuned Ensemble Benchmark",
       isProduction: false,
-      MAE: Number((metrics["Random Forest"]?.MAE ?? 1.2842).toFixed(4)),
-      RMSE: Number((metrics["Random Forest"]?.RMSE ?? 1.7145).toFixed(4)),
-      R2: Number((metrics["Random Forest"]?.R2 ?? 0.9634).toFixed(4)),
+      MAE: Number(((metrics["Random Forest"] ?? metrics["RandomForest"])?.MAE ?? 1.2842).toFixed(4)),
+      RMSE: Number(((metrics["Random Forest"] ?? metrics["RandomForest"])?.RMSE ?? 1.7145).toFixed(4)),
+      R2: Number(((metrics["Random Forest"] ?? metrics["RandomForest"])?.R2 ?? 0.9634).toFixed(4)),
       skill: "+10.7%",
-      status: "Candidate Benchmark",
+      status: metrics["Random Forest"] || metrics["RandomForest"] ? "Evaluated Benchmark" : "Candidate Benchmark (Pre-Audit)",
       statusVariant: "neutral"
     },
     {
@@ -2713,11 +2622,11 @@ function ModelPerformancePage() {
       shortName: "Linear Reg",
       type: "Multivariate Linear Baseline",
       isProduction: false,
-      MAE: Number((metrics["Linear Regression"]?.MAE ?? 1.3512).toFixed(4)),
-      RMSE: Number((metrics["Linear Regression"]?.RMSE ?? 1.7963).toFixed(4)),
-      R2: Number((metrics["Linear Regression"]?.R2 ?? 0.9592).toFixed(4)),
+      MAE: Number(((metrics["Linear Regression"] ?? metrics["LinearRegression"])?.MAE ?? 1.3512).toFixed(4)),
+      RMSE: Number(((metrics["Linear Regression"] ?? metrics["LinearRegression"])?.RMSE ?? 1.7963).toFixed(4)),
+      R2: Number(((metrics["Linear Regression"] ?? metrics["LinearRegression"])?.R2 ?? 0.9592).toFixed(4)),
       skill: "+6.1%",
-      status: "Linear Baseline",
+      status: metrics["Linear Regression"] || metrics["LinearRegression"] ? "Evaluated Baseline" : "Linear Baseline (Pre-Audit)",
       statusVariant: "neutral"
     },
     {
@@ -2755,8 +2664,8 @@ function ModelPerformancePage() {
       PageHead,
       {
         title: "Model Evaluation & Benchmarking",
-        desc: "Rigorous empirical evaluation of the production LightGBM multi-output model against baseline benchmarks on out-of-time test partitions.",
-        badge: /* @__PURE__ */ jsx5(Badge, { variant: isValidated ? "success" : "warning", children: isValidated ? "Production Validated" : "Diagnostic Overlap (Unvalidated)" }),
+        desc: "Diagnostic evaluation of the LightGBM multi-output model against baseline benchmarks. Metrics below are from training-overlapping data and have not been independently validated.",
+        badge: /* @__PURE__ */ jsx5(Badge, { variant: isValidated ? "success" : "warning", children: isValidated ? "Production Validated" : "Diagnostic \u2014 Pending Independent Validation" }),
         children: /* @__PURE__ */ jsx5(Badge, { neutral: true, children: "Artifact: weather_model_v3.joblib" })
       }
     ),
@@ -2774,36 +2683,36 @@ function ModelPerformancePage() {
         StatChip,
         {
           icon: /* @__PURE__ */ jsx5(TargetIcon, {}),
-          label: "Overall Test MAE",
+          label: "Diagnostic MAE",
           value: `\xB1${overallMae.toFixed(2)}\xB0C`,
-          sub: "Mean absolute error (All Horizons)"
+          sub: "Training-overlap evaluation (all horizons)"
         }
       ),
       /* @__PURE__ */ jsx5(
         StatChip,
         {
           icon: /* @__PURE__ */ jsx5(TargetIcon, {}),
-          label: "Overall RMSE",
+          label: "Diagnostic RMSE",
           value: `${overallRmse.toFixed(2)}\xB0C`,
-          sub: "Root mean squared error"
+          sub: "Training-overlap evaluation"
         }
       ),
       /* @__PURE__ */ jsx5(
         StatChip,
         {
           icon: /* @__PURE__ */ jsx5(ChartIcon, {}),
-          label: "R\xB2 Score",
+          label: "Diagnostic R\xB2",
           value: overallR2.toFixed(4),
-          sub: "Explained target variance"
+          sub: "Training-overlap evaluation"
         }
       ),
       /* @__PURE__ */ jsx5(
         StatChip,
         {
           icon: /* @__PURE__ */ jsx5(ArrowUpIcon, {}),
-          label: "Baseline Skill Score",
+          label: "Diagnostic Skill Score",
           value: "+19.1% vs Persistence",
-          sub: "Relative MAE reduction vs naive"
+          sub: "Relative MAE reduction (training-overlap)"
         }
       ),
       /* @__PURE__ */ jsx5(
@@ -2811,28 +2720,24 @@ function ModelPerformancePage() {
         {
           icon: /* @__PURE__ */ jsx5(CheckIcon, {}),
           label: "Conformal Coverage",
-          value: `${coveragePercent}%`,
-          sub: `Target 90% (q = \xB1${conformalQ}\xB0C)`
+          value: info.data.coverage_90 ? `${coveragePercent}%` : "Pending",
+          sub: info.data.coverage_90 ? `Target 90% (q = \xB1${conformalQ}\xB0C)` : "Not yet calibrated for current artifact"
         }
       )
     ] }),
-    /* @__PURE__ */ jsx5("div", { className: "advisory-callout", role: "region", "aria-label": "Evaluation Safeguards", children: /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "flex-start", gap: 10 }, children: [
-      /* @__PURE__ */ jsx5(DatabaseIcon, { style: { width: 20, height: 20, color: "var(--accent)", flexShrink: 0, marginTop: 2 } }),
+    /* @__PURE__ */ jsx5("div", { className: "advisory-callout", role: "region", "aria-label": "Evaluation Safeguards", style: { borderLeft: "4px solid var(--warning-border)" }, children: /* @__PURE__ */ jsxs5("div", { style: { display: "flex", alignItems: "flex-start", gap: 10 }, children: [
+      /* @__PURE__ */ jsx5(DatabaseIcon, { style: { width: 20, height: 20, color: "var(--warning)", flexShrink: 0, marginTop: 2 } }),
       /* @__PURE__ */ jsxs5("div", { children: [
-        /* @__PURE__ */ jsx5("strong", { style: { fontSize: "14px", display: "block", marginBottom: 4 }, children: "Out-of-Time Evaluation Protocol & Anti-Leakage Embargo Safeguards" }),
+        /* @__PURE__ */ jsx5("strong", { style: { fontSize: "14px", display: "block", marginBottom: 4 }, children: "\u26A0 Diagnostic Metrics \u2014 Independent Validation Pending" }),
         /* @__PURE__ */ jsxs5("p", { style: { margin: "0 0 6px 0", color: "var(--text-secondary)", lineHeight: 1.55 }, children: [
-          "The multi-output LightGBM model is evaluated on a strictly chronological out-of-time test window from",
+          "The metrics on this page are ",
+          /* @__PURE__ */ jsx5("strong", { children: "diagnostic scores from an evaluation where the recorded training cutoff overlaps the test window" }),
+          ". They should not be interpreted as independently validated forecasting accuracy. The test window spans",
           " ",
           /* @__PURE__ */ jsx5("strong", { children: test_period[0] }),
           " to ",
           /* @__PURE__ */ jsx5("strong", { children: test_period[1] }),
-          " (12,045 samples across all 34 Indian states and Union Territories). A mandatory ",
-          /* @__PURE__ */ jsx5("strong", { children: "8-day anti-leakage embargo" }),
-          " buffer strictly isolates the training partition (",
-          train_period[0],
-          " \u2192 ",
-          train_period[1],
-          ", 126,654 rows) from the test set, preventing multi-step autoregressive leakage."
+          ", but independent out-of-sample validation on a strictly unseen partition has not yet been completed."
         ] }),
         /* @__PURE__ */ jsxs5("div", { style: { display: "flex", gap: 16, flexWrap: "wrap", fontSize: "12px", color: "var(--text-muted)", marginTop: 6 }, children: [
           /* @__PURE__ */ jsxs5("span", { children: [
@@ -2860,7 +2765,7 @@ function ModelPerformancePage() {
       Card,
       {
         title: "Horizon-by-Horizon Performance Breakdown (Day 1 through Day 7)",
-        subtitle: "Detailed meteorological error growth across consecutive forecast lead times. Demonstrates sustained accuracy across the 7-day trajectory.",
+        subtitle: "Diagnostic error growth across forecast lead times. These scores are from training-overlapping evaluation and are not independently validated.",
         icon: /* @__PURE__ */ jsx5(CalendarIcon, {}),
         children: [
           /* @__PURE__ */ jsx5(
@@ -3027,7 +2932,7 @@ function ModelPerformancePage() {
       Card,
       {
         title: "Model Architecture Benchmark Comparison",
-        subtitle: "Comparing production LightGBM Multi-Output against machine learning benchmarks and climatological baselines.",
+        subtitle: "Diagnostic comparison of LightGBM against benchmarks. All metrics are from training-overlapping evaluation; relative rankings have not been independently confirmed.",
         icon: /* @__PURE__ */ jsx5(TargetIcon, {}),
         action: /* @__PURE__ */ jsxs5("div", { style: { display: "inline-flex", background: "var(--bg-surface-subtle)", padding: 3, borderRadius: "var(--radius-md)" }, children: [
           /* @__PURE__ */ jsx5(
@@ -3178,7 +3083,7 @@ function ModelPerformancePage() {
 }
 var FALLBACK_HORIZONS;
 var init_ModelPerformancePage = __esm({
-  "frontend/src/pages/ModelPerformancePage.tsx"() {
+  "src/pages/ModelPerformancePage.tsx"() {
     "use strict";
     init_api();
     init_useFetchMock();
@@ -3196,7 +3101,7 @@ var init_ModelPerformancePage = __esm({
   }
 });
 
-// frontend/src/pages/PredictionHistoryPage.tsx
+// src/pages/PredictionHistoryPage.tsx
 var PredictionHistoryPage_exports = {};
 __export(PredictionHistoryPage_exports, {
   PredictionHistoryPage: () => PredictionHistoryPage
@@ -3241,6 +3146,8 @@ function computeHorizonDate(baseIso, dayOffset) {
 function PredictionHistoryPage() {
   const states = useFetch(getStates, []);
   const modelInfo = useFetch(getModelInfo, []);
+  const isCalibrated = modelInfo.data?.interval_status === "calibrated" && typeof modelInfo.data?.q === "number";
+  const conformalQ = isCalibrated ? modelInfo.data.q : null;
   const [records, setRecords] = useState5([]);
   const [totalCount, setTotalCount] = useState5(0);
   const [loading, setLoading] = useState5(true);
@@ -3844,8 +3751,10 @@ function PredictionHistoryPage() {
                         day: `Day ${i + 1}`,
                         date: computeHorizonDate(selectedRecord.forecast_date, i + 1),
                         temp: Number(temp.toFixed(2)),
-                        upper: Number((temp + CONFORMAL_Q).toFixed(2)),
-                        lower: Number((temp - CONFORMAL_Q).toFixed(2))
+                        ...isCalibrated && conformalQ !== null ? {
+                          upper: Number((temp + conformalQ).toFixed(2)),
+                          lower: Number((temp - conformalQ).toFixed(2))
+                        } : {}
                       })),
                       margin: { top: 10, right: 20, bottom: 5, left: 0 },
                       children: [
@@ -3902,14 +3811,14 @@ function PredictionHistoryPage() {
                     /* @__PURE__ */ jsx6("th", { children: "Valid Date" }),
                     /* @__PURE__ */ jsx6("th", { className: "num", children: "Predicted Avg Temp (\xB0C)" }),
                     /* @__PURE__ */ jsx6("th", { className: "num", children: "Est. Diurnal (Min \u2013 Max)" }),
-                    /* @__PURE__ */ jsx6("th", { children: "90% Confidence Interval" })
+                    /* @__PURE__ */ jsx6("th", { children: isCalibrated && conformalQ !== null ? `90% Confidence Interval (\xB1${conformalQ.toFixed(2)}\xB0C)` : "Conformal Prediction Interval" })
                   ] }) }),
                   /* @__PURE__ */ jsx6("tbody", { children: selectedRecord.predicted_temp_avg.map((temp, i) => {
                     const dayDate = computeHorizonDate(selectedRecord.forecast_date, i + 1);
                     const estMin = (temp - 3.5).toFixed(1);
                     const estMax = (temp + 3.5).toFixed(1);
-                    const ciLow = (temp - CONFORMAL_Q).toFixed(1);
-                    const ciHigh = (temp + CONFORMAL_Q).toFixed(1);
+                    const ciLow = conformalQ !== null ? (temp - conformalQ).toFixed(1) : null;
+                    const ciHigh = conformalQ !== null ? (temp + conformalQ).toFixed(1) : null;
                     return /* @__PURE__ */ jsxs6("tr", { children: [
                       /* @__PURE__ */ jsx6("td", { children: /* @__PURE__ */ jsxs6(Badge, { neutral: true, children: [
                         "Day ",
@@ -3929,13 +3838,24 @@ function PredictionHistoryPage() {
                         estMax,
                         "\xB0C"
                       ] }),
-                      /* @__PURE__ */ jsx6("td", { children: /* @__PURE__ */ jsxs6("span", { style: { fontSize: "11.5px", color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }, children: [
+                      /* @__PURE__ */ jsx6("td", { children: isCalibrated && ciLow !== null && ciHigh !== null ? /* @__PURE__ */ jsxs6("span", { style: { fontSize: "11.5px", color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }, children: [
                         "[",
                         ciLow,
                         "\xB0C, ",
                         ciHigh,
                         "\xB0C]"
-                      ] }) })
+                      ] }) : /* @__PURE__ */ jsx6(
+                        "span",
+                        {
+                          style: {
+                            fontSize: "11.5px",
+                            color: "var(--text-muted)",
+                            fontStyle: "italic"
+                          },
+                          title: "Conformal intervals omitted: interval_status is not_calibrated_for_current_artifact",
+                          children: "Uncalibrated for artifact"
+                        }
+                      ) })
                     ] }, i);
                   }) })
                 ] }) }),
@@ -3957,7 +3877,8 @@ function PredictionHistoryPage() {
                       /* @__PURE__ */ jsxs6("span", { children: [
                         "Audit Verification: Stored in PostgreSQL ",
                         /* @__PURE__ */ jsx6("code", { children: "predictions" }),
-                        " table on inference request. Output array contains 7 joint multi-output predictions."
+                        " table on inference request. Output array contains 7 joint multi-output predictions.",
+                        !isCalibrated && " Empirical 90% confidence intervals are withheld because the active model artifact has not completed residual calibration (interval_status: not_calibrated_for_current_artifact)."
                       ] })
                     ]
                   }
@@ -3991,20 +3912,19 @@ function PredictionHistoryPage() {
     )
   ] });
 }
-var PAGE_SIZE_OPTIONS, CONFORMAL_Q;
+var PAGE_SIZE_OPTIONS;
 var init_PredictionHistoryPage = __esm({
-  "frontend/src/pages/PredictionHistoryPage.tsx"() {
+  "src/pages/PredictionHistoryPage.tsx"() {
     "use strict";
     init_api();
     init_useFetchMock();
     init_ui();
     init_icons();
     PAGE_SIZE_OPTIONS = [25, 50, 100];
-    CONFORMAL_Q = 2.84;
   }
 });
 
-// frontend/src/pages/MLDashboardPage.tsx
+// src/pages/MLDashboardPage.tsx
 var MLDashboardPage_exports = {};
 __export(MLDashboardPage_exports, {
   MLDashboardPage: () => MLDashboardPage
@@ -4054,18 +3974,18 @@ function MLDashboardPage() {
         StatChip,
         {
           icon: /* @__PURE__ */ jsx7(TargetIcon, {}),
-          label: "Test-Set MAE",
+          label: "Diagnostic MAE",
           value: selected?.MAE !== void 0 ? `\xB1${selected.MAE.toFixed(2)}\xB0C` : "\xB11.16\xB0C",
-          sub: "7-day horizon mean"
+          sub: "Training-overlap (7-day horizon)"
         }
       ),
       /* @__PURE__ */ jsx7(
         StatChip,
         {
           icon: /* @__PURE__ */ jsx7(ChartIcon, {}),
-          label: "Test-Set R\xB2",
+          label: "Diagnostic R\xB2",
           value: selected?.R2 !== void 0 ? selected.R2.toFixed(4) : "0.9697",
-          sub: "Variance explained"
+          sub: "Training-overlap evaluation"
         }
       ),
       /* @__PURE__ */ jsx7(
@@ -4211,7 +4131,7 @@ function MLDashboardPage() {
               /* @__PURE__ */ jsx7("dd", { children: "Mean Squared Error (Regression L2)" })
             ] }),
             /* @__PURE__ */ jsxs7("div", { className: "meta-block", children: [
-              /* @__PURE__ */ jsx7("dt", { children: "Evaluation Error" }),
+              /* @__PURE__ */ jsx7("dt", { children: "Diagnostic Error" }),
               /* @__PURE__ */ jsxs7("dd", { children: [
                 "MAE \xB1",
                 selected?.MAE !== void 0 ? selected.MAE.toFixed(2) : "1.16",
@@ -4315,7 +4235,7 @@ function MLDashboardPage() {
                   ] }),
                   /* @__PURE__ */ jsx7("td", { children: "1 Full Year" }),
                   /* @__PURE__ */ jsx7("td", { className: "num", children: evalObj?.row_counts?.test ? evalObj.row_counts.test.toLocaleString() : "12,045" }),
-                  /* @__PURE__ */ jsx7("td", { children: "Unbiased out-of-time evaluation across all 4 seasons (MAE \xB11.16\xB0C, R\xB2 0.9697)" })
+                  /* @__PURE__ */ jsx7("td", { children: "Diagnostic evaluation with training overlap (MAE \xB11.16\xB0C, R\xB2 0.9697) \u2014 independent validation pending" })
                 ] })
               ] })
             ] }) })
@@ -4450,7 +4370,7 @@ function MLDashboardPage() {
 }
 var FEATURE_TAXONOMY, TECH_STACK, SAFEGUARDS, API_ENDPOINTS;
 var init_MLDashboardPage = __esm({
-  "frontend/src/pages/MLDashboardPage.tsx"() {
+  "src/pages/MLDashboardPage.tsx"() {
     "use strict";
     init_api();
     init_useFetchMock();
@@ -4553,10 +4473,10 @@ var init_MLDashboardPage = __esm({
       },
       {
         method: "GET",
-        path: "/weather/history",
-        params: "state: str, limit: int, offset: int, district?, location?",
+        path: "/weather/{state}",
+        params: "state: str, limit: int (def: 100), offset: int (def: 0)",
         returnType: "WeatherResponse",
-        description: "Queries historical weather time-series records supporting chronological pagination, location filtering, and statistical analysis."
+        description: "Queries historical statewide weather time-series records supporting chronological pagination and statistical analysis. District and location observations accessible via /weather/{state}/{district}/{location}."
       },
       {
         method: "GET",
@@ -4569,7 +4489,7 @@ var init_MLDashboardPage = __esm({
   }
 });
 
-// frontend/tests/mocks/leafletMock.tsx
+// tests/mocks/leafletMock.tsx
 import { jsx as jsx8 } from "react/jsx-runtime";
 function MapContainer(props) {
   return /* @__PURE__ */ jsx8(
@@ -4627,7 +4547,7 @@ function useMap() {
 }
 var L, leafletMock_default;
 var init_leafletMock = __esm({
-  "frontend/tests/mocks/leafletMock.tsx"() {
+  "tests/mocks/leafletMock.tsx"() {
     LayersControl.BaseLayer = function BaseLayer(props) {
       return /* @__PURE__ */ jsx8("div", { "data-testid": "base-layer", "data-name": props.name, "data-checked": props.checked ? "true" : "false", children: props.children });
     };
@@ -4651,7 +4571,7 @@ var init_leafletMock = __esm({
   }
 });
 
-// frontend/src/services/cityWeather.ts
+// src/services/cityWeather.ts
 function wmoWeatherCode(code) {
   const map = {
     0: { description: "Clear sky", emoji: "\u2600\uFE0F" },
@@ -4764,7 +4684,7 @@ async function fetchAllCityWeather() {
 }
 var INDIAN_CITIES;
 var init_cityWeather = __esm({
-  "frontend/src/services/cityWeather.ts"() {
+  "src/services/cityWeather.ts"() {
     "use strict";
     INDIAN_CITIES = [
       // ─── METROS ────────────────────────────────────────────────
@@ -4970,7 +4890,7 @@ var init_cityWeather = __esm({
   }
 });
 
-// frontend/src/components/IndiaMap.tsx
+// src/components/IndiaMap.tsx
 import { useEffect as useEffect5, useMemo as useMemo2, useRef, useState as useState6 } from "react";
 import { jsx as jsx9, jsxs as jsxs8 } from "react/jsx-runtime";
 function normalizeStateName(raw) {
@@ -5091,6 +5011,23 @@ function MapFlyToController({ flyTarget }) {
   }, [flyTarget, map]);
   return null;
 }
+function MapResizeHandler() {
+  const map = useMap();
+  useEffect5(() => {
+    const handleResize = () => {
+      map.invalidateSize();
+    };
+    window.addEventListener("resize", handleResize);
+    const timer = setTimeout(() => {
+      map.invalidateSize();
+    }, 250);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      clearTimeout(timer);
+    };
+  }, [map]);
+  return null;
+}
 function IndiaMap({
   onSelectState,
   selectedState,
@@ -5124,22 +5061,9 @@ function IndiaMap({
     setLoading(true);
     async function loadForecasts() {
       try {
-        const BASE_URL2 = "http://127.0.0.1:8000";
-        const res = await fetch(`${BASE_URL2}/forecast/all?day=${forecastDay}`);
-        if (res.ok) {
-          const data = await res.json();
-          if (!cancelled) {
-            setForecasts(data);
-            setError(null);
-          }
-          return;
-        }
-      } catch {
-      }
-      try {
-        const fallbackData = await getForecastAll(forecastDay);
+        const data = await getForecastAll(forecastDay);
         if (!cancelled) {
-          setForecasts(fallbackData);
+          setForecasts(data);
           setError(null);
         }
       } catch (err) {
@@ -5462,6 +5386,7 @@ function IndiaMap({
         },
         children: [
           /* @__PURE__ */ jsx9(MapFlyToController, { flyTarget }),
+          /* @__PURE__ */ jsx9(MapResizeHandler, {}),
           /* @__PURE__ */ jsx9(ZoomControl, { position: "topright" }),
           /* @__PURE__ */ jsx9(AttributionControl, { position: "bottomright" }),
           /* @__PURE__ */ jsxs8(LayersControl, { position: "topright", children: [
@@ -5648,7 +5573,7 @@ function CityMarkers({
 }
 var TILE_LAYERS, METRIC_CONFIGS;
 var init_IndiaMap = __esm({
-  "frontend/src/components/IndiaMap.tsx"() {
+  "src/components/IndiaMap.tsx"() {
     "use strict";
     init_leafletMock();
     init_leafletMock();
@@ -5731,7 +5656,7 @@ var init_IndiaMap = __esm({
   }
 });
 
-// frontend/src/pages/IndiaMapPage.tsx
+// src/pages/IndiaMapPage.tsx
 var IndiaMapPage_exports = {};
 __export(IndiaMapPage_exports, {
   IndiaMapPage: () => IndiaMapPage
@@ -5788,26 +5713,15 @@ function IndiaMapPage({
         }
       }
       try {
-        const BASE_URL2 = "http://127.0.0.1:8000";
-        const forecastRes = await fetch(`${BASE_URL2}/forecast/all?day=${forecastDay}`);
-        if (forecastRes.ok) {
-          const allForecasts = await forecastRes.json();
-          if (!cancelled) {
-            const val = allForecasts[normState] ?? allForecasts[selectedState];
-            setForecastTemp(val !== void 0 ? val : null);
-          }
-        } else {
-          throw new Error("Failed to load forecast");
+        const allForecasts = await getForecastAll(forecastDay);
+        if (!cancelled) {
+          const val = allForecasts[normState] ?? allForecasts[selectedState];
+          setForecastTemp(val !== void 0 ? val : null);
         }
-      } catch {
-        try {
-          const fallbackForecasts = await getForecastAll(forecastDay);
-          if (!cancelled) {
-            const val = fallbackForecasts[normState] ?? fallbackForecasts[selectedState];
-            setForecastTemp(val !== void 0 ? val : null);
-          }
-        } catch {
-          if (!cancelled) setForecastTemp(null);
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("Could not load day forecast for state:", selectedState, err);
+          setForecastTemp(null);
         }
       } finally {
         if (!cancelled) {
@@ -6104,7 +6018,7 @@ function IndiaMapPage({
 }
 var KEY_STATES;
 var init_IndiaMapPage = __esm({
-  "frontend/src/pages/IndiaMapPage.tsx"() {
+  "src/pages/IndiaMapPage.tsx"() {
     "use strict";
     init_IndiaMap();
     init_icons();
@@ -6121,11 +6035,11 @@ var init_IndiaMapPage = __esm({
   }
 });
 
-// frontend/tests/tier4_real_world.test.tsx
+// tests/tier4_real_world.test.tsx
 import { describe, it, beforeEach, afterEach } from "node:test";
 import assert2 from "node:assert/strict";
 
-// frontend/tests/mocks/testUtils.tsx
+// tests/mocks/testUtils.tsx
 import { renderToStaticMarkup } from "react-dom/server";
 import assert from "node:assert/strict";
 function renderComponent(element) {
@@ -6152,13 +6066,13 @@ Actual snippet: ${html.slice(0, 300)}...`
   );
 }
 
-// frontend/tests/tier4_real_world.test.tsx
+// tests/tier4_real_world.test.tsx
 init_useFetchMock();
 
-// frontend/src/App.tsx
+// src/App.tsx
 import { lazy, Suspense, useState as useState8, useEffect as useEffect7 } from "react";
 
-// frontend/src/hooks/useHealth.ts
+// src/hooks/useHealth.ts
 init_api();
 import { useEffect, useState } from "react";
 function useHealth() {
@@ -6194,7 +6108,7 @@ function useHealth() {
   return { health, detail };
 }
 
-// frontend/src/App.tsx
+// src/App.tsx
 init_icons();
 import { Fragment as Fragment4, jsx as jsx11, jsxs as jsxs10 } from "react/jsx-runtime";
 var ForecastPage2 = lazy(
@@ -6278,7 +6192,7 @@ function App() {
         "aria-hidden": "true"
       }
     ),
-    /* @__PURE__ */ jsxs10("aside", { className: `app-sidebar ${collapsed ? "collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`, children: [
+    /* @__PURE__ */ jsxs10("aside", { className: `app-sidebar ${collapsed && !mobileOpen ? "collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`, children: [
       /* @__PURE__ */ jsxs10("div", { className: "sidebar-header", children: [
         /* @__PURE__ */ jsx11("div", { className: "sidebar-logo-icon", children: /* @__PURE__ */ jsx11(SparkIcon, {}) }),
         /* @__PURE__ */ jsxs10("div", { className: "sidebar-brand-text", children: [
@@ -6357,14 +6271,15 @@ function App() {
             }
           ),
           /* @__PURE__ */ jsxs10("div", { className: "topbar-breadcrumbs", children: [
-            /* @__PURE__ */ jsx11("span", { children: "Platform" }),
-            /* @__PURE__ */ jsx11("span", { style: { opacity: 0.4 }, children: "/" }),
+            /* @__PURE__ */ jsx11("span", { className: "breadcrumb-root", children: "Platform" }),
+            /* @__PURE__ */ jsx11("span", { className: "breadcrumb-sep", style: { opacity: 0.4 }, children: "/" }),
             /* @__PURE__ */ jsx11("span", { className: "current", children: currentModule.label }),
             selectedState && /* @__PURE__ */ jsxs10(Fragment4, { children: [
-              /* @__PURE__ */ jsx11("span", { style: { opacity: 0.4 }, children: "/" }),
+              /* @__PURE__ */ jsx11("span", { className: "breadcrumb-sep", style: { opacity: 0.4 }, children: "/" }),
               /* @__PURE__ */ jsx11(
                 "span",
                 {
+                  className: "breadcrumb-state",
                   style: {
                     background: "var(--accent-subtle)",
                     color: "var(--accent)",
@@ -6426,14 +6341,14 @@ function App() {
         ] }),
         /* @__PURE__ */ jsxs10("div", { style: { display: "flex", alignItems: "center", gap: 16, fontSize: 11.5 }, children: [
           /* @__PURE__ */ jsx11("span", { children: "Architecture: React 18 \xB7 FastAPI \xB7 PostgreSQL \xB7 LightGBM" }),
-          /* @__PURE__ */ jsx11("span", { children: "Test-Set MAE: \xB11.25\xB0C" })
+          /* @__PURE__ */ jsx11("span", { children: "Diagnostic MAE: \xB11.16\xB0C (validation pending)" })
         ] })
       ] })
     ] })
   ] });
 }
 
-// frontend/tests/tier4_real_world.test.tsx
+// tests/tier4_real_world.test.tsx
 init_ForecastPage();
 init_IndiaMapPage();
 init_MLDashboardPage();
@@ -6495,7 +6410,7 @@ describe("Tier 4: Real-World Scenarios", () => {
       assertContains(html, "Weather Forecast");
       assertContains(html, "status-pill");
       assertContains(html, "Architecture: React 18 \xB7 FastAPI \xB7 PostgreSQL \xB7 LightGBM");
-      assertContains(html, "Test-Set MAE: \xB11.25\xB0C");
+      assertContains(html, "Diagnostic MAE: \xB11.16\xB0C (validation pending)");
     });
     it("executes the sequential operator journey through each module page", () => {
       const forecastHtml = renderComponent(/* @__PURE__ */ jsx12(ForecastPage, {}));
@@ -6517,7 +6432,7 @@ describe("Tier 4: Real-World Scenarios", () => {
       assertContains(historyHtml, "Choose an Indian state from the filter toolbar above");
       const modelHtml = renderComponent(/* @__PURE__ */ jsx12(ModelPerformancePage, {}));
       assertContains(modelHtml, "Model Evaluation &amp; Benchmarking");
-      assertContains(modelHtml, "Overall Test MAE");
+      assertContains(modelHtml, "Diagnostic MAE");
       assertContains(modelHtml, "Horizon-by-Horizon Performance Breakdown");
       const auditHtml = renderComponent(/* @__PURE__ */ jsx12(PredictionHistoryPage, {}));
       assertContains(auditHtml, "Prediction History &amp; Audit Log");
@@ -6639,11 +6554,21 @@ describe("Tier 4: Real-World Scenarios", () => {
       assertContains(html, 'class="mobile-overlay "');
       assertContains(html, 'aria-hidden="true"');
     });
+    it("ensures mobileOpen drawer suppresses collapsed class to preserve labels", () => {
+      localStorage.setItem("weathercast_sidebar_collapsed", "true");
+      const html = renderComponent(/* @__PURE__ */ jsx12(App, {}));
+      assertMatches(html, /app-sidebar collapsed/);
+      assertContains(html, "sidebar-brand-text");
+      assertContains(html, "sidebar-title");
+      assertContains(html, "WeatherCast India");
+      assertContains(html, "sidebar-subtitle");
+    });
   });
   describe("4.6 Breadcrumbs Synchronization", () => {
     it("renders base breadcrumb path with platform root and module name", () => {
       const html = renderComponent(/* @__PURE__ */ jsx12(App, {}));
       assertContains(html, "topbar-breadcrumbs");
+      assertContains(html, "breadcrumb-root");
       assertContains(html, "Platform");
       assertContains(html, '<span class="current">Weather Forecast</span>');
     });

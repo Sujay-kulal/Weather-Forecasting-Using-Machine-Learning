@@ -62,6 +62,8 @@ describe("Tier 3: Cross-Feature Combinations", () => {
 
       // Verify ForecastPage accepts Karnataka and renders state in selector/badge
       assertContains(forecastHtml, "Karnataka");
+      assertContains(forecastHtml, "Operational Scope:");
+      assertNotContains(forecastHtml, "Choose District…");
     });
   });
 

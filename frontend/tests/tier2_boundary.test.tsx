@@ -97,7 +97,7 @@ describe("Tier 2: Boundary & Corner Cases", () => {
 
       const html = renderComponent(<ModelPerformancePage />);
       assertContains(html, "Model Evaluation &amp; Benchmarking");
-      assertContains(html, "Diagnostic Overlap (Unvalidated)");
+      assertContains(html, "Diagnostic — Pending Independent Validation");
       assertContains(html, "LightGBM Multi-Output");
       // Should not throw and should handle missing coverage gracefully
       assertNotContains(html, "NaN");

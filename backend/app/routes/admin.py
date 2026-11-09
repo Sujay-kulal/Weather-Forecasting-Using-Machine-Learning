@@ -2,6 +2,7 @@
 Admin endpoints.
 POST /admin/ingest triggers the weather ingestion job, guarded by X-Admin-Token header.
 """
+import logging
 import os
 import secrets
 from typing import Optional
@@ -9,6 +10,7 @@ from fastapi import APIRouter, Header, HTTPException, Query
 from app.schemas import IngestionResponse
 from app.services.ingestion_service import run_ingestion_with_lock
 
+logger = logging.getLogger("admin")
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
@@ -30,4 +32,5 @@ def admin_ingest(
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {exc}")
+        logger.error("Admin ingestion failed: %s", exc, exc_info=True)
+        raise HTTPException(status_code=500, detail="Weather data ingestion failed due to an internal server error.")

@@ -134,31 +134,49 @@ export interface PredictionRecord {
   location?: string;
   forecast_date: string;
   predicted_temp_avg: number[];
+  model_version?: string | null;
+  actual_temp?: number | null;
   created_at: string;
 }
 
 export interface PredictionsResponse {
-  count: number; // NOTE: page size, not total (backend limitation)
+  count: number;
   predictions: PredictionRecord[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface HorizonMetric {
+  MAE: number;
+  RMSE: number;
+  R2: number;
 }
 
 export interface ModelMetrics {
   MAE: number;
   RMSE: number;
   R2: number;
+  overall?: HorizonMetric;
+  by_horizon?: Record<string, HorizonMetric>;
 }
 
 export interface ModelInfoResponse {
   model_name: string;
+  loaded_artifact_version: string;
   target: string;
   features: string[];
   metrics: Record<string, ModelMetrics>;
   train_period: string[];
   test_period: string[];
+  calibration_period?: string[] | null;
   trained_through?: string;
-  q?: number;
-  coverage_90?: number;
-  metrics_status?: string;
-  interval_status?: string;
-  evaluation_note?: string;
+  q?: number | null;
+  coverage_90?: number | null;
+  metrics_status?: string | null;
+  validated_for_artifact?: boolean | null;
+  interval_status?: string | null;
+  evaluation_note?: string | null;
+  evaluation?: Record<string, any> | null;
 }
+

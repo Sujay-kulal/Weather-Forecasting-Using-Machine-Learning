@@ -2,12 +2,13 @@
 Prediction endpoints.
 
 POST /predict implements the Phase 2 pipeline:
-  PostgreSQL -> 7 records before D-1 (training row for target D) -> exact 13
+  PostgreSQL -> 7 records before D-1 (training row for target D) -> exact 20
   training features -> weather_model.joblib -> predicted Temp_Avg ->
   predictions table -> JSON response. No future data, no stale data,
   no hardcoded values.
 """
 from datetime import date as date_type, timedelta
+import math
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select
@@ -17,7 +18,7 @@ from app.database import get_db
 from app.models import Prediction, WeatherData
 from app.schemas import (ModelInfoResponse, PredictionRecord, PredictionRequest,
                          PredictionResponse, PredictionsResponse, LiveMetricsResponse)
-from app.services import feature_service, model_service, weather_forecast_service
+from app.services import feature_service, model_service, open_meteo_service, weather_forecast_service
 from app.services.metrics_service import rolling_live_metrics
 from app.services.prediction_store import upsert_prediction
 from app.services.resolve_location import resolve_location
@@ -30,28 +31,44 @@ router = APIRouter(tags=["prediction"])
 
 @router.post("/predict", response_model=PredictionResponse)
 def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_db)):
-    # 1. Validate the state/district/location against the database
-    canonical, dist, loc = resolve_location(
-        request.state, request.district or "", request.location or "", db
-    )
+    # 1. Reject district and location inputs: ML model only supports state-level forecasts
+    if (request.district and request.district.strip()) or (request.location and request.location.strip()):
+        raise HTTPException(
+            422,
+            detail="The deployed machine learning model only supports statewide forecasts for the 33 validated states/UTs. District- and location-level ML predictions are not supported.",
+        )
 
-    # 2. Reproduce the training row t = D-1: its lags/rolls come from the
+    # 2. Validate the state against the supported 33 states/UTs
+    canonical = request.state.strip().title()
+    supported_states = set(model_service.model_info.get("states", []))
+    if canonical not in supported_states or canonical == "Other":
+        raise HTTPException(
+            422,
+            detail=f"State '{request.state}' is not supported by the deployed ML model.",
+        )
+
+    # Validate against database
+    canonical, _, _ = resolve_location(canonical, "", "", db)
+
+    # 3. Reproduce the training row t = D-1: its lags/rolls come from the
     #    7 records STRICTLY BEFORE D-1 (measurements D-2 ... D-8) and its
     #    target is day D. `date < asof` guarantees no future-data leakage.
     asof = request.forecast_date - timedelta(days=1)
+    today = getattr(req.app.state, "today", None) or open_meteo_service.india_today()
     history = db.execute(
         select(WeatherData)
         .where(
             WeatherData.state == canonical,
-            WeatherData.district == dist,
-            WeatherData.location == loc,
-            WeatherData.date < asof
+            WeatherData.district == "",
+            WeatherData.location == "",
+            WeatherData.date < asof,
+            WeatherData.date < today,
         )
         .order_by(WeatherData.date.desc())
         .limit(REQUIRED_HISTORY)
     ).scalars().all()
 
-    loc_str = canonical if not loc else f"{canonical}/{dist}/{loc}"
+    loc_str = canonical
 
     if len(history) < REQUIRED_HISTORY:
         raise HTTPException(
@@ -61,7 +78,18 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
                    f"prior to {asof}, found {len(history)}."
         )
 
-    # 3. Refuse stale history: if the newest usable record is far older than
+    # 4. Enforce exactly 7 consecutive calendar days: D-2 down to D-8
+    expected_dates = [asof - timedelta(days=i) for i in range(1, REQUIRED_HISTORY + 1)]
+    for i, r in enumerate(history[:REQUIRED_HISTORY]):
+        r_date = r.date.date() if hasattr(r.date, "date") and callable(r.date.date) else r.date
+        if r_date != expected_dates[i]:
+            raise HTTPException(
+                422,
+                detail=f"Historical observations for '{loc_str}' must represent {REQUIRED_HISTORY} consecutive calendar days "
+                       f"ending at {expected_dates[0]} (D-2). Record at index {i} has date {r_date}, expected {expected_dates[i]}."
+            )
+
+    # 5. Refuse stale history: if the newest usable record is far older than
     #    D-1, this is not a genuine next-day forecast anymore.
     staleness = (asof - history[0].date).days
     if staleness > MAX_STALENESS_DAYS:
@@ -72,28 +100,32 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
                    f"A forecast needs data up to ~2 days before the target date.",
         )
 
-    # 4. Check TTLCache for prediction computation, keyed (state, target_date, latest_data_date)
+    # 5. Check TTLCache for prediction computation, keyed (state, target_date, latest_data_date)
     cache_key = (canonical, request.forecast_date, history[0].date)
     if cache_key in prediction_cache:
         predicted = prediction_cache[cache_key]
     else:
         # Build features and predict with saved model (from app.state if available)
         try:
-            features = build_features(history, canonical, asof)
+            features = build_features(history, canonical, asof, today=today)
             pipeline = getattr(req.app.state, "pipeline", None)
             predicted = model_service.predict(features, pipeline=pipeline)
+            if not predicted or len(predicted) != 7 or not all(math.isfinite(p) for p in predicted):
+                raise ValueError("Model produced invalid or non-finite predictions.")
             prediction_cache[cache_key] = predicted
         except feature_service.InsufficientHistoryError as exc:
             raise HTTPException(422, detail=str(exc))
+        except HTTPException:
+            raise
         except Exception as exc:  # model failure -> honest 500, never fake values
             raise HTTPException(500, detail=f"Model prediction failed: {exc}")
 
-    # 5. Store the prediction audit record (MUST write on every call, including cache hits)
+    # 6. Store the prediction audit record (MUST write on every call, including cache hits)
     upsert_prediction(
         db,
         state=canonical,
-        district=dist,
-        location=loc,
+        district="",
+        location="",
         forecast_date=request.forecast_date,
         predicted_temp_avg=predicted,
         model_version=model_service.MODEL_VERSION,
@@ -117,8 +149,8 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
 
     return PredictionResponse(
         state=canonical,
-        district=dist,
-        location=loc,
+        district="",
+        location="",
         forecast_date=request.forecast_date,
         predicted_temp_avg=[round_temperature(p) for p in predicted],
         unit="deg C",
@@ -215,6 +247,7 @@ def forecast_all(
     else:
         target_date = date
 
+    today = getattr(req.app.state, "today", None) or open_meteo_service.india_today()
     asof = target_date - timedelta(days=1)
     pipeline = getattr(req.app.state, "pipeline", None)
     states = [state for state in model_service.model_info.get("states", []) if state != "Other"]
@@ -227,6 +260,7 @@ def forecast_all(
                 WeatherData.district == "",
                 WeatherData.location == "",
                 WeatherData.date < asof,
+                WeatherData.date < today,
             )
             .order_by(WeatherData.date.desc())
             .limit(REQUIRED_HISTORY)
@@ -237,7 +271,7 @@ def forecast_all(
         try:
             predicted = prediction_cache.get(key)
             if predicted is None:
-                features = build_features(history, state, asof)
+                features = build_features(history, state, asof, today=today)
                 predicted = model_service.predict(features, pipeline=pipeline)
                 prediction_cache[key] = predicted
             if len(predicted) >= day:

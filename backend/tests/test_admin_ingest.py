@@ -156,4 +156,5 @@ def test_admin_ingest_service_exception_returns_500(client, monkeypatch):
         response = client.post("/admin/ingest", headers={"X-Admin-Token": "valid-secret-token"})
 
     assert response.status_code == 500
-    assert "Ingestion failed: Database lock timeout" in response.json()["detail"]
+    assert response.json()["detail"] == "Weather data ingestion failed due to an internal server error."
+    assert "Database lock timeout" not in response.text

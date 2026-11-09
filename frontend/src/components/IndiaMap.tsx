@@ -302,24 +302,9 @@ export function IndiaMap({
 
     async function loadForecasts() {
       try {
-        const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://127.0.0.1:8000";
-        const res = await fetch(`${BASE_URL}/forecast/all?day=${forecastDay}`);
-        if (res.ok) {
-          const data = (await res.json()) as Record<string, number>;
-          if (!cancelled) {
-            setForecasts(data);
-            setError(null);
-          }
-          return;
-        }
-      } catch {
-        // Fall back to central API client
-      }
-
-      try {
-        const fallbackData = await getForecastAll(forecastDay);
+        const data = await getForecastAll(forecastDay);
         if (!cancelled) {
-          setForecasts(fallbackData);
+          setForecasts(data);
           setError(null);
         }
       } catch (err) {

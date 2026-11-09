@@ -3,7 +3,7 @@ Ingestion service managing the scheduled/admin weather ingestion job
 with PostgreSQL advisory locks, exception handling, and cache invalidation.
 """
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, date
 from typing import Optional
 
 from sqlalchemy import text
@@ -22,7 +22,7 @@ def get_last_ingested_at() -> Optional[datetime]:
     global _last_ingested_at
     return _last_ingested_at
 
-def run_ingestion_with_lock(days_back: int = 7) -> update_weather.IngestionSummary:
+def run_ingestion_with_lock(days_back: int = 7, today: Optional[date] = None) -> update_weather.IngestionSummary:
     """
     Runs the weather ingestion with a PostgreSQL advisory lock to ensure
     only one ingestion job runs across workers/processes.
@@ -71,7 +71,10 @@ def run_ingestion_with_lock(days_back: int = 7) -> update_weather.IngestionSumma
         logger.info(f"Acquired advisory lock ({ADVISORY_LOCK_ID}). Starting ingestion (days_back={days_back})...")
 
         # Run upsert ingestion
-        raw_result = update_weather.update_weather(days_back=days_back, session=session)
+        if today is not None:
+            raw_result = update_weather.update_weather(days_back=days_back, session=session, today=today)
+        else:
+            raw_result = update_weather.update_weather(days_back=days_back, session=session)
 
         # Normalize result to IngestionSummary
         if isinstance(raw_result, update_weather.IngestionSummary):

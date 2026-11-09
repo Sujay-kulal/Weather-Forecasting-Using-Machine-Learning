@@ -91,26 +91,15 @@ export function IndiaMapPage({
 
       // 2. Fetch Day forecast temperature for this state
       try {
-        const BASE_URL = (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://127.0.0.1:8000";
-        const forecastRes = await fetch(`${BASE_URL}/forecast/all?day=${forecastDay}`);
-        if (forecastRes.ok) {
-          const allForecasts = (await forecastRes.json()) as Record<string, number>;
-          if (!cancelled) {
-            const val = allForecasts[normState] ?? allForecasts[selectedState];
-            setForecastTemp(val !== undefined ? val : null);
-          }
-        } else {
-          throw new Error("Failed to load forecast");
+        const allForecasts = await getForecastAll(forecastDay);
+        if (!cancelled) {
+          const val = allForecasts[normState] ?? allForecasts[selectedState];
+          setForecastTemp(val !== undefined ? val : null);
         }
-      } catch {
-        try {
-          const fallbackForecasts = await getForecastAll(forecastDay);
-          if (!cancelled) {
-            const val = fallbackForecasts[normState] ?? fallbackForecasts[selectedState];
-            setForecastTemp(val !== undefined ? val : null);
-          }
-        } catch {
-          if (!cancelled) setForecastTemp(null);
+      } catch (err) {
+        if (!cancelled) {
+          console.warn("Could not load day forecast for state:", selectedState, err);
+          setForecastTemp(null);
         }
       } finally {
         if (!cancelled) {

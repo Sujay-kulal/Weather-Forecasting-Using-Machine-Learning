@@ -28,6 +28,41 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CSV_PATH = PROJECT_ROOT / "data" / "archive_c" / "PSP_Weather_Merged_EDA_Cleaned.csv"
 
 
+def import_weather_dataframe(df: pd.DataFrame, session) -> tuple[int, int]:
+    """Import cleaned weather dataframe into the database session, skipping existing statewide rows.
+
+    Returns (added_count, skipped_count).
+    """
+    existing = set(
+        session.execute(
+            select(WeatherData.state, WeatherData.date).where(
+                WeatherData.district == "", WeatherData.location == ""
+            )
+        ).all()
+    )
+
+    added, skipped, buffer = 0, 0, []
+    for row in df.itertuples(index=False):
+        if (row.state, row.date) in existing:
+            skipped += 1
+            continue
+        buffer.append(WeatherData(date=row.date, state=row.state,
+                                  district="", location="",
+                                  temp_max=row.temp_max, temp_min=row.temp_min,
+                                  temp_avg=row.temp_avg, humidity=row.humidity,
+                                  rainfall=row.rainfall))
+        added += 1
+        if len(buffer) >= 5000:  # batch commit with progress
+            session.add_all(buffer)
+            session.commit()
+            print(f"      ... {added} imported")
+            buffer = []
+    if buffer:
+        session.add_all(buffer)
+        session.commit()
+    return added, skipped
+
+
 def main():
     load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -69,27 +104,7 @@ def main():
     t0 = time.time()
     session = SessionLocal()
     try:
-        existing = set(session.execute(select(WeatherData.state, WeatherData.date)).all())
-        print(f"      rows already in database: {len(existing)}")
-
-        added, skipped, buffer = 0, 0, []
-        for row in df.itertuples(index=False):
-            if (row.state, row.date) in existing:
-                skipped += 1
-                continue
-            buffer.append(WeatherData(date=row.date, state=row.state,
-                                      temp_max=row.temp_max, temp_min=row.temp_min,
-                                      temp_avg=row.temp_avg, humidity=row.humidity,
-                                      rainfall=row.rainfall))
-            added += 1
-            if len(buffer) >= 5000:  # batch commit with progress
-                session.add_all(buffer)
-                session.commit()
-                print(f"      ... {added} imported")
-                buffer = []
-        if buffer:
-            session.add_all(buffer)
-            session.commit()
+        added, skipped = import_weather_dataframe(df, session)
     finally:
         session.close()
 

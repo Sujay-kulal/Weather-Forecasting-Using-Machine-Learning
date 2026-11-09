@@ -37,7 +37,7 @@ import {
 } from "../components/icons";
 import type { WeatherRecord } from "../types/api";
 
-type SortKey = "date" | "temp_max" | "temp_avg" | "temp_min" | "humidity" | "rainfall" | "wind_speed";
+type SortKey = "date" | "temp_max" | "temp_avg" | "temp_min" | "humidity" | "rainfall";
 type SortOrder = "asc" | "desc";
 type ChartView = "temperature" | "hydrology" | "combined";
 
@@ -336,11 +336,6 @@ export function WeatherHistoryPage() {
     return [...filteredRecords].sort((a, b) => {
       if (sortKey === "date") {
         return sortOrder === "asc" ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date);
-      }
-      if (sortKey === "wind_speed") {
-        const aVal = (a as any).wind_speed ?? 0;
-        const bVal = (b as any).wind_speed ?? 0;
-        return sortOrder === "asc" ? aVal - bVal : bVal - aVal;
       }
       const aVal = a[sortKey] ?? 0;
       const bVal = b[sortKey] ?? 0;
@@ -1030,28 +1025,6 @@ export function WeatherHistoryPage() {
                           {renderSortIndicator("rainfall")}
                         </div>
                       </th>
-                      <th
-                        className="num"
-                        onClick={() => toggleSort("wind_speed")}
-                        style={{ cursor: "pointer", userSelect: "none" }}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") toggleSort("wind_speed");
-                        }}
-                      >
-                        <div
-                          style={{
-                            display: "inline-flex",
-                            alignItems: "center",
-                            justifyContent: "flex-end",
-                            width: "100%",
-                          }}
-                        >
-                          <span>Wind Speed</span>
-                          {renderSortIndicator("wind_speed")}
-                        </div>
-                      </th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1063,11 +1036,6 @@ export function WeatherHistoryPage() {
                         <td className="num">{r.temp_min.toFixed(1)}</td>
                         <td className="num">{r.humidity.toFixed(0)} %</td>
                         <td className="num">{r.rainfall.toFixed(1)}</td>
-                        <td className="num" style={{ color: "var(--text-faint)" }}>
-                          {(r as any).wind_speed != null
-                            ? `${Number((r as any).wind_speed).toFixed(1)} km/h`
-                            : "—"}
-                        </td>
                       </tr>
                     ))}
                   </tbody>
