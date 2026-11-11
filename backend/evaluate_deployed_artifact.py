@@ -530,13 +530,14 @@ def run_evaluation(
         available_post_cutoff_days = max(0, (max_available_date - training_cutoff).days)
         preliminary_feasible = False
         if available_post_cutoff_days == 0:
+            origins_span = f"({eligible_origins_range[0]} to {eligible_origins_range[1]})" if eligible_origins_range else "(none)"
             preliminary_assessment = (
                 f"An honest preliminary evaluation cannot be performed: zero post-cutoff observations "
                 f"exist in the available dataset (dataset ends {max_available_date}, training cutoff is {training_cutoff}). "
                 f"Under strict chronological separation, the first eligible origin is {first_eligible_origin}, "
                 f"which requires target observations through {first_eligible_origin + timedelta(days=HORIZON_DAYS)}. "
                 f"Even if all {hist_elapsed_days} elapsed calendar days through today ({today_date}) were collected, at most "
-                f"{eligible_origins_count} forecast origins ({eligible_origins_range[0]} to {eligible_origins_range[1]}) would have "
+                f"{eligible_origins_count} forecast origins {origins_span} would have "
                 f"complete 7-day targets. Evaluating on only {eligible_origins_count} origins violates the mandatory minimum "
                 f"sample size requirement (30 forecast origins) and provides insufficient statistical power for valid inference."
             )
@@ -545,6 +546,10 @@ def run_evaluation(
                 f"Available post-cutoff observations ({available_post_cutoff_days} days) are insufficient to support "
                 f"the mandatory 30-origin sample window without violating the 8-day embargo or chronological separation."
             )
+
+        hist_range_str = f"({hist_elapsed_range[0]} to {hist_elapsed_range[1]})" if hist_elapsed_range else "(none)"
+        future_range_str = f"({future_unobservable_range[0]} to {future_unobservable_range[1]})" if future_unobservable_range else "(none)"
+        eligible_range_str = f"({eligible_origins_range[0]} to {eligible_origins_range[1]})" if eligible_origins_range else "(none)"
 
         result = {
             "status": "insufficient_post_cutoff_data",
@@ -604,10 +609,10 @@ def run_evaluation(
             "note": (
                 f"Evaluation of a {test_window_origins}-day window requires {total_required_coverage_days} calendar days "
                 f"of post-cutoff data coverage (through {required_target_end}), comprising {hist_elapsed_days} historical "
-                f"elapsed days ({hist_elapsed_range[0]} to {hist_elapsed_range[1]}) and {future_unobservable_days} future "
-                f"unobservable days ({future_unobservable_range[0]} to {future_unobservable_range[1]}). "
+                f"elapsed days {hist_range_str} and {future_unobservable_days} future "
+                f"unobservable days {future_range_str}. "
                 f"Currently, exactly {eligible_origins_count} eligible complete evaluation origins exist "
-                f"({eligible_origins_range[0]} to {eligible_origins_range[1]}), which cannot satisfy the mandatory 30-origin minimum sample size."
+                f"{eligible_range_str}, which cannot satisfy the mandatory 30-origin minimum sample size."
             ),
         }
         target_output.parent.mkdir(parents=True, exist_ok=True)
