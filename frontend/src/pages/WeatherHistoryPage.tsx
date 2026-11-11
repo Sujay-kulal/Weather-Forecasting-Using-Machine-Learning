@@ -445,7 +445,12 @@ export function WeatherHistoryPage() {
             ) : states.error ? (
               <ErrorBanner message={states.error.message} />
             ) : (
-              <select value={state} onChange={(e) => onStateChange(e.target.value)}>
+              <select
+                id="weather-state-select"
+                name="state"
+                value={state}
+                onChange={(e) => onStateChange(e.target.value)}
+              >
                 <option value="">Select an Indian state…</option>
                 {states.data?.states.map((s) => (
                   <option key={s} value={s}>
@@ -463,6 +468,8 @@ export function WeatherHistoryPage() {
               <Spinner label="Loading districts…" />
             ) : (
               <select
+                id="weather-district-select"
+                name="district"
                 value={district}
                 onChange={(e) => onDistrictChange(e.target.value)}
                 disabled={!state || !hasDistricts}
@@ -486,6 +493,8 @@ export function WeatherHistoryPage() {
               <Spinner label="Loading stations…" />
             ) : (
               <select
+                id="weather-location-select"
+                name="location"
                 value={location}
                 onChange={(e) => onLocationChange(e.target.value)}
                 disabled={!district || !hasLocations}
@@ -516,6 +525,8 @@ export function WeatherHistoryPage() {
           <label className="field" style={{ margin: 0 }}>
             <span>Start Date</span>
             <input
+              id="weather-start-date"
+              name="startDate"
               type="date"
               value={startDate}
               onChange={(e) => {
@@ -530,6 +541,8 @@ export function WeatherHistoryPage() {
           <label className="field" style={{ margin: 0 }}>
             <span>End Date</span>
             <input
+              id="weather-end-date"
+              name="endDate"
               type="date"
               value={endDate}
               onChange={(e) => {
@@ -545,6 +558,8 @@ export function WeatherHistoryPage() {
             <span>Search Observations</span>
             <div style={{ position: "relative", width: "100%" }}>
               <input
+                id="weather-search-query"
+                name="searchQuery"
                 type="search"
                 placeholder="Filter by date (YYYY-MM), station, or remarks (e.g. rain, hot)…"
                 value={searchQuery}

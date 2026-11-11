@@ -304,6 +304,8 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                 <ErrorBanner message={states.error.message} onRetry={states.retry} />
               ) : (
                 <select
+                  id="forecast-state-select"
+                  name="state"
                   value={state}
                   onChange={(e) => {
                     setState(e.target.value);
@@ -332,6 +334,8 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                 <span style={{ color: "var(--danger)" }}>*</span>
               </span>
               <input
+                id="forecast-target-date"
+                name="targetDate"
                 type="date"
                 value={date}
                 onChange={(e) => {

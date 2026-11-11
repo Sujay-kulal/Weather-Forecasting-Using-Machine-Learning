@@ -2431,10 +2431,19 @@ function WeatherHistoryPage() {
           children: [
             /* @__PURE__ */ jsxs5("label", { className: "field", style: { margin: 0 }, children: [
               /* @__PURE__ */ jsx6("span", { children: "State" }),
-              states.loading ? /* @__PURE__ */ jsx6(Spinner, { label: "Loading states\u2026" }) : states.error ? /* @__PURE__ */ jsx6(ErrorBanner, { message: states.error.message }) : /* @__PURE__ */ jsxs5("select", { value: state, onChange: (e) => onStateChange(e.target.value), children: [
-                /* @__PURE__ */ jsx6("option", { value: "", children: "Select an Indian state\u2026" }),
-                states.data?.states.map((s) => /* @__PURE__ */ jsx6("option", { value: s, children: s }, s))
-              ] })
+              states.loading ? /* @__PURE__ */ jsx6(Spinner, { label: "Loading states\u2026" }) : states.error ? /* @__PURE__ */ jsx6(ErrorBanner, { message: states.error.message }) : /* @__PURE__ */ jsxs5(
+                "select",
+                {
+                  id: "weather-state-select",
+                  name: "state",
+                  value: state,
+                  onChange: (e) => onStateChange(e.target.value),
+                  children: [
+                    /* @__PURE__ */ jsx6("option", { value: "", children: "Select an Indian state\u2026" }),
+                    states.data?.states.map((s) => /* @__PURE__ */ jsx6("option", { value: s, children: s }, s))
+                  ]
+                }
+              )
             ] }),
             /* @__PURE__ */ jsxs5("label", { className: "field", style: { margin: 0 }, children: [
               /* @__PURE__ */ jsxs5("span", { children: [
@@ -2444,6 +2453,8 @@ function WeatherHistoryPage() {
               districtsFetch.loading ? /* @__PURE__ */ jsx6(Spinner, { label: "Loading districts\u2026" }) : /* @__PURE__ */ jsxs5(
                 "select",
                 {
+                  id: "weather-district-select",
+                  name: "district",
                   value: district,
                   onChange: (e) => onDistrictChange(e.target.value),
                   disabled: !state || !hasDistricts,
@@ -2459,6 +2470,8 @@ function WeatherHistoryPage() {
               locationsFetch.loading ? /* @__PURE__ */ jsx6(Spinner, { label: "Loading stations\u2026" }) : /* @__PURE__ */ jsxs5(
                 "select",
                 {
+                  id: "weather-location-select",
+                  name: "location",
                   value: location,
                   onChange: (e) => onLocationChange(e.target.value),
                   disabled: !district || !hasLocations,
@@ -2487,6 +2500,8 @@ function WeatherHistoryPage() {
               /* @__PURE__ */ jsx6(
                 "input",
                 {
+                  id: "weather-start-date",
+                  name: "startDate",
                   type: "date",
                   value: startDate,
                   onChange: (e) => {
@@ -2502,6 +2517,8 @@ function WeatherHistoryPage() {
               /* @__PURE__ */ jsx6(
                 "input",
                 {
+                  id: "weather-end-date",
+                  name: "endDate",
                   type: "date",
                   value: endDate,
                   onChange: (e) => {
@@ -2518,6 +2535,8 @@ function WeatherHistoryPage() {
                 /* @__PURE__ */ jsx6(
                   "input",
                   {
+                    id: "weather-search-query",
+                    name: "searchQuery",
                     type: "search",
                     placeholder: "Filter by date (YYYY-MM), station, or remarks (e.g. rain, hot)\u2026",
                     value: searchQuery,
