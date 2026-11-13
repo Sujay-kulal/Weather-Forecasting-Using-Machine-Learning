@@ -22,6 +22,12 @@ RUN pip install --no-cache-dir -r ./backend/requirements.txt
 COPY backend ./backend
 COPY model ./model
 
+# Create non-root application user for defense-in-depth container security
+RUN groupadd -r appuser && useradd -r -u 1000 -g appuser -d /app appuser \
+    && chown -R appuser:appuser /app
+
+USER appuser
+
 EXPOSE 8000
 
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "1"]

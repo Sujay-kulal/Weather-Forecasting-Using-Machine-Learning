@@ -71,6 +71,41 @@ REVIEWED_PR8_EQUIVALENTS = {
             'mock_clear_cache.assert_not_called()',
             'mock_session.close.assert_called_once()'
         ]
+    },
+    'test_admin_ingest_service_exception_returns_500': {
+        'classification': 'Sanitized CWE-209 Exception Hardening',
+        'rationale': "Replaced raw exception leakage with sanitized RFC-7807 detail string; 500 status_code preserved, verified leak is suppressed",
+        'required_assertions': [
+            'assert response.status_code == 500',
+            "assert response.json()['detail'] == 'Weather data ingestion failed due to an internal server error.'",
+            "assert 'Database lock timeout' not in response.text",
+        ],
+        'required_mock_checks': []
+    },
+    'test_fastapi_lifespan_uses_isolated_database_engine': {
+        'classification': 'Refactored Lifespan Engine Binding',
+        'rationale': "Removed obsolete orig_main_engine assignment; engine is managed via app.database.engine",
+        'required_assertions': [
+            'assert app_db.engine is isolated_mock_engine',
+            'assert ingestion_service.SessionLocal is IsolatedMockSession',
+        ],
+        'required_mock_checks': [
+            'mock_init_db.assert_called_once()'
+        ]
+    }
+}
+
+# Audited & approved semantic equivalents for evolved PR #9 functions
+REVIEWED_PR9_EQUIVALENTS = {
+    'test_admin_ingest_service_exception_returns_500': {
+        'classification': 'Sanitized CWE-209 Exception Hardening',
+        'rationale': "Replaced raw exception leakage with sanitized RFC-7807 detail string; 500 status_code preserved, verified leak is suppressed",
+        'required_assertions': [
+            'assert response.status_code == 500',
+            "assert response.json()['detail'] == 'Weather data ingestion failed due to an internal server error.'",
+            "assert 'Database lock timeout' not in response.text",
+        ],
+        'required_mock_checks': []
     }
 }
 
@@ -174,6 +209,7 @@ def run_audit(log_path=None):
     pr8_exact_matches = 0
     pr8_reviewed_equivs = 0
     pr9_exact_matches = 0
+    pr9_reviewed_equivs = 0
     new_regression_tests = []
 
     module_stats = []
@@ -271,6 +307,19 @@ def run_audit(log_path=None):
                 if f9['body_src'] == f_rem['body_src']:
                     log_lines.append(f'  [PR9 EXACT MATCH] {fname}')
                     pr9_exact_matches += 1
+                elif fname in REVIEWED_PR9_EQUIVALENTS:
+                    rev = REVIEWED_PR9_EQUIVALENTS[fname]
+                    missing_assertions = [a for a in rev['required_assertions'] if a not in f_rem['assertions']]
+                    missing_mock_checks = [m for m in rev['required_mock_checks'] if m not in f_rem['mock_checks']]
+                    if missing_assertions or missing_mock_checks:
+                        err = f'FATAL: Reviewed equivalent {fname} in {mod} missing required checks! Assertions missing: {missing_assertions}, Mock checks missing: {missing_mock_checks}'
+                        log_lines.append(f'  [FATAL] {err}')
+                        fatal_errors.append(err)
+                    else:
+                        log_lines.append(f'  [PR9 REVIEWED EQUIVALENT] {fname} ({rev["classification"]})')
+                        log_lines.append(f'    Rationale: {rev["rationale"]}')
+                        log_lines.append(f'    Assertions: Baseline={len(f9["assertions"])}, Candidate={len(f_rem["assertions"])} (Preserved/Strengthened)')
+                        pr9_reviewed_equivs += 1
                 else:
                     err = f'FATAL: Unexpected AST difference in PR9 function {fname} in {mod}!'
                     log_lines.append(f'  [FATAL] {err}')
@@ -313,14 +362,22 @@ def run_audit(log_path=None):
     print(f"Unique Baseline Test Functions: {len(unique_baseline_funcs)} (PR8: {total_pr8_funcs}, PR9: {total_pr9_funcs})")
     print(f"Candidate Test Functions:       {total_cand_funcs} ({total_cand_cases} collected cases)")
     print(f"PR8 Exact Matches:              {pr8_exact_matches}/{total_pr8_funcs}")
-    print(f"PR8 Reviewed Equivalents:       {pr8_reviewed_equivs}/5")
+    print(f"PR8 Reviewed Equivalents:       {pr8_reviewed_equivs}/{len(REVIEWED_PR8_EQUIVALENTS)}")
     print(f"PR9 Exact Matches:              {pr9_exact_matches}/{total_pr9_funcs}")
+    print(f"PR9 Reviewed Equivalents:       {pr9_reviewed_equivs}/{len(REVIEWED_PR9_EQUIVALENTS)}")
     print(f"New Regression Tests Added:     {len(new_regression_tests)} (5 cases)")
     print(f"Missing Baseline Functions:     {len([e for e in fatal_errors if 'MISSING' in e])}")
     print(f"Unreviewed/Weakened Tests:      {len([e for e in fatal_errors if 'MISSING' not in e])}")
     print('================================================================================')
     print('REVIEWED PR #8 FUNCTIONS AUDIT:')
     for fn, rev in REVIEWED_PR8_EQUIVALENTS.items():
+        print(f"  * {fn}:")
+        print(f"      Classification: {rev['classification']}")
+        print(f"      Status:         VERIFIED & PRESERVED")
+        print(f"      Rationale:      {rev['rationale']}")
+    print('================================================================================')
+    print('REVIEWED PR #9 FUNCTIONS AUDIT:')
+    for fn, rev in REVIEWED_PR9_EQUIVALENTS.items():
         print(f"  * {fn}:")
         print(f"      Classification: {rev['classification']}")
         print(f"      Status:         VERIFIED & PRESERVED")

@@ -82,6 +82,13 @@ def migrate(target_engine=None):
                 if not _is_duplicate_constraint_error(exc):
                     raise
 
+        # Ensure index parity with ORM model definitions for migrated columns
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_weather_data_district ON weather_data (district);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_weather_data_location ON weather_data (location);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_predictions_district ON predictions (district);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_predictions_location ON predictions (location);"))
+        conn.execute(text("CREATE INDEX IF NOT EXISTS ix_predictions_model_version ON predictions (model_version);"))
+
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(

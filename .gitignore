@@ -39,3 +39,5 @@ Weather-Forecasting-Using-Machine-Learning-main/
 # Local workspace agents and scratch directories
 .agents/
 scratch/
+scripts/full_ast_audit_log.txt
+

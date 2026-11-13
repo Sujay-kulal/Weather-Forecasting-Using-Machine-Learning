@@ -81,6 +81,9 @@ def test_rfc7807_request_validation_error_422():
             resp = client.post("/weather/lookup", json={"bad_field": 123})
             assert resp.status_code == 422
             assert "application/problem+json" in resp.headers.get("content-type", "")
+            assert resp.headers.get("x-content-type-options") == "nosniff"
+            assert resp.headers.get("x-frame-options") == "DENY"
+            assert resp.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
             data = resp.json()
             assert data.get("type") == "about:blank"
             assert data.get("status") == 422
@@ -99,6 +102,9 @@ def test_rfc7807_uncaught_500_exception_format():
                 resp = client.get("/weather/Karnataka")
                 assert resp.status_code == 500
                 assert "application/problem+json" in resp.headers.get("content-type", "")
+                assert resp.headers.get("x-content-type-options") == "nosniff"
+                assert resp.headers.get("x-frame-options") == "DENY"
+                assert resp.headers.get("referrer-policy") == "strict-origin-when-cross-origin"
                 data = resp.json()
                 assert data.get("type") == "about:blank"
                 assert data.get("title") == "Internal Server Error"

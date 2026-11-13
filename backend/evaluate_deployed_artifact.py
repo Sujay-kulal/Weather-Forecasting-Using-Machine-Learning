@@ -94,6 +94,10 @@ def get_training_cutoff(source_info: dict[str, Any]) -> date:
     raise ValueError(f"Unrecognized training cutoff date format: {raw}")
 
 
+# Audit snapshot baseline date (2026-11-09) for deterministic historical audits
+AUDIT_SNAPSHOT_DATE = date(2026, 11, 9)
+
+
 def calculate_eligible_test_period(
     training_cutoff: date,
     window_days: int = 30,
@@ -381,6 +385,7 @@ def run_evaluation(
     custom_test_start: date | None = None,
     database_free: bool = False,
     mode: str = "independent",
+    as_of_date: date | None = None,
 ) -> dict[str, Any]:
     """Execute independent evaluation without modifying model artifacts or model_info.json."""
     if not artifact_path.is_file():
@@ -493,7 +498,7 @@ def run_evaluation(
     if max_available_date < required_target_end:
         additional_days = (required_target_end - max_available_date).days
         total_required_coverage_days = (required_target_end - training_cutoff).days
-        today_date = date.today()
+        today_date = as_of_date or (date.fromisoformat(os.environ["AUDIT_DATE"]) if "AUDIT_DATE" in os.environ else date.today())
 
         # Distinguish historical elapsed dates (which can be collected now)
         # from future dates (which are not yet observable)
@@ -882,9 +887,16 @@ def main() -> None:
         default=None,
         help="Custom test start date (YYYY-MM-DD).",
     )
+    parser.add_argument(
+        "--as-of-date",
+        type=str,
+        default=None,
+        help="Audit anchor date (YYYY-MM-DD), defaults to current date (or AUDIT_DATE env var).",
+    )
     args = parser.parse_args()
 
     custom_start = date.fromisoformat(args.custom_test_start) if args.custom_test_start else None
+    as_of = date.fromisoformat(args.as_of_date) if args.as_of_date else None
     result = run_evaluation(
         artifact_path=args.artifact_path,
         source_model_info_path=args.source_model_info,
@@ -894,6 +906,7 @@ def main() -> None:
         database_free=args.database_free,
         mode=args.mode,
         custom_test_start=custom_start,
+        as_of_date=as_of,
     )
     print(json.dumps(result, indent=2))
 

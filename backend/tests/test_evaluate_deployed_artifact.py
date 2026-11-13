@@ -1017,6 +1017,7 @@ def test_data_availability_distinguishes_historical_and_future(tmp_path):
         test_window_origins=30,
         database_free=True,
         mode="independent",
+        as_of_date=date(2026, 11, 9),
     )
 
     assert result["status"] == "insufficient_post_cutoff_data"
@@ -1033,6 +1034,24 @@ def test_data_availability_distinguishes_historical_and_future(tmp_path):
     assert da["eligible_complete_evaluation_origins_range"] == ["2026-10-31", "2026-11-02"]
 
 
+def test_data_availability_defaults_to_today(tmp_path, monkeypatch):
+    """Verify that when as_of_date is omitted and AUDIT_DATE is not set, current_audit_date defaults to date.today()."""
+    monkeypatch.delenv("AUDIT_DATE", raising=False)
+    model_path = PROJECT_ROOT / "model" / "weather_model_v3.joblib"
+    info_path = PROJECT_ROOT / "model" / "model_info.json"
+    temp_output = tmp_path / "today_eval.json"
+
+    result = run_evaluation(
+        artifact_path=model_path,
+        source_model_info_path=info_path,
+        output_path=temp_output,
+        test_window_origins=30,
+        database_free=True,
+        mode="independent",
+    )
+    assert result["data_availability"]["current_audit_date"] == str(date.today())
+
+
 def test_preliminary_evaluation_honest_assessment(tmp_path):
     """Verify that preliminary evaluation honesty check reports infeasibility on available data."""
     model_path = PROJECT_ROOT / "model" / "weather_model_v3.joblib"
@@ -1046,6 +1065,7 @@ def test_preliminary_evaluation_honest_assessment(tmp_path):
         test_window_origins=30,
         database_free=True,
         mode="independent",
+        as_of_date=date(2026, 11, 9),
     )
 
     pe = result["preliminary_evaluation"]

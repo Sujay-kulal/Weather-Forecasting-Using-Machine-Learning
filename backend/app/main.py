@@ -99,6 +99,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+SECURITY_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Referrer-Policy": "strict-origin-when-cross-origin",
+}
+
 # Global RFC 7807 Problem Details Handler
 @app.exception_handler(StarletteHTTPException)
 async def http_exception_handler(request: Request, exc: StarletteHTTPException):
@@ -114,7 +120,7 @@ async def http_exception_handler(request: Request, exc: StarletteHTTPException):
     return JSONResponse(
         status_code=exc.status_code,
         content=content,
-        headers={"Content-Type": "application/problem+json"},
+        headers={"Content-Type": "application/problem+json", **SECURITY_HEADERS},
     )
 
 
@@ -130,7 +136,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
     return JSONResponse(
         status_code=422,
         content=content,
-        headers={"Content-Type": "application/problem+json"},
+        headers={"Content-Type": "application/problem+json", **SECURITY_HEADERS},
     )
 
 
@@ -147,7 +153,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     return JSONResponse(
         status_code=500,
         content=content,
-        headers={"Content-Type": "application/problem+json"},
+        headers={"Content-Type": "application/problem+json", **SECURITY_HEADERS},
     )
 
 
@@ -188,6 +194,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    for header, value in SECURITY_HEADERS.items():
+        response.headers[header] = value
+    return response
+
 
 app.include_router(health.router)
 app.include_router(admin.router)

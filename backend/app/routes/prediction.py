@@ -7,8 +7,9 @@ POST /predict implements the Phase 2 pipeline:
   predictions table -> JSON response. No future data, no stale data,
   no hardcoded values.
 """
-from datetime import date as date_type, timedelta
+import logging
 import math
+from datetime import date as date_type, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import func, select
@@ -27,6 +28,7 @@ from app.services.feature_service import (MAX_STALENESS_DAYS, REQUIRED_HISTORY,
                                           build_features)
 from app.services.prediction_cache import prediction_cache
 
+logger = logging.getLogger("prediction")
 router = APIRouter(tags=["prediction"])
 
 @router.post("/predict", response_model=PredictionResponse)
@@ -118,7 +120,8 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
         except HTTPException:
             raise
         except Exception as exc:  # model failure -> honest 500, never fake values
-            raise HTTPException(500, detail=f"Model prediction failed: {exc}")
+            logger.error("Model prediction failed: %s", exc, exc_info=True)
+            raise HTTPException(status_code=500, detail="Model prediction failed due to an internal server error.")
 
     # 6. Store the prediction audit record (MUST write on every call, including cache hits)
     upsert_prediction(
