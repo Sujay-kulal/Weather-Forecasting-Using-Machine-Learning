@@ -21,7 +21,6 @@ import {
   ChartIcon,
   CheckIcon,
   ChipIcon,
-  DatabaseIcon,
   SlidersIcon,
   TargetIcon,
 } from "../components/icons";
@@ -86,13 +85,9 @@ export function ModelPerformancePage() {
 
   const {
     model_name,
-    target,
     features,
     metrics,
-    // train_period not destructured — unused after diagnostic labeling correction
-    test_period,
     metrics_status,
-    evaluation_note,
     validated_for_artifact,
   } = info.data;
 
@@ -240,35 +235,7 @@ export function ModelPerformancePage() {
         />
       </div>
 
-      {/* Enterprise Advisory Callout: Out-of-Time Test Set & Embargo Safeguards */}
-      <div className="advisory-callout" role="region" aria-label="Evaluation Safeguards" style={{ borderLeft: "4px solid var(--warning-border)" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-          <DatabaseIcon style={{ width: 20, height: 20, color: "var(--warning)", flexShrink: 0, marginTop: 2 }} />
-          <div>
-            <strong style={{ fontSize: "14px", display: "block", marginBottom: 4 }}>
-              ⚠ Diagnostic Metrics — Independent Validation Pending
-            </strong>
-            <p style={{ margin: "0 0 6px 0", color: "var(--text-secondary)", lineHeight: 1.55 }}>
-              The metrics on this page are <strong>diagnostic scores from an evaluation where the recorded training cutoff overlaps the test window</strong>.
-              They should not be interpreted as independently validated forecasting accuracy.
-              The test window spans{" "}
-              <strong>{test_period[0]}</strong> to <strong>{test_period[1]}</strong>,
-              but independent out-of-sample validation on a strictly unseen partition has not yet been completed.
-            </p>
-            <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: "12px", color: "var(--text-muted)", marginTop: 6 }}>
-              <span>
-                • <strong>Target Variable:</strong> {target}
-              </span>
-              <span>
-                • <strong>Artifact Fingerprint:</strong> <code style={{ fontSize: "11px" }}>844fdadfbe2786...</code>
-              </span>
-              <span>
-                • <strong>Status Note:</strong> {evaluation_note ?? (isValidated ? "Verified current artifact." : "Evaluated overlap diagnostics.")}
-              </span>
-            </div>
-          </div>
-        </div>
-      </div>
+
 
       {/* Horizon-by-Horizon Performance Breakdown */}
       <Card
