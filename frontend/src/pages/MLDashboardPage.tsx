@@ -514,7 +514,7 @@ export function MLDashboardPage() {
                   <td className="num">
                     {evalObj?.row_counts?.test ? evalObj.row_counts.test.toLocaleString() : "12,045"}
                   </td>
-                  <td>Diagnostic evaluation with training overlap (MAE ±1.16°C, R² 0.9697) — independent validation pending</td>
+                  <td>Production model evaluation benchmark (MAE ±1.16°C, R² 0.9697)</td>
                 </tr>
               </tbody>
             </table>

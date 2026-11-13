@@ -75,16 +75,16 @@ export function StatChip({ icon, label, value, sub }: StatChipProps) {
   );
 }
 
-export interface BadgeProps {
+export interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   children: ReactNode;
   variant?: "default" | "neutral" | "success" | "warning" | "danger" | "info";
   neutral?: boolean;
 }
 
 /** Compact pill badge for table cells and status tags. */
-export function Badge({ children, variant, neutral }: BadgeProps) {
+export function Badge({ children, variant, neutral, ...rest }: BadgeProps) {
   const finalVariant = variant ?? (neutral ? "neutral" : "default");
-  return <span className={`badge ${finalVariant}`}>{children}</span>;
+  return <span className={`badge ${finalVariant}`} {...rest}>{children}</span>;
 }
 
 export function Spinner(props: { label: string }) {
