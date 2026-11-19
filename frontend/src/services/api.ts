@@ -13,8 +13,7 @@ import type {
   WeatherResponse,
 } from "../types/api";
 
-const BASE_URL: string =
-  (import.meta.env.VITE_API_BASE_URL as string | undefined) ?? "http://127.0.0.1:8000";
+const BASE_URL = (import.meta.env.VITE_API_BASE_URL?.trim() || "/api").replace(/\/+$/, "");
 
 /** Error carrying the backend's HTTP status and message (or a network failure). */
 export class ApiError extends Error {
@@ -30,15 +29,20 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   try {
     response = await fetch(`${BASE_URL}${path}`, init);
   } catch {
+    if (init?.signal?.aborted) throw new ApiError(0, "Request cancelled.");
     throw new ApiError(0, "Cannot reach the backend server. Is the FastAPI server running?");
   }
   if (!response.ok) {
     let detail = `${response.status} ${response.statusText}`;
     let parsedBody = false;
     try {
-      const body = await response.json();
+      const body = await response.json() as { detail?: string | { msg?: unknown }[] };
       parsedBody = true;
       if (typeof body?.detail === "string") detail = body.detail;
+      else if (Array.isArray(body?.detail)) {
+        const messages = body.detail.map((item) => item?.msg).filter((msg) => typeof msg === "string");
+        if (messages.length) detail = messages.join(". ");
+      }
     } catch {
       /* keep status text */
     }
@@ -47,7 +51,11 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new ApiError(response.status, detail);
   }
-  return response.json() as Promise<T>;
+  try {
+    return await response.json() as T;
+  } catch {
+    throw new ApiError(response.status, "The backend returned an invalid response. Check the API URL.");
+  }
 }
 
 // ---------------- GET /health ----------------
@@ -78,15 +86,19 @@ export function getWeatherHistory(
   limit = 100,
   offset = 0,
   district?: string,
-  location?: string
+  location?: string,
+  filters: { startDate?: string; endDate?: string; signal?: AbortSignal } = {},
 ): Promise<WeatherResponse> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
-  if (district && location) {
-    return request<WeatherResponse>(
-      `/weather/${encodeURIComponent(state)}/${encodeURIComponent(district)}/${encodeURIComponent(location)}?${params}`
-    );
+  if (filters.startDate) params.set("start_date", filters.startDate);
+  if (filters.endDate) params.set("end_date", filters.endDate);
+  const parts = [state];
+  if (district) {
+    parts.push(district);
+    if (location) parts.push(location);
   }
-  return request<WeatherResponse>(`/weather/${encodeURIComponent(state)}?${params}`);
+  const series = parts.map(encodeURIComponent).join("/");
+  return request<WeatherResponse>(`/weather/${series}?${params}`, { signal: filters.signal });
 }
 
 export function getRecentWeather(
@@ -112,7 +124,7 @@ export function predict(
   district?: string,
   location?: string
 ): Promise<PredictionResponse> {
-  const body: any = { state, forecast_date: forecastDate };
+  const body: Record<string, string> = { state, forecast_date: forecastDate };
   if (district) body.district = district;
   if (location) body.location = location;
 
@@ -124,8 +136,13 @@ export function predict(
 }
 
 // ---------------- GET /predictions?limit=&offset= ----------------
-export function getPredictions(limit = 50, offset = 0): Promise<PredictionsResponse> {
+export function getPredictions(limit = 50, offset = 0,
+  filters: { state?: string; modelVersion?: string; search?: string } = {},
+): Promise<PredictionsResponse> {
   const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+  if (filters.state) params.set("state", filters.state);
+  if (filters.modelVersion) params.set("model_version", filters.modelVersion);
+  if (filters.search?.trim()) params.set("q", filters.search.trim());
   return request<PredictionsResponse>(`/predictions?${params}`);
 }
 

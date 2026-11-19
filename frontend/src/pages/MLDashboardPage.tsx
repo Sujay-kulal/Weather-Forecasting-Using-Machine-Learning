@@ -109,9 +109,9 @@ const SAFEGUARDS: SafeguardSpec[] = [
       "Rolling window statistics (roll3_temp_avg, roll7_temp_avg, rainfall_roll7, etc.) are computed grouped strictly by geographic state entity. Aggregations never leak across state borders or across disconnected observation runs.",
   },
   {
-    title: "Runtime Staleness Enforcers (MAX_STALENESS_DAYS = 2)",
+    title: "Seven Consecutive Observation Days",
     detail:
-      "Production inference endpoints reject predictions if the latest available observation for a given state exceeds MAX_STALENESS_DAYS = 2 or contains fewer than 7 consecutive historical records (REQUIRED_HISTORY = 7), preventing degraded inference on outdated baselines.",
+      "Inference requires seven consecutive completed days of statewide weather ending two days before the first forecast date.",
   },
   {
     title: "Conformal Interval Calibration Gate",
@@ -195,7 +195,7 @@ export function MLDashboardPage() {
   }
 
   if (info.error) {
-    return <ErrorBanner message={info.error.message} />;
+    return <ErrorBanner message={info.error.message} onRetry={info.retry} />;
   }
 
   const modelData = info.data;
@@ -203,8 +203,9 @@ export function MLDashboardPage() {
   const features = modelData?.features || [];
   const selected = modelData?.metrics?.[modelName] || modelData?.metrics?.LightGBM;
   const evalObj = modelData?.evaluation;
-  const trainPeriod = modelData?.train_period || ["2015-01-08", "2025-07-11"];
-  const testPeriod = modelData?.test_period || ["2025-10-19", "2026-10-18"];
+  const trainPeriod = modelData?.train_period ?? [];
+  const testPeriod = modelData?.test_period ?? [];
+  const calibrationPeriod = modelData?.calibration_period ?? [];
   const evaluationNote = modelData?.evaluation_note;
   const metricsStatus = modelData?.metrics_status;
 
@@ -218,13 +219,15 @@ export function MLDashboardPage() {
       />
 
       {/* ---- Evaluation Advisory Callout ---- */}
-      {metricsStatus && (
+      {modelData && (
         <div className="advisory-callout">
           <strong>Evaluation Status: </strong>
-          {metricsStatus === "validated_for_current_artifact"
+          {modelData.validated_for_artifact === true
             ? "Evaluation metrics are strictly validated for the active production model artifact."
             : evaluationNote ??
-              "Reported metrics reflect out-of-time evaluation across 12,045 holdout test records with an 8-day target embargo."}
+              (metricsStatus === "artifact_evaluated_training_overlap"
+                ? "The reported scores come from dates that overlap training. Independent validation is pending."
+                : "Independent evaluation results are unavailable.")}
         </div>
       )}
 
@@ -239,30 +242,26 @@ export function MLDashboardPage() {
         <StatChip
           icon={<TargetIcon />}
           label="Diagnostic MAE"
-          value={selected?.MAE !== undefined ? `±${selected.MAE.toFixed(2)}°C` : "±1.16°C"}
+          value={selected?.MAE !== undefined ? `±${selected.MAE.toFixed(2)}°C` : "—"}
           sub="Training-overlap (7-day horizon)"
         />
         <StatChip
           icon={<ChartIcon />}
           label="Diagnostic R²"
-          value={selected?.R2 !== undefined ? selected.R2.toFixed(4) : "0.9697"}
+          value={selected?.R2 !== undefined ? selected.R2.toFixed(4) : "—"}
           sub="Training-overlap evaluation"
         />
         <StatChip
           icon={<SlidersIcon />}
           label="Features"
-          value={features.length || 20}
+          value={features.length}
           sub="Engineered predictors"
         />
         <StatChip
           icon={<DatabaseIcon />}
-          label="Training History"
-          value={
-            evalObj?.row_counts?.train
-              ? `${evalObj.row_counts.train.toLocaleString()} records`
-              : "126,654 records"
-          }
-          sub={`${trainPeriod[0]} to ${trainPeriod[1]}`}
+          label="Artifact Training Cutoff"
+          value={modelData?.trained_through ?? "Unavailable"}
+          sub="Last date recorded in the artifact provenance"
         />
         <StatChip
           icon={<CalendarIcon />}
@@ -404,7 +403,7 @@ export function MLDashboardPage() {
           </div>
           <div className="meta-block">
             <dt>Diagnostic Error</dt>
-            <dd>MAE ±{selected?.MAE !== undefined ? selected.MAE.toFixed(2) : "1.16"}°C</dd>
+            <dd>{selected?.MAE != null ? `MAE ${selected.MAE.toFixed(2)}°C` : "Unavailable"}</dd>
           </div>
           <div className="meta-block">
             <dt>Random State</dt>
@@ -424,7 +423,7 @@ export function MLDashboardPage() {
               marginBottom: 8,
             }}
           >
-            Temporal Split Specification & Embargo Protocol
+            Historical Diagnostic Evaluation Partitions
           </div>
           <div className="table-wrap">
             <table>
@@ -432,8 +431,7 @@ export function MLDashboardPage() {
                 <tr>
                   <th>Partition Stage</th>
                   <th>Date Range</th>
-                  <th>Span / Duration</th>
-                  <th className="num">Records</th>
+                                    <th className="num">Records</th>
                   <th>Pipeline Role & Leakage Barrier</th>
                 </tr>
               </thead>
@@ -448,11 +446,10 @@ export function MLDashboardPage() {
                   <td>
                     <code>{trainPeriod[0]}</code> → <code>{trainPeriod[1]}</code>
                   </td>
-                  <td>10.5 Years</td>
-                  <td className="num">
-                    {evalObj?.row_counts?.train ? evalObj.row_counts.train.toLocaleString() : "126,654"}
+                                    <td className="num">
+                    {evalObj?.row_counts?.train ? evalObj.row_counts.train.toLocaleString() : "—"}
                   </td>
-                  <td>Fits gradient boosted trees on lagged meteorological features across 36 states/UTs</td>
+                  <td>Training partition recorded by the diagnostic evaluation</td>
                 </tr>
                 <tr style={{ background: "var(--bg-surface-subtle)" }}>
                   <td className="strong">
@@ -462,10 +459,9 @@ export function MLDashboardPage() {
                     </span>
                   </td>
                   <td>
-                    <code>2025-07-12</code> → <code>2025-07-18</code>
+                    Between training and calibration
                   </td>
-                  <td>8 Days</td>
-                  <td className="num">—</td>
+                                    <td className="num">—</td>
                   <td>Eliminates 7-day target lookahead leakage between training cutoff and calibration</td>
                 </tr>
                 <tr>
@@ -476,13 +472,12 @@ export function MLDashboardPage() {
                     </span>
                   </td>
                   <td>
-                    <code>2025-07-19</code> → <code>2025-10-11</code>
+                    <code>{calibrationPeriod[0] ?? "—"}</code> → <code>{calibrationPeriod[1] ?? "—"}</code>
                   </td>
-                  <td>84 Days</td>
-                  <td className="num">
+                                    <td className="num">
                     {evalObj?.row_counts?.calibration
                       ? evalObj.row_counts.calibration.toLocaleString()
-                      : "2,805"}
+                      : "—"}
                   </td>
                   <td>Evaluates residual distribution quantiles for conformal prediction interval bounds</td>
                 </tr>
@@ -494,27 +489,25 @@ export function MLDashboardPage() {
                     </span>
                   </td>
                   <td>
-                    <code>2025-10-12</code> → <code>2025-10-18</code>
+                    Between calibration and diagnostic testing
                   </td>
-                  <td>8 Days</td>
-                  <td className="num">—</td>
-                  <td>Guarantees statistical independence between residual calibration and test data</td>
+                                    <td className="num">—</td>
+                  <td>Separates the calibration dates from the diagnostic test dates</td>
                 </tr>
                 <tr>
                   <td className="strong">
                     <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <Badge variant="success">Test</Badge>
-                      Holdout Test Partition
+                      Diagnostic Test Partition
                     </span>
                   </td>
                   <td>
                     <code>{testPeriod[0]}</code> → <code>{testPeriod[1]}</code>
                   </td>
-                  <td>1 Full Year</td>
-                  <td className="num">
-                    {evalObj?.row_counts?.test ? evalObj.row_counts.test.toLocaleString() : "12,045"}
+                                    <td className="num">
+                    {evalObj?.row_counts?.test ? evalObj.row_counts.test.toLocaleString() : "—"}
                   </td>
-                  <td>Production model evaluation benchmark (MAE ±1.16°C, R² 0.9697)</td>
+                  <td>Dates overlap the deployed artifact’s training window</td>
                 </tr>
               </tbody>
             </table>

@@ -146,7 +146,7 @@ describe("Tier 4: Real-World Scenarios", () => {
       const html = renderComponent(<App />);
 
       // Sidebar element should NOT have 'collapsed' class
-      assertMatches(html, /<aside class="app-sidebar\s+"><div class="sidebar-header">/);
+      assertMatches(html, /<aside id="app-navigation" class="app-sidebar\s+"><div class="sidebar-header">/);
       assertContains(html, "Collapse Sidebar");
       assertContains(html, "Collapse sidebar");
     });
@@ -156,7 +156,7 @@ describe("Tier 4: Real-World Scenarios", () => {
       const html = renderComponent(<App />);
 
       // Sidebar element should have 'collapsed' class
-      assertMatches(html, /<aside class="app-sidebar collapsed\s*">/);
+      assertMatches(html, /<aside id="app-navigation" class="app-sidebar collapsed\s*">/);
       // 'Collapse Sidebar' label is hidden when collapsed
       assertNotContains(html, "<span>Collapse Sidebar</span>");
       assertContains(html, "Expand sidebar");

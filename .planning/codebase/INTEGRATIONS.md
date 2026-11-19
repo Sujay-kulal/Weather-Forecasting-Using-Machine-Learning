@@ -21,7 +21,7 @@
 - **OpenStreetMap / CARTO Basemaps** - Provides map tile rendering for India and Karnataka regional maps.
   - Client: Leaflet tile layer in `frontend/src/components/IndiaMap.tsx`
   - Tile URL: `https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png`
-  - GeoJSON data: Local asset `frontend/src/assets/india_states.geojson` containing state boundary polygons
+  - GeoJSON data: Local asset `frontend/public/india_states.geojson` containing state boundary polygons
 
 ## Data Storage
 

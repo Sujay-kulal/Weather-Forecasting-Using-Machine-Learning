@@ -1471,12 +1471,14 @@ tbody td:first-child {
   /* Sidebar Drawer on Mobile */
   .app-sidebar {
     transform: translateX(-100%);
+    visibility: hidden;
     width: 280px !important;
     z-index: 100;
   }
 
   .app-sidebar.mobile-open {
     transform: translateX(0);
+    visibility: visible;
     width: 280px !important;
   }
 

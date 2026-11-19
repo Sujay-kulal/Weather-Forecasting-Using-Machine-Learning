@@ -11,7 +11,7 @@
 - Fix approach: Integrate Redis or Memcached as a centralized caching layer when horizontal scaling is required.
 
 **Large GeoJSON Asset in Frontend Bundle:**
-- Issue: `frontend/src/assets/india_states.geojson` is approximately 2.2MB uncompressed and bundled in the frontend assets.
+- Issue: `frontend/public/india_states.geojson` is approximately 2.2 MB uncompressed and fetched as a static asset when the map opens.
 - Why: Ensures reliable client-side boundary rendering for the interactive India and Karnataka state maps.
 - Impact: Increases initial page load time on low-bandwidth connections.
 - Fix approach: Simplify GeoJSON polygons with Mapshaper / TopoJSON or load dynamically via lazy fetch on demand.

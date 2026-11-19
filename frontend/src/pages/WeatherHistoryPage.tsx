@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Bar,
   CartesianGrid,
@@ -41,7 +41,6 @@ type SortKey = "date" | "temp_max" | "temp_avg" | "temp_min" | "humidity" | "rai
 type SortOrder = "asc" | "desc";
 type ChartView = "temperature" | "hydrology" | "combined";
 
-const TOTAL_DB_RECORDS = 46834;
 const FETCH_PAGE_SIZE = 1000;
 
 function prettyDate(iso?: string | null): string {
@@ -161,6 +160,8 @@ export function WeatherHistoryPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [retryKey, setRetryKey] = useState(0);
+  const moreRequest = useRef<AbortController | null>(null);
+  const invalidDates = Boolean(startDate && endDate && startDate > endDate);
 
   const [sortKey, setSortKey] = useState<SortKey>("date");
   const [sortOrder, setSortOrder] = useState<SortOrder>("desc");
@@ -183,7 +184,8 @@ export function WeatherHistoryPage() {
 
   // Strict useEffect data fetching with cancellation and zero render-time side effects
   useEffect(() => {
-    if (!state) {
+    setLoadingMore(false);
+    if (!state || invalidDates) {
       setRecords([]);
       setTotal(0);
       setError(null);
@@ -191,24 +193,28 @@ export function WeatherHistoryPage() {
       return;
     }
 
-    let cancelled = false;
+    const controller = new AbortController();
 
     async function fetchArchiveData() {
       setLoading(true);
       setError(null);
+      setRecords([]);
+      setTotal(0);
       try {
-        const resp = await getWeatherHistory(state, FETCH_PAGE_SIZE, 0, district, location);
-        if (!cancelled) {
+        const resp = await getWeatherHistory(state, FETCH_PAGE_SIZE, 0, district, location, {
+          startDate, endDate, signal: controller.signal,
+        });
+        if (!controller.signal.aborted) {
           setRecords(resp.records);
           setTotal(resp.count);
           setPage(1);
         }
       } catch (err) {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setError((err as Error).message);
         }
       } finally {
-        if (!cancelled) {
+        if (!controller.signal.aborted) {
           setLoading(false);
         }
       }
@@ -217,21 +223,26 @@ export function WeatherHistoryPage() {
     void fetchArchiveData();
 
     return () => {
-      cancelled = true;
+      controller.abort();
+      moreRequest.current?.abort();
     };
-  }, [state, district, location, retryKey]);
+  }, [state, district, location, startDate, endDate, invalidDates, retryKey]);
 
   async function loadMoreRecords() {
     if (loading || loadingMore || records.length >= total) return;
+    const controller = new AbortController();
+    moreRequest.current = controller;
     setLoadingMore(true);
     setError(null);
     try {
-      const resp = await getWeatherHistory(state, FETCH_PAGE_SIZE, records.length, district, location);
-      setRecords((prev) => [...prev, ...resp.records]);
+      const resp = await getWeatherHistory(state, FETCH_PAGE_SIZE, records.length, district, location, {
+        startDate, endDate, signal: controller.signal,
+      });
+      if (!controller.signal.aborted) setRecords((prev) => [...prev, ...resp.records]);
     } catch (err) {
-      setError((err as Error).message);
+      if (!controller.signal.aborted) setError((err as Error).message);
     } finally {
-      setLoadingMore(false);
+      if (!controller.signal.aborted) setLoadingMore(false);
     }
   }
 
@@ -275,7 +286,7 @@ export function WeatherHistoryPage() {
     if (!latestDateStr) return;
     const latest = new Date(latestDateStr + "T00:00:00Z");
     const past = new Date(latest);
-    past.setUTCDate(past.getUTCDate() - days);
+    past.setUTCDate(past.getUTCDate() - (days - 1));
     const startIso = past.toISOString().slice(0, 10);
     setStartDate(startIso);
     setEndDate(latestDateStr);
@@ -287,7 +298,7 @@ export function WeatherHistoryPage() {
       setSortOrder((prev) => (prev === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
-      setSortOrder(key === "date" ? "desc" : "desc");
+      setSortOrder("desc");
     }
     setPage(1);
   }
@@ -402,8 +413,10 @@ export function WeatherHistoryPage() {
       <PageHead
         title="Weather History Archive"
         desc="Explore 46,834 locked meteorological observations stored across Indian states, districts, and stations in PostgreSQL."
-        badge={<Badge variant="info">46,834 Locked Rows</Badge>}
+        badge={<Badge variant="info">PostgreSQL archive</Badge>}
       />
+
+      {invalidDates && <ErrorBanner message="Start date must be on or before the end date." />}
 
       {/* 2. Filter Toolbar inside enterprise .panel */}
       <section className="panel" style={{ marginBottom: 20 }}>
@@ -681,9 +694,9 @@ export function WeatherHistoryPage() {
         <div className="stat-chips" style={{ marginBottom: 20 }}>
           <StatChip
             icon={<DatabaseIcon />}
-            label="Total Database Records"
-            value={TOTAL_DB_RECORDS.toLocaleString()}
-            sub="Locked PostgreSQL rows"
+            label="Records in Selected Series and Dates"
+            value={total.toLocaleString()}
+            sub="Count returned by PostgreSQL"
           />
           <StatChip
             icon={<ChartIcon />}
