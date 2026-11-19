@@ -12,6 +12,15 @@ frontend/.env.local
 node_modules
 frontend/node_modules
 frontend/dist
+frontend/tests/.built
+frontend/test-results
+frontend/playwright-report
+data/
+results/
+screenshot/
+*.db
+model/weather_model.joblib
+model/weather_model_info.json
 .DS_Store
 .agents/
 scratch/

@@ -5,13 +5,34 @@ on:
     branches: [ main, master ]
   pull_request:
     branches: [ main, master ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   backend-audit-and-tests:
     runs-on: ubuntu-latest
+    env:
+      OMP_NUM_THREADS: '2'
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: weather_ci_test
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432/tcp
+        options: >-
+          --health-cmd "pg_isready -U postgres -d weather_ci_test"
+          --health-interval 3s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -27,14 +48,18 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install -r backend/requirements.txt
-          pip install pytest pytest-asyncio
+          pip install -r backend/requirements-dev.txt
 
       - name: Verify AST & Test Preservation
         run: python scripts/verify_ast_preservation.py
 
       - name: Run Backend Pytest Suite
         run: python -m pytest backend/tests
+
+      - name: Verify PostgreSQL migrations, locks and forecast storage
+        env:
+          WEATHER_TEST_DATABASE_URL: postgresql+psycopg://postgres@127.0.0.1:${{ job.services.postgres.ports[5432] }}/weather_ci_test
+        run: python -m pytest backend/integration -q
 
   frontend-build-and-tests:
     runs-on: ubuntu-latest
@@ -53,7 +78,7 @@ jobs:
         working-directory: ./frontend
         run: npm ci
 
-      - name: Run Frontend E2E / Unit Tests
+      - name: Run frontend component and API client tests
         working-directory: ./frontend
         run: npm test
 
