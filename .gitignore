@@ -26,6 +26,8 @@ Thumbs.db
 
 # Generated outputs (re-created by train_model.py)
 results/
+model/weather_model.joblib
+model/weather_model_info.json
 
 # Dataset (fetched from Kaggle via fetch_data.py - not stored in git)
 data/

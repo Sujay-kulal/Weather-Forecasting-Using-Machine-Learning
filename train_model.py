@@ -351,8 +351,26 @@ metadata = {
     "random_state": RANDOM_STATE,
 }
 
-with open(os.path.join(MODEL_DIR, "model_info.json"), "w") as f:
+model_info_path = os.path.join(MODEL_DIR, "model_info.json")
+cv_info_path = os.path.join(MODEL_DIR, "weather_model_info.json")
+with open(cv_info_path, "w") as f:
     json.dump(metadata, f, indent=2)
+
+# Guard: Do not overwrite production v3 artifact configuration or evaluation metadata
+if os.path.exists(model_info_path):
+    try:
+        with open(model_info_path, "r") as f:
+            existing = json.load(f)
+        if "weather_model_v3" in str(existing.get("model_path", "")) or existing.get("evaluation_artifact_sha256"):
+            print("   Preserved production model/model_info.json (v3 artifact metadata protected).")
+        else:
+            with open(model_info_path, "w") as f:
+                json.dump(metadata, f, indent=2)
+    except Exception:
+        pass
+else:
+    with open(model_info_path, "w") as f:
+        json.dump(metadata, f, indent=2)
 
 comparison = pd.DataFrame(
     [{ "Model": k, 
