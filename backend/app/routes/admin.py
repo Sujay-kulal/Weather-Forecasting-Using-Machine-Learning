@@ -36,5 +36,5 @@ def admin_ingest(
     except IngestionConfigurationError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
-        logger.error("Admin ingestion failed: %s", exc, exc_info=True)
+        logger.error("Admin ingestion failed (%s).", type(exc).__name__)
         raise HTTPException(status_code=500, detail="Weather data ingestion failed due to an internal server error.")

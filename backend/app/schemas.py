@@ -253,8 +253,9 @@ class IngestionResponse(BaseModel):
     """Response schema for administrative weather ingestion triggers."""
     status: str
     reason: Optional[str] = None
-    records_upserted: Optional[int] = None
-    records_inserted_or_updated: Optional[int] = None
+    records_upserted: Optional[int] = Field(None, description="Legacy count of completed provider records processed.")
+    records_inserted_or_updated: Optional[int] = Field(None, description="Legacy alias for provider records processed.")
+    records_inserted: Optional[int] = Field(None, description="Number of missing weather records inserted.")
     total_states: Optional[int] = None
     successful_states: Optional[List[str]] = None
     failed_states: Optional[List[str]] = None

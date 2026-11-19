@@ -1,0 +1,63 @@
+name: Production weather ingestion
+
+on:
+  schedule:
+    # 06:47 India Standard Time, away from the top of the hour.
+    - cron: '17 1 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: production-weather-ingestion
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    if: github.ref_type == 'branch' && github.ref_name == github.event.repository.default_branch && vars.WEATHER_INGESTION_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      API_ORIGIN: https://weather-forecasting-using-machine.onrender.com
+      WEATHER_INGESTION_ADMIN_TOKEN: ${{ secrets.WEATHER_INGESTION_ADMIN_TOKEN }}
+    steps:
+      - name: Refresh the last seven completed days
+        shell: bash
+        run: |
+          if [[ -z "$WEATHER_INGESTION_ADMIN_TOKEN" ]]; then
+            echo "WEATHER_INGESTION_ADMIN_TOKEN is missing."
+            exit 1
+          fi
+
+          # Wake the free Render service before sending an authenticated request.
+          curl --fail --silent --show-error --connect-timeout 10 --max-time 75 \
+            --retry 2 --retry-max-time 180 --output /dev/null "$API_ORIGIN/ready"
+
+          response_file=$(mktemp)
+          trap 'rm -f -- "$response_file"' EXIT
+          # Only the readiness probe is retried. A slow POST may still be running on Render.
+          status=$(printf 'X-Admin-Token: %s\n' "$WEATHER_INGESTION_ADMIN_TOKEN" |
+            curl --silent --show-error --connect-timeout 10 --max-time 600 \
+              --header @- --request POST --output "$response_file" \
+              --write-out '%{http_code}' "$API_ORIGIN/admin/ingest?days_back=7")
+          if [[ "$status" != 200 ]]; then
+            echo "Ingestion returned HTTP $status."
+            exit 1
+          fi
+
+          python3 - "$response_file" <<'PY'
+          import json
+          import sys
+
+          with open(sys.argv[1], encoding="utf-8") as response:
+              result = json.load(response)
+          status = result.get("status")
+          if status not in {"success", "partial_success", "skipped"}:
+              raise SystemExit("Unexpected ingestion status.")
+          counts = {key: result.get(key) for key in ("successful_count", "failed_count", "records_inserted", "total_states")}
+          if any(type(value) is not int or value < 0 for value in counts.values()):
+              raise SystemExit("Ingestion result did not include valid counts.")
+          print(json.dumps({"status": status, **counts}))
+          if status != "success" or not counts["total_states"] or counts["successful_count"] != counts["total_states"] or counts["failed_count"]:
+              raise SystemExit("Ingestion did not complete for every configured location.")
+          PY

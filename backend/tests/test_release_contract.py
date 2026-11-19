@@ -5,6 +5,9 @@ from unittest.mock import Mock
 import numpy as np
 import pandas as pd
 import pytest
+from sqlalchemy.engine import URL
+from sqlalchemy.exc import OperationalError
+from sqlalchemy.pool import NullPool
 
 from app.services import ingestion_service, model_service
 from app.services.feature_service import InsufficientHistoryError, build_features
@@ -60,13 +63,69 @@ def test_forecast_cache_revalidates_corrected_weather(monkeypatch):
     model_service.prediction_cache.clear()
 
 
-def test_pooled_neon_ingestion_stops_before_connecting(monkeypatch):
-    engine = Mock()
-    engine.url.host = "ep-test-pooler.example.neon.tech"
-    monkeypatch.setattr(ingestion_service, "engine", engine)
-    with pytest.raises(ingestion_service.IngestionConfigurationError, match="direct Neon"):
+def test_pooled_neon_ingestion_uses_the_matching_direct_endpoint(monkeypatch):
+    pooled_url = URL.create(
+        "postgresql+psycopg", username="app", host="ep-test-pooler.example.neon.tech",
+        database="weather", query={"sslmode": "require", "channel_binding": "require"},
+    )
+    serving_engine = Mock(url=pooled_url)
+    direct_engine = Mock()
+    create_engine = Mock(return_value=direct_engine)
+    session = Mock()
+    session.execute.return_value.scalar.return_value = False
+    session_factory = Mock(return_value=session)
+    monkeypatch.setattr(ingestion_service, "engine", serving_engine)
+    monkeypatch.setattr(ingestion_service, "create_engine", create_engine)
+    monkeypatch.setattr(ingestion_service, "SessionLocal", session_factory)
+
+    assert ingestion_service.run_ingestion_with_lock()["status"] == "skipped"
+    create_engine.assert_called_once_with(
+        pooled_url.set(host="ep-test.example.neon.tech"),
+        poolclass=NullPool, connect_args={"connect_timeout": 5}, hide_parameters=True,
+    )
+    serving_engine.connect.assert_not_called()
+    assert serving_engine.url == pooled_url
+    session_factory.assert_called_once_with(bind=direct_engine.connect.return_value)
+    direct_engine.connect.return_value.close.assert_called_once()
+
+
+@pytest.mark.parametrize(
+    ("hostname", "query"),
+    [
+        ("ep-test-pooler.example.invalid", {}),
+        ("ep-test-pooler.example.neon.tech", {"hostaddr": "127.0.0.1"}),
+    ],
+)
+def test_unsupported_ingestion_endpoint_fails_before_connecting(monkeypatch, hostname, query):
+    serving_engine = Mock(url=URL.create("postgresql+psycopg", host=hostname, query=query))
+    create_engine = Mock()
+    monkeypatch.setattr(ingestion_service, "engine", serving_engine)
+    monkeypatch.setattr(ingestion_service, "create_engine", create_engine)
+
+    with pytest.raises(ingestion_service.IngestionConfigurationError, match="direct PostgreSQL"):
         ingestion_service.run_ingestion_with_lock()
-    engine.connect.assert_not_called()
+    serving_engine.connect.assert_not_called()
+    create_engine.assert_not_called()
+
+
+def test_direct_neon_connection_failure_does_not_fall_back_or_leak_details(monkeypatch, caplog):
+    url = URL.create("postgresql+psycopg", host="ep-test-pooler.example.neon.tech")
+    serving_engine = Mock(url=url)
+    direct_engine = Mock()
+    private_detail = "private connection detail"
+    direct_engine.connect.side_effect = OperationalError(None, None, Exception(private_detail))
+    session_factory = Mock()
+    monkeypatch.setattr(ingestion_service, "engine", serving_engine)
+    monkeypatch.setattr(ingestion_service, "create_engine", Mock(return_value=direct_engine))
+    monkeypatch.setattr(ingestion_service, "SessionLocal", session_factory)
+
+    with pytest.raises(RuntimeError, match="direct ingestion database session") as exc:
+        ingestion_service.run_ingestion_with_lock()
+
+    assert private_detail not in str(exc.value)
+    assert private_detail not in caplog.text
+    session_factory.assert_not_called()
+    serving_engine.connect.assert_not_called()
 
 
 def test_provider_parser_excludes_current_and_invalid_rows_and_deduplicates():
