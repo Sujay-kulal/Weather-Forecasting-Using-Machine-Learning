@@ -5,6 +5,18 @@ on:
     # 06:47 India Standard Time, away from the top of the hour.
     - cron: '17 1 * * *'
   workflow_dispatch:
+    inputs:
+      days_back:
+        description: 'Completed days to refresh (7 normally; 30 for gap recovery)'
+        required: true
+        default: '7'
+        type: choice
+        options:
+          - '7'
+          - '30'
+          - '45'
+          - '60'
+          - '90'
 
 permissions: {}
 
@@ -23,14 +35,21 @@ jobs:
     env:
       API_ORIGIN: https://weather-forecasting-using-machine.onrender.com
       WEATHER_INGESTION_ADMIN_TOKEN: ${{ secrets.WEATHER_INGESTION_ADMIN_TOKEN }}
+      # The scheduled job always uses seven days; a manually dispatched job may request more.
+      INGEST_DAYS_BACK: ${{ github.event_name == 'workflow_dispatch' && inputs.days_back || '7' }}
     steps:
-      - name: Refresh the last seven completed days
+      - name: Refresh completed weather observations
         shell: bash
         run: |
           if [[ -z "$WEATHER_INGESTION_ADMIN_TOKEN" ]]; then
             echo "WEATHER_INGESTION_ADMIN_TOKEN is missing."
             exit 1
           fi
+          case "$INGEST_DAYS_BACK" in
+            7|30|45|60|90) ;;
+            *) echo "Unsupported ingestion lookback."; exit 1 ;;
+          esac
+          echo "Refreshing $INGEST_DAYS_BACK completed days."
 
           # Wake the free Render service before sending an authenticated request.
           curl --fail --silent --show-error --connect-timeout 10 --max-time 75 \
@@ -42,7 +61,7 @@ jobs:
           status=$(printf 'X-Admin-Token: %s\n' "$WEATHER_INGESTION_ADMIN_TOKEN" |
             curl --silent --show-error --connect-timeout 10 --max-time 600 \
               --header @- --request POST --output "$response_file" \
-              --write-out '%{http_code}' "$API_ORIGIN/admin/ingest?days_back=7")
+              --write-out '%{http_code}' "$API_ORIGIN/admin/ingest?days_back=$INGEST_DAYS_BACK")
           if [[ "$status" != 200 ]]; then
             echo "Ingestion returned HTTP $status."
             exit 1
