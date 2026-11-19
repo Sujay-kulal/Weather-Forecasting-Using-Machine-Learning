@@ -2,13 +2,14 @@
 Backfill Open-Meteo historical archive data from 2015-01-01 to latest available.
 Batched per state with delays, retries, and row count logging. Safe to re-run.
 """
+import argparse
 import sys
 import time
 import json
 import logging
 import urllib.request
 import urllib.error
-from datetime import datetime, date
+from datetime import date, timedelta
 from pathlib import Path
 
 # Add backend directory to sys.path so app modules can be loaded
@@ -18,8 +19,9 @@ if str(backend_dir) not in sys.path:
 
 from app.database import SessionLocal
 from app.models import WeatherData
-from sqlalchemy import select
-from update_weather import STATE_COORDS
+from sqlalchemy.dialects.postgresql import insert
+
+from update_weather import STATE_COORDS, get_india_today, parse_completed_days
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger("backfill")
@@ -32,7 +34,7 @@ def fetch_archive_for_state(state: str, lat: float, lon: float, start_date: date
         f"latitude={lat}&longitude={lon}&"
         f"start_date={start_date.isoformat()}&end_date={end_date.isoformat()}&"
         f"daily=temperature_2m_max,temperature_2m_min,temperature_2m_mean,precipitation_sum,relative_humidity_2m_mean&"
-        f"timezone=auto"
+        f"timezone=Asia%2FKolkata"
     )
 
     for attempt in range(1, max_retries + 1):
@@ -48,82 +50,51 @@ def fetch_archive_for_state(state: str, lat: float, lon: float, start_date: date
                 raise
             time.sleep(2 ** attempt)
 
-def backfill():
-    end_date = date.today()
-    logger.info(f"Starting historical backfill from {START_DATE} to {end_date} for {len(STATE_COORDS)} states.")
-    session = SessionLocal()
+def backfill(start_date: date = START_DATE, end_date: date | None = None):
+    today = get_india_today()
+    end_date = end_date or today - timedelta(days=1)
+    if not start_date <= end_date < today:
+        raise ValueError("Choose an ordered range of completed dates in India.")
+    logger.info("Backfilling %s through %s for %d states", start_date, end_date, len(STATE_COORDS))
     total_added = 0
     state_results = {}
-
-    try:
+    failures = []
+    with SessionLocal() as session:
         for state, (lat, lon) in STATE_COORDS.items():
-            # Query existing dates for this state to prevent any duplicate insertion
-            existing_dates = set(
-                session.execute(
-                    select(WeatherData.date).where(
-                        WeatherData.state == state,
-                        WeatherData.district == "",
-                        WeatherData.location == ""
-                    )
-                ).scalars().all()
-            )
-            existing_count = len(existing_dates)
-
-            logger.info(f"[{state}] Existing records in DB: {existing_count}. Fetching from Open-Meteo Archive...")
-            data = fetch_archive_for_state(state, lat, lon, START_DATE, end_date)
-
-            if "daily" not in data or "time" not in data["daily"]:
-                logger.warning(f"[{state}] No daily data returned.")
-                state_results[state] = 0
-                continue
-
-            daily = data["daily"]
-            times = daily["time"]
-            t_max = daily["temperature_2m_max"]
-            t_min = daily["temperature_2m_min"]
-            t_mean = daily["temperature_2m_mean"]
-            precip = daily["precipitation_sum"]
-            humid = daily["relative_humidity_2m_mean"]
-
-            new_records = []
-            for i in range(len(times)):
-                if t_max[i] is None or t_min[i] is None or t_mean[i] is None or precip[i] is None or humid[i] is None:
-                    continue
-                d = datetime.strptime(times[i], "%Y-%m-%d").date()
-                if d in existing_dates:
-                    continue
-
-                new_records.append(
-                    WeatherData(
-                        state=state,
-                        district="",
-                        location="",
-                        date=d,
-                        temp_max=float(t_max[i]),
-                        temp_min=float(t_min[i]),
-                        temp_avg=float(t_mean[i]),
-                        humidity=float(humid[i]),
-                        rainfall=float(precip[i]),
-                    )
-                )
-
-            if new_records:
-                session.bulk_save_objects(new_records)
-                session.commit()
-                added = len(new_records)
-                total_added += added
-                logger.info(f"[{state}] Added {added} new historical records. Total for state: {existing_count + added}")
-            else:
-                logger.info(f"[{state}] 0 new records to add (already up to date).")
+            try:
+                data = fetch_archive_for_state(state, lat, lon, start_date, end_date)
+                records = [
+                    row for row in parse_completed_days(data, state, end_date + timedelta(days=1))
+                    if row["date"] >= start_date
+                ]
+                if not records:
+                    raise ValueError("No complete historical days returned")
                 added = 0
+                for index in range(0, len(records), 1000):
+                    table = WeatherData.__table__
+                    statement = insert(table).values(records[index : index + 1000]).on_conflict_do_nothing(
+                        constraint="uq_weather_state_dist_loc_date",
+                    ).returning(table.c.id)
+                    added += len(session.scalars(statement).all())
+                session.commit()
+                total_added += added
+                state_results[state] = added
+            except Exception:
+                session.rollback()
+                failures.append(state)
+                logger.exception("Archive backfill failed for %s", state)
+            finally:
+                time.sleep(1.0)
 
-            state_results[state] = added
-            time.sleep(1.0) # gentle delay between states to respect rate limits
+    logger.info("Archive backfill added %d rows across %d states", total_added, len(state_results))
+    if failures:
+        raise RuntimeError(f"Backfill incomplete for: {', '.join(failures)}")
+    return total_added, state_results
 
-        logger.info(f"Backfill finished successfully! Total records added across all states: {total_added}")
-        return total_added, state_results
-    finally:
-        session.close()
 
 if __name__ == "__main__":
-    backfill()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--start-date", type=date.fromisoformat, default=START_DATE)
+    parser.add_argument("--end-date", type=date.fromisoformat)
+    args = parser.parse_args()
+    backfill(args.start_date, args.end_date)

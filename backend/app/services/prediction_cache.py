@@ -1,6 +1,6 @@
 """
 Prediction computation cache using cachetools TTLCache with thread-safety.
-Keyed by (state, target_date, latest_data_date) with TTL of 3600 seconds.
+Keyed by model, forecast origin and feature values with TTL of 3600 seconds.
 """
 import threading
 from typing import Any, Iterator, MutableMapping

@@ -1,7 +1,7 @@
 """Actual outcome backfill and rolling live forecast metrics."""
 from collections import defaultdict
-from datetime import date as date_type, timedelta
-from math import fsum
+from datetime import date as date_type, timedelta, timezone
+from math import fsum, isfinite
 from zoneinfo import ZoneInfo
 
 from sqlalchemy import func, select, update
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.database import SessionLocal
 from app.models import Prediction, WeatherData
+from app.services.prediction_store import target_start_utc
 
 
 def india_today() -> date_type:
@@ -53,6 +54,7 @@ def rolling_live_metrics(
     *,
     today: date_type | None = None,
     rolling_days: int = 30,
+    prospective_only: bool = False,
 ) -> dict:
     """Compare stored model forecasts and persistence on identical outcomes."""
     as_of = today or india_today()
@@ -76,7 +78,8 @@ def rolling_live_metrics(
             "models": [],
         }
 
-    start_history = period_start - timedelta(days=1)
+    persistence_lag = timedelta(days=2 if prospective_only else 1)
+    start_history = period_start - persistence_lag
     weather = db.execute(
         select(WeatherData).where(
             WeatherData.date >= start_history,
@@ -86,11 +89,18 @@ def rolling_live_metrics(
     history_by_key = {
         (row.state, row.district or "", row.location or "", row.date): float(row.temp_avg)
         for row in weather
+        if row.temp_avg is not None and isfinite(row.temp_avg)
     }
 
     errors: dict[str, tuple[list[float], list[float]]] = defaultdict(lambda: ([], []))
     for prediction in predictions:
-        prior_date = prediction.forecast_date - timedelta(days=1)
+        if prospective_only:
+            issued_at = prediction.created_at
+            if issued_at.tzinfo is None:
+                issued_at = issued_at.replace(tzinfo=timezone.utc)
+            if issued_at >= target_start_utc(prediction.forecast_date):
+                continue
+        prior_date = prediction.forecast_date - persistence_lag
         key = (prediction.state, prediction.district or "", prediction.location or "", prior_date)
         persistence = history_by_key.get(key)
         if persistence is None:
@@ -102,6 +112,8 @@ def rolling_live_metrics(
             predicted_temp = float(forecast[0])
             actual_temp = float(prediction.actual_temp)
         except (TypeError, ValueError):
+            continue
+        if not isfinite(predicted_temp) or not isfinite(actual_temp):
             continue
         model_errors, persistence_errors = errors[prediction.model_version]
         model_errors.append(abs(predicted_temp - actual_temp))

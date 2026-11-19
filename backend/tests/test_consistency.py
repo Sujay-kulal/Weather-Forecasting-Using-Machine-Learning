@@ -1,17 +1,18 @@
 """
 CRITICAL model-consistency test (Phase 2 requirement #20).
 
-Verifies that the backend feature builder produces EXACTLY the same 13 features
+Verifies that the backend feature builder produces the same 20 features
 as train_model.py for the same (state, forecast date), and that both produce
 the same prediction from the saved pipeline.
 
 train_model.py logic replicated here with pandas (independent implementation):
-  row at date t carries lags from t, t-1, t-2 ... and its target is day t+1.
+  row at date t carries lags from t-1, t-2, t-3 ... and its first target is day t+1.
   So for forecast date D, the reference training row is the record at t = D-1.
 
 Run from backend/:  pytest tests/test_consistency.py
 """
 import sys
+import argparse
 from pathlib import Path
 
 import numpy as np
@@ -20,7 +21,8 @@ import pandas as pd
 # Ensure backend/ is on sys.path so `app.*` imports work
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import text
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 from app.database import SessionLocal  # noqa: E402
 from app.models import WeatherData  # noqa: E402
 from app.services import model_service  # noqa: E402
@@ -69,12 +71,12 @@ def training_reference(df: pd.DataFrame, state: str, forecast_date: str) -> pd.S
     return row
 
 
-def run_consistency_check() -> bool:
-    """Run the manual database-versus-CSV check when invoked as a script."""
+def run_consistency_check(*, require_database: bool = False) -> bool:
+    """Compare against the source CSV and require stored observations in strict mode."""
     if not CSV.is_file():
         print(f"NOTICE: Consistency dataset not found at: {CSV}")
         print("Skipping consistency check gracefully (raw training CSV is gitignored / not present on disk).")
-        return True
+        return not require_database
 
     cases = [
         ("Karnataka", "2025-10-06"),
@@ -83,17 +85,18 @@ def run_consistency_check() -> bool:
         ("Rajasthan", "2023-06-01"),
     ]
     df = _training_frame()
-    try:
-        session = SessionLocal()
-        with session.bind.connect() as conn:
-            conn.execute(text("SELECT 1"))
-    except Exception as exc:
-        print(f"NOTICE: Database connection failed ({exc}).")
-        print("Skipping consistency check gracefully (database unavailable).")
-        return True
-
     all_ok = True
+    session = SessionLocal()
+    database_available = True
     try:
+        try:
+            session.execute(select(WeatherData).limit(0))
+        except SQLAlchemyError:
+            database_available = False
+            session.rollback()
+        if require_database and not database_available:
+            print("FAIL: The PostgreSQL weather table is unavailable.")
+            return False
         print(f"{'case':38s} {'max|diff|':>10s}  features  prediction")
         for state, forecast_date in cases:
             ref = training_reference(df, state, forecast_date)
@@ -102,7 +105,16 @@ def run_consistency_check() -> bool:
             asof = (pd.Timestamp(forecast_date) - pd.Timedelta(days=1)).date()
             history = session.query(WeatherData).filter(
                 WeatherData.state == state, WeatherData.district == "", WeatherData.location == "", WeatherData.date < asof
-            ).order_by(WeatherData.date.desc()).limit(7).all()
+            ).order_by(WeatherData.date.desc()).limit(7).all() if database_available else []
+            if len(history) != 7:
+                if require_database:
+                    print(f"FAIL: PostgreSQL needs seven records for {state} before {asof}.")
+                    return False
+                rows = df[(df["State"] == state) & (df["Date"] < pd.Timestamp(asof))].tail(7)
+                history = [WeatherData(date=row.Date.date(), temp_max=row.Temp_Max, temp_min=row.Temp_Min,
+                                       temp_avg=row.Temp_Avg, humidity=row.Humidity, rainfall=row.Rainfall)
+                           for row in rows.itertuples(index=False)]
+                print(f"Source for {state}: CSV (PostgreSQL history unavailable).")
             backend_feats = build_features(history, state, asof).iloc[0]
 
             max_diff = 0.0
@@ -152,4 +164,6 @@ def test_consistency_check_graceful_handling():
 
 
 if __name__ == "__main__":
-    sys.exit(0 if run_consistency_check() else 1)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--require-database", action="store_true")
+    sys.exit(0 if run_consistency_check(require_database=parser.parse_args().require_database) else 1)

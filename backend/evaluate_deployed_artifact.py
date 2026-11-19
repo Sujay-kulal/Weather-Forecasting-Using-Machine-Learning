@@ -5,7 +5,7 @@ for each state, enforces an eight-day post-training embargo, and evaluates
 on genuine post-training test windows (30, 60, or 90 forecast origins).
 
 Never fits or modifies a model artifact, and never alters model/model_info.json.
-Results are saved separately to model/evaluation_results_v3.json.
+Results are saved separately under results/ by default.
 """
 from __future__ import annotations
 
@@ -24,12 +24,15 @@ import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
+from sklearn.model_selection import TimeSeriesSplit
 from sqlalchemy import create_engine, text
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT / "backend") not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT / "backend"))
+from app.database_url import postgres_url
+
 load_dotenv(PROJECT_ROOT / "backend" / ".env")
 
 logger = logging.getLogger("evaluate_deployed_artifact")
@@ -221,14 +224,20 @@ def build_calendar_verified_panel(
         df = df[df["State"].isin(allowed_states)].copy()
 
     df = df.dropna(subset=required_cols)
+    df = df[np.isfinite(df[required_cols[2:]].to_numpy(dtype=float)).all(axis=1)]
     if df.empty:
         return pd.DataFrame()
 
     rows: list[dict[str, Any]] = []
 
     for state, state_group in df.groupby("State"):
-        # Sort and deduplicate by date for this state
-        sorted_state = state_group.sort_values("Date").drop_duplicates(subset=["Date"])
+        # Collapse identical observations and exclude dates with conflicting values.
+        sorted_state = (
+            state_group[required_cols]
+            .drop_duplicates()
+            .drop_duplicates(subset=["Date"], keep=False)
+            .sort_values("Date")
+        )
         date_map = {row.Date: row for row in sorted_state.itertuples(index=False)}
         all_dates = set(date_map.keys())
 
@@ -290,6 +299,20 @@ def build_calendar_verified_panel(
 
     panel = pd.DataFrame(rows).sort_values(["State", "Date"]).reset_index(drop=True)
     return panel
+
+
+def chronological_splits(origins: pd.Series, n_splits: int = 5):
+    """Split by calendar origin and leave eight days between train and test origins."""
+    dates = pd.to_datetime(origins).dt.normalize()
+    unique_dates = np.sort(dates.unique())
+    for train, test in TimeSeriesSplit(n_splits=n_splits).split(unique_dates):
+        test_dates = unique_dates[test]
+        cutoff = pd.Timestamp(test_dates[0]) - timedelta(days=EMBARGO_DAYS)
+        train_dates = unique_dates[train]
+        train_dates = train_dates[train_dates < cutoff.to_datetime64()]
+        if len(train_dates) == 0:
+            raise ValueError("Not enough calendar history for the cross-validation embargo.")
+        yield np.flatnonzero(dates.isin(train_dates)), np.flatnonzero(dates.isin(test_dates))
 
 
 def _metric_values(actual: np.ndarray, predicted: np.ndarray) -> dict[str, float]:
@@ -393,11 +416,14 @@ def run_evaluation(
     if not source_model_info_path.is_file():
         raise FileNotFoundError(f"Source model metadata not found: {source_model_info_path}")
 
-    target_output = output_path or (PROJECT_ROOT / "model" / "evaluation_results_v3.json")
-    if target_output.resolve() == (PROJECT_ROOT / "model" / "model_info.json").resolve():
-        raise ValueError(
-            "Modifying model_info.json is strictly prohibited. Output must be saved separately as model/evaluation_results_v3.json."
-        )
+    target_output = output_path or (PROJECT_ROOT / "results" / "evaluation_results_v3.json")
+    output = target_output.resolve()
+    if output in {source_model_info_path.resolve(), (PROJECT_ROOT / "model" / "model_info.json").resolve()}:
+        raise ValueError("Modifying model_info.json is strictly prohibited. Choose a separate output file.")
+    if output in {artifact_path.resolve(), (PROJECT_ROOT / "model" / "weather_model_v3.joblib").resolve()}:
+        raise ValueError("Modifying the model artifact is strictly prohibited. Choose a separate output file.")
+    if output == (PROJECT_ROOT / "model" / "evaluation_results_v3.json").resolve():
+        raise ValueError("Choose a separate output file to preserve the archived evaluation.")
 
     source_info = json.loads(source_model_info_path.read_text(encoding="utf-8"))
     artifact_features = source_info.get("features", [])
@@ -410,6 +436,8 @@ def run_evaluation(
         )
 
     artifact_hash = hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+    if source_info.get("evaluation_artifact_sha256", artifact_hash) != artifact_hash:
+        raise ValueError("Evaluation artifact SHA-256 differs from the supplied model metadata.")
 
     training_cutoff = get_training_cutoff(source_info)
     first_eligible_origin, last_eligible_origin, target_end_date, history_start_date = calculate_eligible_test_period(
@@ -450,7 +478,7 @@ def run_evaluation(
         if not db_url:
             raw = pd.DataFrame()
         else:
-            engine = create_engine(db_url, pool_pre_ping=True, connect_args={"connect_timeout": 3})
+            engine = create_engine(postgres_url(db_url), pool_pre_ping=True, connect_args={"connect_timeout": 3}, hide_parameters=True)
             try:
                 with engine.connect() as connection:
                     with connection.begin():
@@ -461,6 +489,7 @@ def run_evaluation(
                             WHERE state <> 'Other'
                               AND COALESCE(district, '') = ''
                               AND COALESCE(location, '') = ''
+                              AND date < (CURRENT_TIMESTAMP AT TIME ZONE 'Asia/Kolkata')::date
                             ORDER BY state, date
                         """), connection)
             except Exception as e:
@@ -532,7 +561,7 @@ def run_evaluation(
         # Assessment of preliminary evaluation feasibility:
         # Determine whether an honest preliminary evaluation can be performed using available
         # post-cutoff observations without weakening chronological separation or minimum sample requirements.
-        available_post_cutoff_days = max(0, (max_available_date - training_cutoff).days)
+        available_post_cutoff_days = date_series[date_series > training_cutoff].nunique()
         preliminary_feasible = False
         if available_post_cutoff_days == 0:
             origins_span = f"({eligible_origins_range[0]} to {eligible_origins_range[1]})" if eligible_origins_range else "(none)"
@@ -606,7 +635,7 @@ def run_evaluation(
             },
             "metrics": {},
             "data_integrity": {
-                "consecutive_calendar_dates_verified": True,
+                "consecutive_calendar_dates_verified": False,
                 "missing_dates_excluded": True,
                 "training_overlap_checked": True,
                 "independent": False,
@@ -616,8 +645,8 @@ def run_evaluation(
                 f"of post-cutoff data coverage (through {required_target_end}), comprising {hist_elapsed_days} historical "
                 f"elapsed days {hist_range_str} and {future_unobservable_days} future "
                 f"unobservable days {future_range_str}. "
-                f"Currently, exactly {eligible_origins_count} eligible complete evaluation origins exist "
-                f"{eligible_range_str}, which cannot satisfy the mandatory 30-origin minimum sample size."
+                f"The calendar through {today_date} permits up to {eligible_origins_count} complete origins "
+                f"{eligible_range_str}. The available observations do not cover the required {test_window_origins}-origin window."
             ),
         }
         target_output.parent.mkdir(parents=True, exist_ok=True)
@@ -675,22 +704,23 @@ def run_evaluation(
         max_origin=test_end,
     )
 
-    if test_panel.empty:
+    complete_origins = 0 if test_panel.empty else test_panel["Date"].nunique()
+    if test_panel.empty or (mode == "independent" and complete_origins < test_window_origins):
         result = {
-            "status": "empty_calendar_verified_panel",
+            "status": "empty_calendar_verified_panel" if test_panel.empty else "incomplete_calendar_verified_panel",
             "validated_for_artifact": False,
             "artifact_name": artifact_path.name,
             "artifact_sha256": artifact_hash,
             "artifact_trained_through": str(training_cutoff),
             "test_window_origins": test_window_origins,
             "sample_counts": {
-                "test_origins": 0,
+                "test_origins": int(complete_origins),
                 "states_evaluated": 0,
                 "total_eval_samples": 0,
                 "total_predictions": 0,
             },
             "metrics": {},
-            "note": "No complete calendar-verified rows could be constructed for the test window.",
+            "note": f"Verified calendar coverage includes {complete_origins} of {test_window_origins} required origins.",
         }
         target_output.parent.mkdir(parents=True, exist_ok=True)
         target_output.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
@@ -853,7 +883,7 @@ def main() -> None:
     parser.add_argument(
         "--output-path",
         type=Path,
-        default=PROJECT_ROOT / "model" / "evaluation_results_v3.json",
+        default=PROJECT_ROOT / "results" / "evaluation_results_v3.json",
         help="Path where evaluation results JSON will be saved.",
     )
     parser.add_argument(

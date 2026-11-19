@@ -11,6 +11,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
+from app.database_url import postgres_url
 
 # Load backend/.env (safe if missing - real env vars still work)
 BACKEND_DIR = Path(__file__).resolve().parent.parent
@@ -23,8 +24,7 @@ if not DATABASE_URL:
         "and set your database connection string."
     )
 
-if DATABASE_URL.startswith("postgresql://"):
-    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"):]
+DATABASE_URL = postgres_url(DATABASE_URL).render_as_string(hide_password=False)
 
 
 def get_engine_kwargs(database_url: str) -> dict:
@@ -37,12 +37,14 @@ def get_engine_kwargs(database_url: str) -> dict:
         "pool_pre_ping": True,
         "pool_recycle": 1800,
         "echo": False,
+        "hide_parameters": True,
     }
     if "sqlite" not in database_url.lower():
         kwargs.update({
             "pool_size": 5,
             "max_overflow": 10,
             "pool_timeout": 30,
+            "connect_args": {"connect_timeout": 5},
         })
     return kwargs
 

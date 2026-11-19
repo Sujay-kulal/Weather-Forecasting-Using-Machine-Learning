@@ -1,17 +1,17 @@
 """
 Weather Forecasting Using Machine Learning - Training Pipeline
 ==============================================================
-Forecasts NEXT-DAY AVERAGE TEMPERATURE (Temp_Avg) for Indian states
+Experiments with seven-day average temperature (Temp_Avg) forecasts for Indian states
 using the real daily weather columns of PSP_Weather_Merged_EDA_Cleaned.csv.
 
 Steps (kept simple for project viva):
  1. Load data, keep only weather-relevant columns
  2. Build lag features (yesterday's weather, temp_range, day_of_year) per state - no future info used
- 3. Use TimeSeriesSplit cross-validation to evaluate models correctly on temporal data
+ 3. Split by calendar date and embargo seven-day targets between folds
  4. Train baselines + Tune Random Forest/Gradient Boosting + LightGBM
  5. Evaluate models with cross-validation (MAE, RMSE, R2) and by State/Season
  6. Plot residuals to check model assumptions
- 7. Save the best model + preprocessing pipeline + metadata for the backend API
+ 7. Save experimental artifacts and cross-validation diagnostics under results/
 
 Run:  python train_model.py
 """
@@ -25,24 +25,35 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
+from pathlib import Path
+
 from sklearn.compose import ColumnTransformer
 from sklearn.ensemble import GradientBoostingRegressor, RandomForestRegressor
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
-from sklearn.model_selection import TimeSeriesSplit, RandomizedSearchCV
+from sklearn.model_selection import RandomizedSearchCV
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.tree import DecisionTreeRegressor
 import lightgbm as lgb
 
+from backend.evaluate_deployed_artifact import (
+    CAT_FEATURES as FEATURES_CAT,
+    FEATURE_ORDER as FEATURES,
+    NUMERIC_FEATURES as FEATURES_NUM,
+    TARGET_COLUMNS as TARGETS,
+    build_calendar_verified_panel,
+    chronological_splits,
+)
+
 # Suppress warnings for cleaner output
 warnings.filterwarnings("ignore")
 
 RANDOM_STATE = 42
 DATA_PATH = os.path.join("data", "archive_c", "PSP_Weather_Merged_EDA_Cleaned.csv")
-MODEL_DIR = "model"
 RESULTS_DIR = "results"
+MODEL_DIR = os.path.join(RESULTS_DIR, "experiments")
 
 # ------------------------------------------------------------------
 # 0. Fetch dataset from Kaggle if not already present
@@ -57,96 +68,25 @@ else:
     print(f"   Dataset found at {DATA_PATH}")
 
 # ------------------------------------------------------------------
-# 1. Load data - only the real weather columns (power columns excluded)
+# 1. Load weather and verify calendar alignment before splitting
 # ------------------------------------------------------------------
-print("\n1. Loading data ...")
-df = pd.read_csv(DATA_PATH)
-df["Date"] = pd.to_datetime(df["Date"])
-
-weather_cols = ["Date", "State", "Temp_Max", "Temp_Min", "Temp_Avg",
-                "Humidity", "Rainfall", "Month", "Season"]
-df = df[weather_cols].copy()
-
-# Drop rows with missing values (only 1 incomplete date-state combination exists)
-before = len(df)
-df = df.dropna()
-print(f"   Rows: {len(df)} (dropped {before - len(df)}), States: {df['State'].nunique()}, "
-      f"Dates: {df['Date'].min().date()} -> {df['Date'].max().date()}")
-
-# Sort chronologically so lag features are built correctly within each state
-df = df.sort_values(["State", "Date"]).reset_index(drop=True)
-
-# ------------------------------------------------------------------
-# 2. Feature engineering - everything uses ONLY past days (no leakage)
-# ------------------------------------------------------------------
-print("2. Building features ...")
-g = df.groupby("State")
-
-# Temperature lags: what temperature was on the previous 1/2/3 days
-df["lag1_temp_avg"] = g["Temp_Avg"].shift(1)
-df["lag2_temp_avg"] = g["Temp_Avg"].shift(2)
-df["lag3_temp_avg"] = g["Temp_Avg"].shift(3)
-
-# Yesterday's other weather readings
-df["lag1_temp_max"] = g["Temp_Max"].shift(1)
-df["lag1_temp_min"] = g["Temp_Min"].shift(1)
-df["lag1_humidity"] = g["Humidity"].shift(1)
-df["lag1_rainfall"] = g["Rainfall"].shift(1)
-
-# NEW FEATURES 
-# Why lag2_humidity, lag2_rainfall? Provides short-term trend/momentum (is it getting wetter/drier?).
-df["lag2_humidity"] = g["Humidity"].shift(2)
-df["lag2_rainfall"] = g["Rainfall"].shift(2)
-
-# Why temp_range? Captures daily temperature variation (diurnal range), which is a strong indicator of cloud cover/humidity.
-df["temp_range"] = df["lag1_temp_max"] - df["lag1_temp_min"]
-
-# Rolling means of PAST days (shift(1) first, so today's value is never included)
-df["roll3_temp_avg"] = g["Temp_Avg"].shift(1).rolling(3).mean()
-df["roll7_temp_avg"] = g["Temp_Avg"].shift(1).rolling(7).mean()
-
-# Why rainfall_roll3, rainfall_roll7? Captures recent cumulative rainfall, indicating soil moisture and potential cooling effects.
-df["rainfall_roll3"] = g["Rainfall"].shift(1).rolling(3).sum()
-df["rainfall_roll7"] = g["Rainfall"].shift(1).rolling(7).sum()
-
-# Where in the year we are (month as a cycle, so Dec(12) is close to Jan(1))
-df["month_sin"] = np.sin(2 * np.pi * df["Month"] / 12)
-df["month_cos"] = np.cos(2 * np.pi * df["Month"] / 12)
-
-# Why day_of_year_sin/cos? Finer seasonal cycle than month. Days capture smoother transitions (e.g., end of month vs beginning).
-day_of_year = df["Date"].dt.dayofyear
-df["day_of_year_sin"] = np.sin(2 * np.pi * day_of_year / 365)
-df["day_of_year_cos"] = np.cos(2 * np.pi * day_of_year / 365)
-
-# TARGET: next 7 days average temperature
-for i in range(1, 8):
-    df[f"target_{i}"] = g["Temp_Avg"].shift(-i)
-
-# First ~7 days per state lack lag history, last day lacks tomorrow -> drop them
-df = df.dropna(subset=["lag1_temp_avg", "lag2_temp_avg", "lag3_temp_avg",
-                       "roll3_temp_avg", "roll7_temp_avg",
-                       "lag2_humidity", "lag2_rainfall", "rainfall_roll3", "rainfall_roll7", "temp_range"] + [f"target_{i}" for i in range(1, 8)])
-print(f"   Rows after building lags/target: {len(df)}")
-
-FEATURES_NUM = ["lag1_temp_avg", "lag2_temp_avg", "lag3_temp_avg",
-                "lag1_temp_max", "lag1_temp_min", "lag1_humidity", "lag1_rainfall",
-                "lag2_humidity", "lag2_rainfall", "temp_range",
-                "roll3_temp_avg", "roll7_temp_avg", "rainfall_roll3", "rainfall_roll7",
-                "month_sin", "month_cos", "day_of_year_sin", "day_of_year_cos"]
-FEATURES_CAT = ["Season", "State"]
-FEATURES = FEATURES_NUM + FEATURES_CAT
-TARGETS = [f"target_{i}" for i in range(1, 8)]
-
-# To ensure Temporal CV doesn't mix future info, we must sort the final dataset chronologically
-df = df.sort_values("Date").reset_index(drop=True)
+print("\n1. Loading statewide weather and building features ...")
+raw = pd.read_csv(DATA_PATH)
+model_info = Path(__file__).resolve().parent / "model" / "model_info.json"
+supported_states = json.loads(model_info.read_text(encoding="utf-8"))["states"]
+df = build_calendar_verified_panel(raw, allowed_states=supported_states)
+if df.empty:
+    raise ValueError("No complete calendar-aligned training rows in the dataset.")
+df = df.sort_values(["Date", "State"]).reset_index(drop=True)
 X = df[FEATURES]
 y = df[TARGETS]
+print(f"   Calendar-aligned rows: {len(df)}, states: {df['State'].nunique()}")
 
 # ------------------------------------------------------------------
-# 3. Cross-validation setup (TimeSeriesSplit)
+# 2. Split unique dates, with a calendar embargo for multi-day targets
 # ------------------------------------------------------------------
-print("3. Setting up TimeSeriesSplit (5 folds) ...")
-tscv = TimeSeriesSplit(n_splits=5)
+print("2. Preparing embargoed chronological cross-validation (5 folds) ...")
+cv_splits = list(chronological_splits(df["Date"]))
 
 # ------------------------------------------------------------------
 # 4. Preprocessing pipeline + Model Training & Tuning
@@ -180,7 +120,7 @@ rf_param_grid = {
 rf_search = RandomizedSearchCV(
     make_pipeline(RandomForestRegressor(random_state=RANDOM_STATE, n_jobs=-1)),
     param_distributions=rf_param_grid,
-    n_iter=2, cv=tscv, scoring="neg_mean_absolute_error",
+    n_iter=2, cv=cv_splits, scoring="neg_mean_absolute_error",
     random_state=RANDOM_STATE, n_jobs=-1
 )
 rf_search.fit(X, y)
@@ -197,7 +137,7 @@ gb_param_grid = {
 gb_search = RandomizedSearchCV(
     make_pipeline(MultiOutputRegressor(GradientBoostingRegressor(random_state=RANDOM_STATE))),
     param_distributions=gb_param_grid,
-    n_iter=2, cv=tscv, scoring="neg_mean_absolute_error",
+    n_iter=2, cv=cv_splits, scoring="neg_mean_absolute_error",
     random_state=RANDOM_STATE, n_jobs=-1
 )
 gb_search.fit(X, y)
@@ -205,9 +145,9 @@ models["Gradient Boosting (Tuned)"] = gb_search.best_estimator_
 print(f"      Best GB Params: {gb_search.best_params_}")
 
 
-def evaluate_model_cv(model_pipe, X, y, tscv):
+def evaluate_model_cv(model_pipe, X, y, cv_splits):
     maes, rmses, r2s = [], [], []
-    for train_idx, test_idx in tscv.split(X):
+    for train_idx, test_idx in cv_splits:
         X_train, X_test = X.iloc[train_idx], X.iloc[test_idx]
         y_train, y_test = y.iloc[train_idx], y.iloc[test_idx]
         
@@ -233,14 +173,14 @@ for name, model in models.items():
     else:
         pipe = make_pipeline(model)
         
-    results[name] = evaluate_model_cv(pipe, X, y, tscv)
+    results[name] = evaluate_model_cv(pipe, X, y, cv_splits)
     print(f"   {name:30s} MAE={results[name]['MAE_mean']:.3f}±{results[name]['MAE_std']:.3f}  "
           f"RMSE={results[name]['RMSE_mean']:.3f}±{results[name]['RMSE_std']:.3f}  "
           f"R2={results[name]['R2_mean']:.3f}±{results[name]['R2_std']:.3f}")
 
 # Naive persistence reference: "tomorrow = today" (extended to 7 days)
 naive_maes, naive_rmses, naive_r2s = [], [], []
-for train_idx, test_idx in tscv.split(X):
+for train_idx, test_idx in cv_splits:
     y_test = y.iloc[test_idx]
     naive_pred = np.column_stack([X.iloc[test_idx]["lag1_temp_avg"]] * 7)
     
@@ -248,14 +188,14 @@ for train_idx, test_idx in tscv.split(X):
     naive_rmses.append(np.sqrt(mean_squared_error(y_test, naive_pred)))
     naive_r2s.append(r2_score(y_test, naive_pred))
 
-results["Naive (tomorrow=today)"] = {
+results["Persistence (latest available temperature)"] = {
     "MAE_mean": np.mean(naive_maes), "MAE_std": np.std(naive_maes),
     "RMSE_mean": np.mean(naive_rmses), "RMSE_std": np.std(naive_rmses),
     "R2_mean": np.mean(naive_r2s), "R2_std": np.std(naive_r2s),
     "pipeline": None,
 }
 
-name = "Naive (tomorrow=today)"
+name = "Persistence (latest available temperature)"
 print(f"   {name:30s} MAE={results[name]['MAE_mean']:.3f}±{results[name]['MAE_std']:.3f}  "
       f"RMSE={results[name]['RMSE_mean']:.3f}±{results[name]['RMSE_std']:.3f}  "
       f"R2={results[name]['R2_mean']:.3f}±{results[name]['R2_std']:.3f}")
@@ -288,11 +228,11 @@ df_eval["AbsError"] = pd.concat(abs_errors, axis=1).mean(axis=1)
 state_mae = df_eval.groupby("State")["AbsError"].mean().sort_values(ascending=False)
 season_mae = df_eval.groupby("Season")["AbsError"].mean().sort_values(ascending=False)
 
-print("\n   --- MAE Breakdown by State (Top 5 Worst) ---")
+print("\n   --- In-sample MAE Breakdown by State (Top 5 Worst) ---")
 for state, mae in state_mae.head(5).items():
     print(f"      {state}: {mae:.3f}")
 
-print("\n   --- MAE Breakdown by Season ---")
+print("\n   --- In-sample MAE Breakdown by Season ---")
 for season, mae in season_mae.items():
     print(f"      {season}: {mae:.3f}")
 
@@ -327,7 +267,7 @@ plt.close()
 print(f"   Residual plots saved to {RESULTS_DIR}/residual_plots.png")
 
 # ------------------------------------------------------------------
-# 6. Save model + metadata for the future backend API
+# 6. Save experimental model and diagnostics
 # ------------------------------------------------------------------
 print("\n6. Saving artifacts ...")
 os.makedirs(MODEL_DIR, exist_ok=True)
@@ -338,8 +278,8 @@ metadata = {
     "best_model": best_name,
     "target": "next 7 days Temp_Avg (deg C)",
     "features": FEATURES,
-    "train_period": [str(df["Date"].min().date()), str(df["Date"].max().date())],
-    "test_period": ["N/A (TimeSeriesSplit CV used)"],
+    "train_period": [str(df["Date"].min()), str(df["Date"].max())],
+    "evaluation_status": "cross_validation_diagnostics_after_model_selection",
     "metrics": {
         k: {
             "MAE_mean": round(v["MAE_mean"], 4), "MAE_std": round(v["MAE_std"], 4),
@@ -351,26 +291,9 @@ metadata = {
     "random_state": RANDOM_STATE,
 }
 
-model_info_path = os.path.join(MODEL_DIR, "model_info.json")
 cv_info_path = os.path.join(MODEL_DIR, "weather_model_info.json")
-with open(cv_info_path, "w") as f:
+with open(cv_info_path, "w", encoding="utf-8") as f:
     json.dump(metadata, f, indent=2)
-
-# Guard: Do not overwrite production v3 artifact configuration or evaluation metadata
-if os.path.exists(model_info_path):
-    try:
-        with open(model_info_path, "r") as f:
-            existing = json.load(f)
-        if "weather_model_v3" in str(existing.get("model_path", "")) or existing.get("evaluation_artifact_sha256"):
-            print("   Preserved production model/model_info.json (v3 artifact metadata protected).")
-        else:
-            with open(model_info_path, "w") as f:
-                json.dump(metadata, f, indent=2)
-    except Exception:
-        pass
-else:
-    with open(model_info_path, "w") as f:
-        json.dump(metadata, f, indent=2)
 
 comparison = pd.DataFrame(
     [{ "Model": k, 
@@ -381,6 +304,6 @@ comparison = pd.DataFrame(
 ).sort_values("CV_Mean_MAE")
 comparison.to_csv(os.path.join(RESULTS_DIR, "model_comparison.csv"), index=False)
 
-print(f"   Saved: {MODEL_DIR}/weather_model.joblib, {MODEL_DIR}/model_info.json, "
+print(f"   Saved: {MODEL_DIR}/weather_model.joblib, {cv_info_path}, "
       f"{RESULTS_DIR}/model_comparison.csv")
 print("\nDone.")

@@ -10,7 +10,8 @@ from app.database import engine, init_db
 def _constraint_exists(conn, constraint_name: str) -> bool:
     """Check if a constraint already exists in the database (e.g. PostgreSQL pg_constraint)."""
     try:
-        query = text("SELECT 1 FROM pg_constraint WHERE conname = :conname")
+        query = text("SELECT 1 FROM pg_constraint WHERE conname = :conname "
+                     "AND connamespace = current_schema()::regnamespace")
         res = conn.execute(query, {"conname": constraint_name}).scalar()
         if res:
             return True
@@ -22,9 +23,11 @@ def _constraint_exists(conn, constraint_name: str) -> bool:
 def _is_duplicate_constraint_error(exc: Exception) -> bool:
     """Return True if the error is specifically a duplicate constraint or object in PostgreSQL/SQLAlchemy."""
     orig = getattr(exc, "orig", None)
-    pgcode = getattr(orig, "pgcode", None) or getattr(exc, "pgcode", None)
+    pgcode = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None) or getattr(exc, "pgcode", None)
     if pgcode in ("42710", "42P07"):
         return True
+    if pgcode is not None:
+        return False
 
     msg = str(exc).lower()
     return "already exists" in msg or "duplicate" in msg

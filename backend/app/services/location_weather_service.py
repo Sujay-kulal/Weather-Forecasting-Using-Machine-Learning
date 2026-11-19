@@ -9,7 +9,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date as date_type, timedelta
 import logging
-import math
 from typing import Optional
 
 from sqlalchemy import func, select
@@ -18,8 +17,7 @@ from sqlalchemy.orm import Session
 from app.models import WeatherData, WeatherLocationMetadata
 from app.schemas import LocationOption, LocationWeatherResponse, WeatherDay
 from app.services import model_service, open_meteo_service
-from app.services.feature_service import MAX_STALENESS_DAYS, REQUIRED_HISTORY, build_features
-from app.services.prediction_cache import prediction_cache
+from app.services.feature_service import InsufficientHistoryError, REQUIRED_HISTORY
 
 
 logger = logging.getLogger("location_weather")
@@ -193,27 +191,12 @@ def _try_ml_prediction(
         .order_by(WeatherData.date.desc())
         .limit(REQUIRED_HISTORY)
     ).scalars().all()
-    if len(history) < REQUIRED_HISTORY:
-        return None
-    if (asof - history[0].date).days > MAX_STALENESS_DAYS:
-        return None
-
-    cache_key = (
-        identity.state,
-        requested_date,
-        history[0].date,
-    )
     try:
-        if cache_key in prediction_cache:
-            predicted = prediction_cache[cache_key]
-        else:
-            features = build_features(history, identity.state, asof, today=current_date)
-            predicted = model_service.predict(features, pipeline=pipeline)
-            prediction_cache[cache_key] = predicted
-        temperatures = [float(value) for value in predicted]
-        if not temperatures or len(temperatures) != 7 or not all(math.isfinite(value) for value in temperatures):
-            logger.error("Model returned no usable values for %s", identity)
-            return None
+        temperatures = model_service.predict_for_history(
+            history, identity.state, asof, today=current_date, pipeline=pipeline,
+        )
+    except InsufficientHistoryError:
+        return None
     except Exception:
         logger.exception("Model prediction unavailable for %s", identity)
         return None

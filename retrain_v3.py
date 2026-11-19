@@ -1,152 +1,104 @@
-"""
-Retrain v3 pipeline on all cleaned data through yesterday (IST).
-- Excludes 'Other'
-- Uses identical pipeline and hyperparameters as v2
-- Saves to model/weather_model_v3.joblib (never overwriting v2)
-- Updates model/model_info.json keeping v2 held-out metrics and adding trained_through
-"""
-import os
-import sys
+"""Fit an explicitly requested LightGBM candidate in a new output directory."""
+
+import argparse
+import hashlib
 import json
 import logging
+import os
+from datetime import date, datetime, timedelta
 from pathlib import Path
-import joblib
-import numpy as np
-import pandas as pd
-from dotenv import load_dotenv
+from zoneinfo import ZoneInfo
 
+import joblib
+import lightgbm as lgb
+import pandas as pd
 from sklearn.compose import ColumnTransformer
+from sklearn.multioutput import MultiOutputRegressor
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.multioutput import MultiOutputRegressor
-import lightgbm as lgb
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 
-backend_dir = Path(__file__).resolve().parent / "backend"
-if str(backend_dir) not in sys.path:
-    sys.path.insert(0, str(backend_dir))
+from backend.evaluate_deployed_artifact import (
+    CAT_FEATURES,
+    FEATURE_ORDER,
+    HORIZON_DAYS,
+    NUMERIC_FEATURES,
+    PROJECT_ROOT,
+    TARGET_COLUMNS,
+    build_calendar_verified_panel,
+)
+from app.database_url import postgres_url
 
-load_dotenv("backend/.env")
-
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger("retrain_v3")
+PRODUCTION_MODEL_DIR = PROJECT_ROOT / "model"
 
-MODEL_DIR = Path("model")
-V3_MODEL_PATH = MODEL_DIR / "weather_model_v3.joblib"
-MODEL_INFO_PATH = MODEL_DIR / "model_info.json"
 
-def month_to_season(month: int) -> str:
-    if month in (12, 1, 2):
-        return "Winter"
-    if month in (3, 4, 5):
-        return "Summer"
-    if month in (6, 7, 8, 9):
-        return "Monsoon"
-    return "Post-Monsoon"
+def retrain_v3(output_dir: Path, through: date) -> None:
+    output_dir = output_dir.resolve()
+    if output_dir.is_relative_to(PRODUCTION_MODEL_DIR.resolve()):
+        raise ValueError("Write candidates outside the production model directory.")
+    if output_dir.exists():
+        raise FileExistsError("Choose a new candidate output directory.")
+    if through >= datetime.now(ZoneInfo("Asia/Kolkata")).date():
+        raise ValueError("The training cutoff must be a completed calendar date in India.")
 
-def retrain_v3():
-    engine = create_engine(os.environ["DATABASE_URL"])
-    logger.info("Loading cleaned weather dataset (excluding 'Other')...")
-    df = pd.read_sql(
-        "SELECT date, state, temp_max, temp_min, temp_avg, humidity, rainfall "
-        "FROM weather_data WHERE state != 'Other' ORDER BY state, date",
-        engine
-    )
-    df.columns = ["Date", "State", "Temp_Max", "Temp_Min", "Temp_Avg", "Humidity", "Rainfall"]
-    df["Date"] = pd.to_datetime(df["Date"])
-    max_date_str = str(df["Date"].max().date())
-    logger.info(f"Loaded {len(df)} rows across {df['State'].nunique()} states through {max_date_str}.")
+    info = json.loads((PRODUCTION_MODEL_DIR / "model_info.json").read_text(encoding="utf-8"))
+    engine = create_engine(postgres_url(os.environ["DATABASE_URL"]), hide_parameters=True)
+    try:
+        with engine.begin() as conn:
+            conn.exec_driver_sql("SET TRANSACTION READ ONLY")
+            raw = pd.read_sql_query(text("""
+                SELECT date, state, temp_max, temp_min, temp_avg, humidity, rainfall
+                FROM weather_data
+                WHERE district = '' AND location = ''
+                  AND state <> 'Other' AND date <= :through
+                ORDER BY state, date
+            """), conn, params={"through": through})
+    finally:
+        engine.dispose()
 
-    # Feature Engineering
-    df["Month"] = df["Date"].dt.month
-    df["Season"] = df["Month"].apply(month_to_season)
-    df["day_of_year"] = df["Date"].dt.dayofyear
+    panel = build_calendar_verified_panel(raw, allowed_states=info["states"])
+    if panel.empty or set(panel["State"]) != set(info["states"]):
+        raise ValueError("Candidate training requires complete windows for every supported state.")
 
-    g = df.groupby("State")
-    df["lag1_temp_avg"] = g["Temp_Avg"].shift(1)
-    df["lag2_temp_avg"] = g["Temp_Avg"].shift(2)
-    df["lag3_temp_avg"] = g["Temp_Avg"].shift(3)
-    df["lag1_temp_max"] = g["Temp_Max"].shift(1)
-    df["lag1_temp_min"] = g["Temp_Min"].shift(1)
-    df["lag1_humidity"] = g["Humidity"].shift(1)
-    df["lag1_rainfall"] = g["Rainfall"].shift(1)
-    df["lag2_humidity"] = g["Humidity"].shift(2)
-    df["lag2_rainfall"] = g["Rainfall"].shift(2)
-    df["temp_range"] = df["lag1_temp_max"] - df["lag1_temp_min"]
-    df["roll3_temp_avg"] = g["Temp_Avg"].transform(lambda s: s.shift(1).rolling(3, min_periods=3).mean())
-    df["roll7_temp_avg"] = g["Temp_Avg"].transform(lambda s: s.shift(1).rolling(7, min_periods=7).mean())
-    df["rainfall_roll3"] = g["Rainfall"].transform(lambda s: s.shift(1).rolling(3, min_periods=3).sum())
-    df["rainfall_roll7"] = g["Rainfall"].transform(lambda s: s.shift(1).rolling(7, min_periods=7).sum())
-    df["month_sin"] = np.sin(2 * np.pi * df["Month"] / 12)
-    df["month_cos"] = np.cos(2 * np.pi * df["Month"] / 12)
-    df["day_of_year_sin"] = np.sin(2 * np.pi * df["day_of_year"] / 365)
-    df["day_of_year_cos"] = np.cos(2 * np.pi * df["day_of_year"] / 365)
-
-    for i in range(1, 8):
-        df[f"target_{i}"] = g["Temp_Avg"].shift(-i)
-
-    features_num = [
-        "lag1_temp_avg", "lag2_temp_avg", "lag3_temp_avg",
-        "lag1_temp_max", "lag1_temp_min", "lag1_humidity", "lag1_rainfall",
-        "lag2_humidity", "lag2_rainfall", "temp_range",
-        "roll3_temp_avg", "roll7_temp_avg", "rainfall_roll3", "rainfall_roll7",
-        "month_sin", "month_cos", "day_of_year_sin", "day_of_year_cos"
-    ]
-    features_cat = ["Season", "State"]
-    features = features_num + features_cat
-    targets = [f"target_{i}" for i in range(1, 8)]
-
-    df = df.dropna(subset=features + targets).reset_index(drop=True)
-    logger.info(f"Usable training rows: {len(df)}")
-
-    # Preprocessing & Model identical to v2
-    preprocess = ColumnTransformer([
-        ("num", StandardScaler(), features_num),
-        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), features_cat),
+    pipeline = Pipeline([
+        ("preprocess", ColumnTransformer([
+            ("num", StandardScaler(), NUMERIC_FEATURES),
+            ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), CAT_FEATURES),
+        ])),
+        ("model", MultiOutputRegressor(lgb.LGBMRegressor(random_state=42, n_jobs=-1, verbose=-1))),
     ])
+    pipeline.fit(panel[FEATURE_ORDER], panel[TARGET_COLUMNS])
 
-    v3_pipeline = Pipeline([
-        ("preprocess", preprocess),
-        ("model", MultiOutputRegressor(lgb.LGBMRegressor(random_state=42, n_jobs=-1, verbose=-1)))
-    ])
+    output_dir.mkdir(parents=True, exist_ok=False)
+    candidate = output_dir / "weather_model_v3_candidate.joblib"
+    joblib.dump(pipeline, candidate)
+    metadata = {
+        "best_model": "LightGBM",
+        "target": info["target"],
+        "features": FEATURE_ORDER,
+        "states": info["states"],
+        "model_path": candidate.name,
+        "trained_through": str(panel["Date"].max() + timedelta(days=HORIZON_DAYS)),
+        "train_period": [str(panel["Date"].min()), str(panel["Date"].max())],
+        "metrics": {},
+        "test_period": [],
+        "metrics_status": "not_evaluated_for_current_artifact",
+        "validated_for_artifact": False,
+        "evaluation_artifact_sha256": hashlib.sha256(candidate.read_bytes()).hexdigest(),
+    }
+    (output_dir / "model_info.json").write_text(json.dumps(metadata, indent=2) + "\n", encoding="utf-8")
+    logger.info("Candidate and its metadata saved in %s", output_dir)
 
-    logger.info("Fitting v3 pipeline on all data through %s...", max_date_str)
-    v3_pipeline.fit(df[features], df[targets])
-
-    # Save to weather_model_v3.joblib
-    MODEL_DIR.mkdir(exist_ok=True)
-    joblib.dump(v3_pipeline, V3_MODEL_PATH)
-    logger.info(f"Saved weather_model_v3.joblib at: {V3_MODEL_PATH}")
-
-    # Preserve previous scores as historical context, never as v3 scores.
-    with open(MODEL_INFO_PATH) as f:
-        info = json.load(f)
-
-    if info.get("metrics"):
-        info["historical_metrics"] = info["metrics"]
-    info["metrics"] = {}
-    info.pop("q", None)
-    info.pop("coverage_90", None)
-    info["metrics_status"] = "not_evaluated_for_current_artifact"
-    info["interval_status"] = "not_calibrated_for_current_artifact"
-    info["train_period"] = [
-        str(df["Date"].min().date()),
-        str(df["Date"].max().date()),
-    ]
-    info["test_period"] = []
-    info["evaluation_note"] = (
-        "This artifact has not been evaluated on a separate temporal holdout. "
-        "Run train_honest_eval.py and review results before publishing performance claims."
-    )
-    info["trained_through"] = max_date_str
-    info["states"] = sorted(df["State"].unique().tolist())
-    info["model_v3_path"] = str(V3_MODEL_PATH)
-    info["model_path"] = str(V3_MODEL_PATH)
-
-    with open(MODEL_INFO_PATH, "w") as f:
-        json.dump(info, f, indent=2)
-    logger.info(f"Updated {MODEL_INFO_PATH} with trained_through: {max_date_str}")
-    return max_date_str
 
 if __name__ == "__main__":
-    retrain_v3()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output-dir", required=True, type=Path, help="New directory for candidate artifacts")
+    parser.add_argument(
+        "--through", type=date.fromisoformat,
+        default=datetime.now(ZoneInfo("Asia/Kolkata")).date() - timedelta(days=1),
+        help="Last eligible observation date (YYYY-MM-DD)",
+    )
+    args = parser.parse_args()
+    logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
+    retrain_v3(args.output_dir, args.through)
