@@ -7,6 +7,7 @@ from datetime import datetime, timezone, date
 from typing import Optional
 
 from sqlalchemy import text
+from sqlalchemy.engine import Engine
 from app.database import SessionLocal, engine
 from app.services.prediction_cache import clear_forecast_cache
 import update_weather
@@ -18,6 +19,11 @@ ADVISORY_LOCK_ID = 84729103859
 
 _last_ingested_at: Optional[datetime] = None
 
+
+class IngestionConfigurationError(RuntimeError):
+    """The configured PostgreSQL endpoint cannot hold session advisory locks."""
+
+
 def get_last_ingested_at() -> Optional[datetime]:
     global _last_ingested_at
     return _last_ingested_at
@@ -28,6 +34,10 @@ def run_ingestion_with_lock(days_back: int = 7, today: Optional[date] = None) ->
     only one ingestion job runs across workers/processes.
     """
     global _last_ingested_at
+    hostname = getattr(getattr(engine, "url", None), "host", None)
+    if isinstance(hostname, str) and "-pooler." in hostname.lower():
+        raise IngestionConfigurationError("Weather ingestion requires the direct Neon PostgreSQL endpoint.")
+
     conn = None
     try:
         if hasattr(engine, "connect"):
@@ -44,6 +54,14 @@ def run_ingestion_with_lock(days_back: int = 7, today: Optional[date] = None) ->
                 pass
             conn = None
         session = SessionLocal()
+        try:
+            bind = session.get_bind()
+            if isinstance(bind, Engine):
+                conn = bind.connect()
+                session.bind = conn
+        except Exception:
+            session.close()
+            raise
 
     locked = False
 

@@ -52,11 +52,11 @@ function prettyDate(iso: string): string {
 }
 
 function computeHorizonDate(baseIso: string, dayOffset: number): string {
-  if (!baseIso) return `Day ${dayOffset + 1}`;
+  if (!baseIso) return `Day ${dayOffset}`;
   const parts = baseIso.split("-").map(Number);
-  if (parts.length < 3 || isNaN(parts[0])) return `Day ${dayOffset + 1}`;
+  if (parts.length < 3 || isNaN(parts[0])) return `Day ${dayOffset}`;
   const [y, m, d] = parts;
-  const dt = new Date(Date.UTC(y, m - 1, d + dayOffset));
+  const dt = new Date(Date.UTC(y, m - 1, d + dayOffset - 1));
   return dt.toLocaleDateString("en-US", {
     weekday: "short",
     day: "numeric",
@@ -68,12 +68,13 @@ function computeHorizonDate(baseIso: string, dayOffset: number): string {
 export function PredictionHistoryPage() {
   const states = useFetch(getStates, []);
   const modelInfo = useFetch(getModelInfo, []);
-  const isCalibrated = modelInfo.data?.interval_status === "calibrated" && typeof modelInfo.data?.q === "number";
-  const conformalQ = isCalibrated ? (modelInfo.data!.q as number) : null;
 
   // Records and Loading State
   const [records, setRecords] = useState<PredictionRecord[]>([]);
-  const [totalCount, setTotalCount] = useState<number>(0);
+  const [totalCount, setTotalCount] = useState(0);
+  const [matchCount, setMatchCount] = useState(0);
+  const [modelVersions, setModelVersions] = useState<string[]>([]);
+  const [refreshKey, setRefreshKey] = useState(0);
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -89,10 +90,40 @@ export function PredictionHistoryPage() {
   // Detail Modal State
   const [selectedRecord, setSelectedRecord] = useState<PredictionRecord | null>(null);
 
-  // Auto-fetch predictions on mount
+  const isCalibrated = modelInfo.data?.interval_status === "calibrated"
+    && modelInfo.data.loaded_artifact_version === selectedRecord?.model_version
+    && typeof modelInfo.data.q === "number";
+  const conformalQ = isCalibrated ? modelInfo.data?.q ?? null : null;
+
   useEffect(() => {
-    void loadData();
-  }, []);
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const timer = window.setTimeout(() => {
+      void getPredictions(pageSize, (currentPage - 1) * pageSize, {
+        state: stateFilter, modelVersion: modelFilter, search: searchQuery,
+      }).then((response) => {
+        if (cancelled) return;
+        setRecords(response.predictions);
+        setMatchCount(response.total);
+        setTotalCount(response.stored_count ?? response.total);
+        setModelVersions(response.model_versions ?? []);
+        const lastPage = Math.max(1, Math.ceil(response.total / pageSize));
+        if (lastPage < currentPage) setCurrentPage(lastPage);
+      }).catch((err: Error) => {
+        if (!cancelled) {
+          setError(err.message);
+          setRecords([]);
+        }
+      }).finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    }, searchQuery ? 200 : 0);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [pageSize, currentPage, stateFilter, modelFilter, searchQuery, refreshKey]);
 
   // Close modal on Escape key
   useEffect(() => {
@@ -105,54 +136,11 @@ export function PredictionHistoryPage() {
     }
   }, [selectedRecord]);
 
-  async function loadData() {
-    setLoading(true);
-    setError(null);
-    try {
-      // Fetch up to 500 stored predictions to enable client-side instant filtering & full pagination
-      const resp = await getPredictions(500, 0);
-      const rows = resp.predictions ?? [];
-      setRecords(rows);
-      setTotalCount(resp.total ?? resp.count ?? rows.length);
-    } catch (err) {
-      setError((err as Error).message);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  // Filter records
-  const filteredRecords = records.filter((r) => {
-    if (stateFilter && r.state !== stateFilter) return false;
-    if (modelFilter) {
-      const ver = r.model_version ?? "weather_model_v3";
-      if (ver !== modelFilter) return false;
-    }
-    if (searchQuery.trim()) {
-      const q = searchQuery.trim().toLowerCase();
-      const matchId = String(r.id).includes(q);
-      const matchState = r.state.toLowerCase().includes(q);
-      const matchDistrict = (r.district ?? "").toLowerCase().includes(q);
-      const matchLocation = (r.location ?? "").toLowerCase().includes(q);
-      const matchDate = r.forecast_date.includes(q);
-      if (!matchId && !matchState && !matchDistrict && !matchLocation && !matchDate) {
-        return false;
-      }
-    }
-    return true;
-  });
-
-  // Calculate pagination
-  const totalPages = Math.max(1, Math.ceil(filteredRecords.length / pageSize));
+  const loadData = () => setRefreshKey((key) => key + 1);
+  const totalPages = Math.max(1, Math.ceil(matchCount / pageSize));
   const activePage = Math.min(currentPage, totalPages);
   const startIndex = (activePage - 1) * pageSize;
-  const endIndex = Math.min(startIndex + pageSize, filteredRecords.length);
-  const pagedRecords = filteredRecords.slice(startIndex, endIndex);
-
-  // Unique model versions for filter
-  const modelVersions = Array.from(
-    new Set(records.map((r) => r.model_version ?? "weather_model_v3"))
-  ).filter(Boolean);
+  const endIndex = Math.min(startIndex + records.length, matchCount);
 
   // Latest prediction timestamp
   const latestPredictionDate = records.length > 0 && records[0].created_at
@@ -168,7 +156,7 @@ export function PredictionHistoryPage() {
     <div className="page">
       <PageHead
         title="Prediction History & Audit Log"
-        desc="Immutable audit trail of multi-output temperature forecasts generated and stored in PostgreSQL. Inspect multi-horizon trajectories and model versions."
+        desc="Review seven-day average temperature forecasts stored in PostgreSQL."
         badge={<Badge neutral>Database Audit Trail</Badge>}
       />
 
@@ -183,7 +171,7 @@ export function PredictionHistoryPage() {
         <StatChip
           icon={<FilterIcon />}
           label="Active Filter Matches"
-          value={loading ? "…" : filteredRecords.length.toLocaleString()}
+          value={loading ? "…" : matchCount.toLocaleString()}
           sub={stateFilter || modelFilter || searchQuery ? "Filtered subset" : "All predictions matched"}
         />
         <StatChip
@@ -196,7 +184,7 @@ export function PredictionHistoryPage() {
           icon={<ClockIcon />}
           label="Latest Prediction Entry"
           value={latestPredictionDate}
-          sub="Most recent stored inference"
+          sub="Most recent record on this page"
         />
       </div>
 
@@ -224,7 +212,7 @@ export function PredictionHistoryPage() {
                   setCurrentPage(1);
                 }}
               >
-                <option value="">All States ({states.data?.states.length ?? 34})</option>
+                <option value="">All States</option>
                 {states.data?.states.map((s) => (
                   <option key={s} value={s}>
                     {s}
@@ -333,7 +321,7 @@ export function PredictionHistoryPage() {
       )}
 
       {/* Empty State */}
-      {!loading && !error && filteredRecords.length === 0 && (
+      {!loading && !error && records.length === 0 && (
         <Card title="Stored Predictions" icon={<ListIcon />}>
           <EmptyNote
             title={stateFilter || searchQuery || modelFilter ? "No matching prediction records" : "No predictions stored yet"}
@@ -363,10 +351,10 @@ export function PredictionHistoryPage() {
       )}
 
       {/* Structured Audit Log Table & Pagination */}
-      {!loading && filteredRecords.length > 0 && (
+      {!loading && records.length > 0 && (
         <Card
           title="Stored Prediction Audit Log"
-          subtitle={`Showing items ${startIndex + 1}–${endIndex} of ${filteredRecords.length.toLocaleString()} matching records.`}
+          subtitle={`Showing items ${startIndex + 1}–${endIndex} of ${matchCount.toLocaleString()} matching records.`}
           icon={<ListIcon />}
         >
           <div className="table-wrap">
@@ -385,7 +373,7 @@ export function PredictionHistoryPage() {
                 </tr>
               </thead>
               <tbody>
-                {pagedRecords.map((r) => {
+                {records.map((r) => {
                   const temps = Array.isArray(r.predicted_temp_avg)
                     ? r.predicted_temp_avg
                     : [Number(r.predicted_temp_avg)];
@@ -432,7 +420,7 @@ export function PredictionHistoryPage() {
                         </div>
                       </td>
                       <td>
-                        <Badge neutral>{r.model_version || "weather_model_v3"}</Badge>
+                        <Badge neutral>{r.model_version || "Unrecorded"}</Badge>
                       </td>
                       <td style={{ fontSize: "12px", color: "var(--text-secondary)" }}>
                         {new Date(r.created_at).toLocaleString("en-US", {
@@ -481,7 +469,7 @@ export function PredictionHistoryPage() {
           >
             <div style={{ fontSize: "12.5px", color: "var(--text-secondary)" }}>
               Showing <strong>{startIndex + 1}</strong> to <strong>{endIndex}</strong> of{" "}
-              <strong>{filteredRecords.length.toLocaleString()}</strong> prediction records
+              <strong>{matchCount.toLocaleString()}</strong> prediction records
             </div>
 
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -670,7 +658,7 @@ export function PredictionHistoryPage() {
                     Model Engine
                   </div>
                   <div style={{ fontSize: "13px", fontWeight: 600, color: "var(--text-primary)", marginTop: 2 }}>
-                    {selectedRecord.model_version || "weather_model_v3"}
+                    {selectedRecord.model_version || "Unrecorded"}
                   </div>
                 </div>
                 <div>

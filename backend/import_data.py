@@ -14,9 +14,11 @@ import sys
 import time
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 from dotenv import load_dotenv
-from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 # Make `app` importable when run from the backend folder
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -33,34 +35,19 @@ def import_weather_dataframe(df: pd.DataFrame, session) -> tuple[int, int]:
 
     Returns (added_count, skipped_count).
     """
-    existing = set(
-        session.execute(
-            select(WeatherData.state, WeatherData.date).where(
-                WeatherData.district == "", WeatherData.location == ""
-            )
-        ).all()
-    )
-
-    added, skipped, buffer = 0, 0, []
-    for row in df.itertuples(index=False):
-        if (row.state, row.date) in existing:
-            skipped += 1
-            continue
-        buffer.append(WeatherData(date=row.date, state=row.state,
-                                  district="", location="",
-                                  temp_max=row.temp_max, temp_min=row.temp_min,
-                                  temp_avg=row.temp_avg, humidity=row.humidity,
-                                  rainfall=row.rainfall))
-        added += 1
-        if len(buffer) >= 5000:  # batch commit with progress
-            session.add_all(buffer)
-            session.commit()
-            print(f"      ... {added} imported")
-            buffer = []
-    if buffer:
-        session.add_all(buffer)
-        session.commit()
-    return added, skipped
+    table = WeatherData.__table__
+    dialect = session.get_bind().dialect.name
+    insert = {"postgresql": pg_insert, "sqlite": sqlite_insert}[dialect]
+    rows = df.to_dict(orient="records")
+    added = 0
+    for index in range(0, len(rows), 1000):
+        batch = [dict(row, district="", location="") for row in rows[index : index + 1000]]
+        statement = insert(table).values(batch).on_conflict_do_nothing(
+            index_elements=["state", "district", "location", "date"],
+        ).returning(table.c.id)
+        added += len(session.scalars(statement).all())
+    session.commit()
+    return added, len(rows) - added
 
 
 def main():
@@ -90,9 +77,10 @@ def main():
     for c in num_cols:  # explicit numeric conversion
         df[c] = pd.to_numeric(df[c], errors="coerce")
     before = len(df)
-    df = df.dropna(subset=["date"] + num_cols)
-    df = df.drop_duplicates(subset=["state", "date"])
     df["state"] = df["state"].str.strip().str.title()  # match model's Title-Case states
+    df = df.dropna(subset=["state", "date"] + num_cols)
+    df = df[(df["state"] != "") & np.isfinite(df[num_cols].to_numpy()).all(axis=1)]
+    df = df.drop_duplicates().drop_duplicates(subset=["state", "date"], keep=False)
     print(f"      dropped {before - len(df)} rows (missing values / duplicates)")
     print(f"      clean rows: {len(df)}, states: {df['state'].nunique()}, "
           f"dates: {df['date'].min()} -> {df['date'].max()}")

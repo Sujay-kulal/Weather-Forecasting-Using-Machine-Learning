@@ -25,7 +25,7 @@ Weather-Forecasting-Using-Machine-Learning-main/
 ├── docs/               # System and architectural documentation
 ├── frontend/           # React 18 + Vite frontend application
 │   ├── src/            # Frontend source tree
-│   │   ├── assets/     # Static assets (india_states.geojson)
+│   ├── public/         # Static state boundaries
 │   │   ├── components/ # Reusable UI components (IndiaMap, icons, ui)
 │   │   ├── hooks/      # React custom hooks (useFetch, useHealth)
 │   │   ├── pages/      # Top-level view pages (Forecast, MLDashboard, etc.)

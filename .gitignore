@@ -26,6 +26,8 @@ Thumbs.db
 
 # Generated outputs (re-created by train_model.py)
 results/
+model/weather_model.joblib
+model/weather_model_info.json
 
 # Dataset (fetched from Kaggle via fetch_data.py - not stored in git)
 data/
@@ -41,4 +43,6 @@ Weather-Forecasting-Using-Machine-Learning-main/
 scratch/
 scripts/full_ast_audit_log.txt
 frontend/tests/.built/
+frontend/test-results/
+frontend/playwright-report/
 

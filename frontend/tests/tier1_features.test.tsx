@@ -36,7 +36,7 @@ describe("Tier 1: Feature Coverage (F1 to F15)", () => {
       // Verify overlay metric buttons
       assertContains(html, "Temperature");
       assertContains(html, "Humidity");
-      assertContains(html, "Rainfall");
+      assertContains(html, "Precipitation");
       assertContains(html, "Wind");
 
       // Verify horizon day selector buttons
@@ -77,10 +77,9 @@ describe("Tier 1: Feature Coverage (F1 to F15)", () => {
       assertContains(html, "India Meteorological Intelligence Map");
 
       // Verify StatChips
-      assertContains(html, "Monitored Regions");
-      assertContains(html, "36 States / UTs");
+      assertContains(html, "Regions with ML Forecasts");
       assertContains(html, "Live Feeds");
-      assertContains(html, "150+ Cities");
+      assertContains(html, "Current city weather");
       assertContains(html, "Active Overlay");
       assertContains(html, "Inference Engine");
       assertContains(html, "LightGBM Multi-Output");
@@ -219,7 +218,7 @@ describe("Tier 1: Feature Coverage (F1 to F15)", () => {
       // Verify temporal splits
       assertContains(html, "Historical Train Partition");
       assertContains(html, "Residual Calibration Partition");
-      assertContains(html, "Holdout Test Partition");
+      assertContains(html, "Diagnostic Test Partition");
       assertContains(html, "2015-01-08");
       assertContains(html, "2025-07-11");
       assertContains(html, "2026-10-18");
@@ -228,7 +227,7 @@ describe("Tier 1: Feature Coverage (F1 to F15)", () => {
       assertContains(html, "Strict Temporal Cutoff (date &lt; asof)");
       assertContains(html, "8-Day Target Window Embargo");
       assertContains(html, "Per-State Rolling Calculation Isolation");
-      assertContains(html, "Runtime Staleness Enforcers (MAX_STALENESS_DAYS = 2)");
+      assertContains(html, "Seven Consecutive Observation Days");
       assertContains(html, "Conformal Interval Calibration Gate");
     });
   });
@@ -260,7 +259,7 @@ describe("Tier 1: Feature Coverage (F1 to F15)", () => {
 
       // PageHead
       assertContains(html, "Weather History Archive");
-      assertContains(html, "46,834 Locked Rows");
+      assertContains(html, "PostgreSQL archive");
 
       // Filter controls
       assertContains(html, "Query &amp; Observation Filters");
@@ -302,6 +301,7 @@ describe("Tier 1: Feature Coverage (F1 to F15)", () => {
       // PageHead and title
       assertContains(html, "Model Evaluation &amp; Benchmarking");
       assertContains(html, "Diagnostic — Pending Independent Validation");
+      assert.ok(!html.includes("Production Validated"));
       assertContains(html, "Artifact: weather_model_v3.joblib");
 
       // Hero KPI tiles

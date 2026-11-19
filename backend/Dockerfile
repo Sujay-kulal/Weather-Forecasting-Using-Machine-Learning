@@ -1,8 +1,9 @@
-FROM python:3.12-slim
+FROM python:3.11-slim
 
 # Prevent Python from writing .pyc and enable unbuffered logging
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
+    OMP_NUM_THREADS=2 \
     PYTHONPATH=/app/backend
 
 # Install system dependencies including libgomp1 for LightGBM

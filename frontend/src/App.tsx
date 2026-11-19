@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState, useEffect } from "react";
+import { lazy, Suspense, useState, useEffect, useRef } from "react";
 import { useHealth, type HealthState } from "./hooks/useHealth";
 import {
   ChartIcon,
@@ -34,7 +34,7 @@ const IndiaMapPage = lazy(() =>
 );
 
 export const NAVIGATION_MODULES = [
-  { id: "forecast", label: "Weather Forecast", shortLabel: "Forecast", Icon: CloudSunIcon, desc: "Multi-parameter 7-day forecasts" },
+  { id: "forecast", label: "Weather Forecast", shortLabel: "Forecast", Icon: CloudSunIcon, desc: "Seven-day temperature forecasts" },
   { id: "map", label: "India Weather Map", shortLabel: "India Map", Icon: MapIcon, desc: "Geographic spatial analytics" },
   { id: "ml", label: "ML Project Overview", shortLabel: "ML System", Icon: DatabaseIcon, desc: "Pipeline architecture & features" },
   { id: "history", label: "Weather History", shortLabel: "History", Icon: ChartIcon, desc: "Historical PostgreSQL records" },
@@ -79,7 +79,22 @@ export default function App() {
     }
   });
   const [mobileOpen, setMobileOpen] = useState<boolean>(false);
+  const openMenu = useRef<HTMLButtonElement>(null);
+  const closeMenu = useRef<HTMLButtonElement>(null);
   const { health, detail } = useHealth();
+
+  useEffect(() => {
+    if (!mobileOpen) return;
+    closeMenu.current?.focus();
+    function handleEscape(event: KeyboardEvent) {
+      if (event.key === "Escape") setMobileOpen(false);
+    }
+    window.addEventListener("keydown", handleEscape);
+    return () => {
+      window.removeEventListener("keydown", handleEscape);
+      openMenu.current?.focus();
+    };
+  }, [mobileOpen]);
 
   const toggleSidebar = () => {
     setCollapsed((prev) => {
@@ -111,7 +126,7 @@ export default function App() {
       />
 
       {/* Fixed Left Sidebar */}
-      <aside className={`app-sidebar ${collapsed && !mobileOpen ? "collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`}>
+      <aside id="app-navigation" className={`app-sidebar ${collapsed && !mobileOpen ? "collapsed" : ""} ${mobileOpen ? "mobile-open" : ""}`}>
         <div className="sidebar-header">
           <div className="sidebar-logo-icon">
             <SparkIcon />
@@ -127,6 +142,7 @@ export default function App() {
               onClick={() => setMobileOpen(false)}
               style={{ marginLeft: "auto", padding: "4px" }}
               aria-label="Close menu"
+              ref={closeMenu}
             >
               <XIcon style={{ width: 16, height: 16 }} />
             </button>
@@ -144,6 +160,7 @@ export default function App() {
                 className={`nav-item ${isActive ? "active" : ""}`}
                 onClick={() => handleSelectTab(m.id)}
                 title={m.label}
+                aria-current={isActive ? "page" : undefined}
               >
                 <m.Icon />
                 <span className="nav-item-label">{m.label}</span>
@@ -186,6 +203,9 @@ export default function App() {
               className="topbar-menu-toggle"
               onClick={() => setMobileOpen(true)}
               aria-label="Open navigation menu"
+              aria-controls="app-navigation"
+              aria-expanded={mobileOpen}
+              ref={openMenu}
             >
               <MenuIcon style={{ width: 20, height: 20 }} />
             </button>

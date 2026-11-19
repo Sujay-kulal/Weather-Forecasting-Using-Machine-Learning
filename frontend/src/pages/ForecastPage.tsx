@@ -38,11 +38,11 @@ import {
   TargetIcon,
   ThermometerIcon,
 } from "../components/icons";
-import type { PredictionResponse, DayForecast } from "../types/api";
+import type { PredictionResponse } from "../types/api";
 
-function nextDay(iso: string): string {
+function shiftDate(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
 }
 
 function prettyDate(iso: string): string {
@@ -86,115 +86,12 @@ function getConditionEmoji(condition: string, icon?: string): string {
   }
 }
 
-/** Fallback to reconstruct day forecasts if backend daily_forecasts is missing */
-function resolveDailyForecasts(res: PredictionResponse): DayForecast[] {
-  if (res.daily_forecasts && res.daily_forecasts.length > 0) {
-    return res.daily_forecasts;
-  }
-  const preds = Array.isArray(res.predicted_temp_avg)
-    ? res.predicted_temp_avg
-    : [res.predicted_temp_avg];
-
-  const lastKnownTemp = res.last_known?.temp_avg ?? Number(preds[0]);
-  const lastKnownHum = res.last_known?.humidity ?? 60.0;
-  const lastKnownRain = res.last_known?.rainfall ?? 0.0;
-  const lastKnownRange =
-    res.last_known?.temp_max && res.last_known?.temp_min
-      ? Math.max(5.0, Math.min(18.0, res.last_known.temp_max - res.last_known.temp_min))
-      : 9.5;
-
-  let curDate = res.forecast_date;
-  return preds.map((t, i) => {
-    const tAvg = Math.round(Number(t) * 10) / 10;
-    const tShift = tAvg - lastKnownTemp;
-    const hum = Math.max(18.0, minVal(96.0, Math.round((lastKnownHum - tShift * 1.1) * 10) / 10));
-
-    let rainProb: number;
-    let rainfall: number;
-    if (lastKnownRain > 0.5 || hum >= 70.0) {
-      const baseProb = lastKnownRain <= 0.5 ? 30 : 55;
-      rainProb = Math.round(minVal(95, Math.max(10, baseProb + (hum - 65.0) * 1.2 - i * 2)));
-      rainfall =
-        Math.round(Math.max(0, lastKnownRain * 0.7 + Math.max(0, hum - 70.0) * 0.2 - i * 0.25) * 10) / 10;
-    } else {
-      rainProb = Math.round(minVal(30, Math.max(5, 10 + (hum - 45.0) * 0.35 - i * 1.2)));
-      rainfall = 0;
-    }
-
-    const dayRange = lastKnownRange * (rainfall > 0 || rainProb >= 50 ? 0.85 : 1.0);
-    let tMax = Math.round((tAvg + dayRange * 0.52) * 10) / 10;
-    let tMin = Math.round((tAvg - dayRange * 0.48) * 10) / 10;
-    if (tMin > tAvg) tMin = Math.round((tAvg - 1.0) * 10) / 10;
-    if (tMax < tAvg) tMax = Math.round((tAvg + 1.0) * 10) / 10;
-
-    const feelsLike = Math.round((tAvg + 0.33 * ((hum / 100) * 6.105 * Math.exp((17.27 * tAvg) / (237.7 + tAvg))) - 4.0) * 10) / 10;
-    const dewPoint = Math.round((tAvg - (100 - hum) / 5.0) * 10) / 10;
-
-    let condition = "Clear & Sunny";
-    let icon = "sun";
-    if (rainfall >= 12 || (rainfall >= 6 && rainProb >= 70)) {
-      condition = "Heavy Rain";
-      icon = "rain-storm";
-    } else if (rainfall >= 2 || rainProb >= 50) {
-      condition = "Rain / Showers";
-      icon = "rain";
-    } else if (rainfall >= 0.3 || rainProb >= 35) {
-      condition = "Light Rain / Drizzle";
-      icon = "rain-light";
-    } else if (hum >= 78) {
-      condition = "Overcast";
-      icon = "cloud";
-    } else if (hum >= 60) {
-      condition = "Partly Cloudy";
-      icon = "cloud-sun";
-    } else if (tMax >= 38) {
-      condition = "Hot & Sunny";
-      icon = "sun-hot";
-    } else if (tMin <= 10) {
-      condition = "Cold & Clear";
-      icon = "snowflake";
-    }
-
-    let comfort = "Warm & Moderate";
-    if (feelsLike < 14) comfort = "Cool & Crisp";
-    else if (feelsLike <= 24 && hum <= 65) comfort = "Pleasant & Comfortable";
-    else if (feelsLike <= 29) comfort = "Warm & Moderate";
-    else if (feelsLike <= 35) comfort = "Humid & Sticky";
-    else if (feelsLike <= 40) comfort = "Very Hot / Muggy";
-    else comfort = "Extreme Heat Alert";
-
-    const dIso = curDate;
-    curDate = nextDay(curDate);
-
-    return {
-      day: i + 1,
-      date: dIso,
-      temp_avg: tAvg,
-      temp_min: tMin,
-      temp_max: tMax,
-      feels_like: feelsLike,
-      humidity: hum,
-      rainfall: rainfall,
-      rain_probability: rainProb,
-      condition,
-      condition_icon: icon,
-      comfort,
-      dew_point: dewPoint,
-      summary: `${condition} expected. High of ${tMax.toFixed(1)}°C, low of ${tMin.toFixed(1)}°C with ${rainProb}% rain chance.`,
-    };
-  });
-}
-
-function minVal(a: number, b: number) {
-  return a < b ? a : b;
-}
-
 export interface ForecastPageProps {
   selectedState?: string;
   onSelectState?: (state: string) => void;
 }
 
-export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
+export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps = {}) {
   const states = useFetch(getStates, []);
   const [state, setState] = useState(selectedState || "");
   const [date, setDate] = useState("");
@@ -221,16 +118,13 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
     [state]
   );
 
-  const recentRecords = recent.data?.records ?? [];
+  const recentRecords = recent.data?.state === state ? recent.data.records : [];
   const latest = recentRecords.length > 0 ? recentRecords[recentRecords.length - 1] : null;
 
-  // Auto-fill forecast date as the day after the latest available measurement
+  const latestDate = latest?.date;
   useEffect(() => {
-    if (state && recentRecords.length > 0 && !dateTouched) {
-      setDate(nextDay(recentRecords[recentRecords.length - 1].date));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [state, recent.loading]);
+    if (!dateTouched) setDate(latestDate ? shiftDate(latestDate, 2) : "");
+  }, [latestDate, dateTouched]);
 
   const canSubmit = Boolean(state && date);
 
@@ -244,14 +138,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
       const prediction = await predict(state, date);
       setResult(prediction);
     } catch (err) {
-      const apiErr = err as ApiError;
-      if (apiErr.status === 422) {
-        setPredictError(
-          `This forecast date cannot be predicted because sufficient recent historical measurements are unavailable in the database. (${apiErr.message})`
-        );
-      } else {
-        setPredictError(apiErr.message);
-      }
+      setPredictError((err as ApiError).message);
     } finally {
       setSubmitting(false);
     }
@@ -263,14 +150,14 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
   }
 
   const locStr = state;
-  const dailyForecasts = result ? resolveDailyForecasts(result) : [];
+  const dailyForecasts = result?.daily_forecasts ?? [];
   const currentDay = dailyForecasts[selectedDayIndex] || dailyForecasts[0];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <PageHead
         title="Weather Forecast Dashboard"
-        desc="Machine learning-based seven-day multi-parameter atmospheric temperature forecasts across 33 Indian states and union territories."
+        desc="Seven days of average temperatures from LightGBM for 33 Indian states and union territories."
         badge={
           state ? (
             <Badge variant="info">
@@ -306,9 +193,12 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                 <select
                   id="forecast-state-select"
                   name="state"
+                  disabled={submitting}
                   value={state}
                   onChange={(e) => {
                     setState(e.target.value);
+                    onSelectState?.(e.target.value);
+                    setDate("");
                     setDateTouched(false);
                     setResult(null);
                     setPredictError(null);
@@ -319,7 +209,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                   <option value="" disabled>
                     Choose Indian State…
                   </option>
-                  {states.data?.states.filter((s) => s !== "Other").map((s) => (
+                  {(states.data?.model_states ?? states.data?.states ?? []).filter((s) => s !== "Other").map((s) => (
                     <option key={s} value={s}>
                       {s}
                     </option>
@@ -337,17 +227,20 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                 id="forecast-target-date"
                 name="targetDate"
                 type="date"
+                disabled={submitting}
                 value={date}
                 onChange={(e) => {
                   setDate(e.target.value);
                   setDateTouched(true);
+                  setResult(null);
+                  setPredictError(null);
                 }}
                 required
               />
               <span className="hint">
                 {latest
-                  ? `Latest database observation: ${latest.date}. Default set to next calendar day.`
-                  : "Select a region above to evaluate historical series boundary."}
+                  ? `Latest stored day is ${latest.date}. The forecast starts two days later so the model can use that record.`
+                  : "Select a state to find the latest stored weather."}
               </span>
             </label>
 
@@ -372,7 +265,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                 border: "1px solid var(--border-subtle)",
               }}
             >
-              <strong>Operational Scope:</strong> ML forecasts are generated exclusively for statewide series across the 33 validated Indian states and union territories. For district- and station-level historical weather observations, visit the Weather History module.
+              <strong>Operational Scope:</strong> Average temperatures use LightGBM. Highs, lows, humidity, rain and conditions are rule-based estimates.
             </div>
           </form>
         </div>
@@ -412,6 +305,16 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
             />
           )}
 
+          {!submitting && result && !currentDay && (
+            <div>
+              <p>Rule-based estimates are unavailable for this forecast.</p>
+              <ol>
+                {result.predicted_temp_avg.map((temp, i) => (
+                  <li key={i}>{prettyDate(shiftDate(result.forecast_date, i))} · {temp.toFixed(1)} °C</li>
+                ))}
+              </ol>
+            </div>
+          )}
           {!submitting && result && currentDay && (
             <div>
               {/* High-Impact Enterprise Hero */}
@@ -467,7 +370,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
               {/* Advisory Callout */}
               {(result.weather_summary || currentDay.summary) && (
                 <div className="advisory-callout">
-                  <strong>Meteorological Outlook: </strong>
+                  <strong>Rule-based outlook </strong>
                   {result.weather_summary ?? currentDay.summary}
                 </div>
               )}
@@ -487,15 +390,12 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                   {dailyForecasts.map((df, idx) => {
                     const isSelected = idx === selectedDayIndex;
                     return (
-                      <div
+                      <button
                         key={df.day}
+                        type="button"
                         className={`horizon-day-card ${isSelected ? "active" : ""}`}
                         onClick={() => setSelectedDayIndex(idx)}
-                        role="button"
-                        tabIndex={0}
-                        onKeyDown={(e) => {
-                          if (e.key === "Enter" || e.key === " ") setSelectedDayIndex(idx);
-                        }}
+                        aria-pressed={isSelected}
                       >
                         <div className="horizon-day-name">
                           {idx === 0 ? "Day 1 (Start)" : `Day ${df.day}`}
@@ -520,7 +420,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                         <div className="horizon-day-metrics">
                           <span>💧 {df.humidity.toFixed(0)}%</span> · <span>🌧️ {df.rain_probability}%</span>
                         </div>
-                      </div>
+                      </button>
                     );
                   })}
                 </div>
@@ -529,7 +429,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
               {/* Detailed Meteorological Parameters for Selected Day */}
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: 8 }}>
-                  Detailed Day {currentDay.day} Parameters ({prettyDate(currentDay.date)})
+                  Day {currentDay.day} rule-based estimates ({prettyDate(currentDay.date)})
                 </div>
                 <div className="stat-chips">
                   <StatChip
@@ -585,16 +485,18 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                 )}
                 <div className="meta-block">
                   <dt>Forecast Horizon</dt>
-                  <dd>{result.forecast_date} (+7 Days)</dd>
+                  <dd>{result.forecast_date} to {shiftDate(result.forecast_date, 6)}</dd>
                 </div>
                 <div className="meta-block">
                   <dt>Model Engine</dt>
                   <dd>{result.model}</dd>
                 </div>
-                <div className="meta-block">
-                  <dt>Diagnostic MAE (Training Overlap)</dt>
-                  <dd>± {result.typical_error_mae != null ? result.typical_error_mae.toFixed(3) : "1.164"} °C</dd>
-                </div>
+                {result.typical_error_mae != null && (
+                  <div className="meta-block">
+                    <dt>Validation MAE</dt>
+                    <dd>{result.typical_error_mae.toFixed(3)} °C</dd>
+                  </div>
+                )}
               </dl>
             </div>
           )}
@@ -624,13 +526,12 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
                   <tr
                     key={d.day}
                     className={i === selectedDayIndex ? "highlight-row" : ""}
-                    onClick={() => setSelectedDayIndex(i)}
-                    style={{ cursor: "pointer" }}
                   >
                     <td>
-                      <Badge variant={i === selectedDayIndex ? "default" : "neutral"}>
+                      <button type="button" className="btn-outline" aria-pressed={i === selectedDayIndex}
+                        onClick={() => setSelectedDayIndex(i)}>
                         Day {d.day} {i === 0 ? "(Start)" : ""}
-                      </Badge>
+                      </button>
                     </td>
                     <td>{prettyDate(d.date)}</td>
                     <td>
@@ -661,7 +562,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
         icon={<TargetIcon />}
         subtitle={
           latest
-            ? `Past 30 observed daily measurements from PostgreSQL with the 7-day predicted sequence appended for ${locStr}.`
+            ? `Stored weather for ${locStr}, with the LightGBM forecast when available.`
             : "Select a region to review past weather records and the forecast continuity."
         }
       >
@@ -761,7 +662,7 @@ export function ForecastPage({ selectedState }: ForecastPageProps = {}) {
               }}
             >
               <span>
-                Chart combines {recentRecords.length} recorded daily observations with 7 model inference points.
+                {recentRecords.length} stored daily records{result ? ` and ${result.predicted_temp_avg.length} model predictions` : ""}.
               </span>
               <span>Solid lines: PostgreSQL records · Dashed purple line: Multi-output LightGBM</span>
             </div>
@@ -784,34 +685,18 @@ function buildChartData(
   records: { date: string; temp_max: number; temp_min: number; temp_avg: number }[],
   result: PredictionResponse | null
 ): ChartRow[] {
-  const rows: ChartRow[] = records.map((r) => ({
-    date: r.date,
-    temp_max: r.temp_max,
-    temp_min: r.temp_min,
-    temp_avg: r.temp_avg,
-    predicted: null,
-  }));
-
-  if (result && rows.length > 0) {
-    // Connector point at the boundary
-    rows[rows.length - 1].predicted = rows[rows.length - 1].temp_avg;
-
-    let currentDate = result.forecast_date;
-    const preds = Array.isArray(result.predicted_temp_avg)
-      ? result.predicted_temp_avg
-      : [result.predicted_temp_avg];
-
-    for (let i = 0; i < preds.length; i++) {
-      rows.push({
-        date: currentDate,
-        temp_max: null,
-        temp_min: null,
-        temp_avg: null,
-        predicted: Number(preds[i]),
-      });
-      currentDate = nextDay(currentDate);
-    }
-  }
-
-  return rows;
+  const rows = new Map<string, ChartRow>();
+  for (const record of records) rows.set(record.date, { ...record, predicted: null });
+  result?.predicted_temp_avg.forEach((predicted, index) => {
+    const date = shiftDate(result.forecast_date, index);
+    const observed = rows.get(date);
+    rows.set(date, {
+      date,
+      temp_max: observed?.temp_max ?? null,
+      temp_min: observed?.temp_min ?? null,
+      temp_avg: observed?.temp_avg ?? null,
+      predicted,
+    });
+  });
+  return [...rows.values()].sort((first, second) => first.date.localeCompare(second.date));
 }

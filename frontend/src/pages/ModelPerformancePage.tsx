@@ -25,15 +25,14 @@ import {
   TargetIcon,
 } from "../components/icons";
 
-const FALLBACK_HORIZONS = [
-  { day: 1, mae: 0.9251, rmse: 1.2517, r2: 0.9808, skill: 10.3 },
-  { day: 2, mae: 1.0623, rmse: 1.4286, r2: 0.9750, skill: 13.4 },
-  { day: 3, mae: 1.1485, rmse: 1.5408, r2: 0.9709, skill: 16.0 },
-  { day: 4, mae: 1.2022, rmse: 1.6155, r2: 0.9681, skill: 19.2 },
-  { day: 5, mae: 1.2478, rmse: 1.6795, r2: 0.9655, skill: 21.4 },
-  { day: 6, mae: 1.2690, rmse: 1.7046, r2: 0.9645, skill: 23.1 },
-  { day: 7, mae: 1.2906, rmse: 1.7334, r2: 0.9632, skill: 25.0 },
-];
+function formatMetric(value: number | null | undefined, digits: number, suffix = "") {
+  return typeof value === "number" && Number.isFinite(value) ? `${value.toFixed(digits)}${suffix}` : "—";
+}
+
+function formatSkill(value?: number | null) {
+  if (value == null || !Number.isFinite(value)) return "—";
+  return `${value > 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
+}
 
 interface FeatureGroup {
   label: string;
@@ -80,103 +79,59 @@ export function ModelPerformancePage() {
   const [metricTab, setMetricTab] = useState<"MAE" | "RMSE" | "R2">("MAE");
 
   if (info.loading) return <Spinner label="Loading model evaluation and benchmarking metadata…" />;
-  if (info.error) return <ErrorBanner message={info.error.message} />;
+  if (info.error) return <ErrorBanner message={info.error.message} onRetry={info.retry} />;
   if (!info.data) return null;
 
-  const {
-    model_name,
-    features,
-    metrics,
-  } = info.data;
+  const { model_name, features, metrics, loaded_artifact_version } = info.data;
+  const selected = metrics[model_name];
+  const independentlyValidated = info.data.validated_for_artifact === true;
+  const validationLabel = independentlyValidated
+    ? "Independently validated"
+    : selected ? "Diagnostic — Pending Independent Validation" : "Evaluation pending";
+  const metricScope = independentlyValidated ? "Independent evaluation" : "Training-overlap evaluation";
+  const artifactFile = loaded_artifact_version ? `${loaded_artifact_version}.joblib` : "Unavailable";
 
-  const selected = metrics[model_name] ?? metrics["LightGBM"];
-
-  // Horizon breakdown
-  const rawByHorizon = selected?.by_horizon;
-  const horizonData = [1, 2, 3, 4, 5, 6, 7].map((d) => {
-    const key = `day_${d}`;
-    const h = rawByHorizon?.[key];
-    const fallback = FALLBACK_HORIZONS[d - 1];
+  const horizonData = Array.from({ length: 7 }, (_, i) => {
+    const day = i + 1;
+    const key = `day_${day}`;
     return {
-      day: `Day ${d}`,
-      dayNum: d,
-      label: `Day ${d} (t+${d})`,
-      MAE: Number((h?.MAE ?? fallback.mae).toFixed(3)),
-      RMSE: Number((h?.RMSE ?? fallback.rmse).toFixed(3)),
-      R2: Number((h?.R2 ?? fallback.r2).toFixed(4)),
-      skill: fallback.skill,
+      day,
+      label: `Day ${day} (t+${day})`,
+      ...selected?.by_horizon?.[key],
+      skill: selected?.skill_vs_persistence_by_horizon?.[key],
     };
   });
 
-  // Benchmark models comparison
-  const comparisonModels = [
-    {
-      name: "LightGBM Multi-Output",
-      shortName: "LightGBM (Prod)",
-      type: "Production Gradient Boosted Trees",
-      isProduction: true,
-      MAE: Number((metrics["LightGBM"]?.MAE ?? 1.1636).toFixed(4)),
-      RMSE: Number((metrics["LightGBM"]?.RMSE ?? 1.5731).toFixed(4)),
-      R2: Number((metrics["LightGBM"]?.R2 ?? 0.9697).toFixed(4)),
-      skill: "+19.1%",
-      status: "Production Validated",
-      statusVariant: "success" as const,
-    },
-    {
-      name: "Random Forest (Tuned)",
-      shortName: "Random Forest",
-      type: "Tuned Ensemble Benchmark",
-      isProduction: false,
-      MAE: Number(((metrics["Random Forest"] ?? metrics["RandomForest"])?.MAE ?? 1.2842).toFixed(4)),
-      RMSE: Number(((metrics["Random Forest"] ?? metrics["RandomForest"])?.RMSE ?? 1.7145).toFixed(4)),
-      R2: Number(((metrics["Random Forest"] ?? metrics["RandomForest"])?.R2 ?? 0.9634).toFixed(4)),
-      skill: "+10.7%",
-      status: (metrics["Random Forest"] || metrics["RandomForest"]) ? "Evaluated Benchmark" : "Candidate Benchmark (Pre-Audit)",
-      statusVariant: "neutral" as const,
-    },
-    {
-      name: "Linear Regression",
-      shortName: "Linear Reg",
-      type: "Multivariate Linear Baseline",
-      isProduction: false,
-      MAE: Number(((metrics["Linear Regression"] ?? metrics["LinearRegression"])?.MAE ?? 1.3512).toFixed(4)),
-      RMSE: Number(((metrics["Linear Regression"] ?? metrics["LinearRegression"])?.RMSE ?? 1.7963).toFixed(4)),
-      R2: Number(((metrics["Linear Regression"] ?? metrics["LinearRegression"])?.R2 ?? 0.9592).toFixed(4)),
-      skill: "+6.1%",
-      status: (metrics["Linear Regression"] || metrics["LinearRegression"]) ? "Evaluated Baseline" : "Linear Baseline (Pre-Audit)",
-      statusVariant: "neutral" as const,
-    },
-    {
-      name: "Climatology Reference",
-      shortName: "Climatology",
-      type: "Historical 30-Day Mean Reference",
-      isProduction: false,
-      MAE: Number((metrics["Climatology"]?.MAE ?? 1.3947).toFixed(4)),
-      RMSE: Number((metrics["Climatology"]?.RMSE ?? 1.8525).toFixed(4)),
-      R2: Number((metrics["Climatology"]?.R2 ?? 0.9580).toFixed(4)),
-      skill: "+3.1%",
-      status: "Statistical Baseline",
-      statusVariant: "neutral" as const,
-    },
-    {
-      name: "Persistence Reference",
-      shortName: "Persistence",
-      type: "Naive Tomorrow=Today Reference (t-1)",
-      isProduction: false,
-      MAE: Number((metrics["Persistence"]?.MAE ?? 1.4386).toFixed(4)),
-      RMSE: Number((metrics["Persistence"]?.RMSE ?? 1.9844).toFixed(4)),
-      R2: Number((metrics["Persistence"]?.R2 ?? 0.9518).toFixed(4)),
-      skill: "0.0% (Reference)",
-      status: "Naive Baseline",
-      statusVariant: "neutral" as const,
-    },
+  const benchmarks = [
+    { name: "LightGBM Multi-Output", shortName: "LightGBM", type: "Deployed model", data: selected },
+    { name: "Random Forest (Tuned)", shortName: "Random Forest", type: "Ensemble benchmark",
+      data: metrics["Random Forest"] ?? metrics["RandomForest"] },
+    { name: "Linear Regression", shortName: "Linear Reg", type: "Linear benchmark",
+      data: metrics["Linear Regression"] ?? metrics["LinearRegression"] },
+    { name: "Climatology Reference", shortName: "Climatology", type: "Historical temperature baseline",
+      data: metrics["Climatology"] },
+    { name: "Persistence Reference", shortName: "Persistence", type: "Latest available temperature",
+      data: metrics["Persistence"] },
   ];
+  const comparisonModels = benchmarks.map(({ data, ...benchmark }, i) => {
+    const values = data?.overall ?? data;
+    const baselineMae = metrics["Persistence"]?.MAE;
+    const skill = data?.skill_vs_persistence ??
+      (values?.MAE != null && baselineMae > 0 ? 1 - values.MAE / baselineMae : null);
+    return {
+      ...benchmark,
+      MAE: values?.MAE,
+      RMSE: values?.RMSE,
+      R2: values?.R2,
+      skill: formatSkill(skill),
+      isProduction: i === 0,
+      status: data ? metricScope : "Unavailable",
+    };
+  });
 
-  const overallMae = selected?.MAE ?? 1.1636;
-  const overallRmse = selected?.RMSE ?? 1.5731;
-  const overallR2 = selected?.R2 ?? 0.9697;
-  const coveragePercent = info.data.coverage_90 ? (info.data.coverage_90 * 100).toFixed(1) : "89.4";
-  const conformalQ = info.data.q ? info.data.q.toFixed(2) : "2.84";
+  const overall = selected?.overall ?? selected;
+  const coverage = info.data.interval_status === "calibrated" ? info.data.coverage_90 : null;
+  const q = coverage != null ? info.data.q : null;
 
   return (
     <div className="page">
@@ -184,12 +139,12 @@ export function ModelPerformancePage() {
         title="Model Evaluation & Benchmarking"
         desc="Benchmark performance metrics and error decay analysis for the production LightGBM 7-day multi-output forecasting model."
         badge={
-          <Badge variant="success" title="Diagnostic — Pending Independent Validation">
-            Production Validated
+          <Badge variant={independentlyValidated ? "success" : "neutral"}>
+            {validationLabel}
           </Badge>
         }
       >
-        <Badge neutral>Artifact: weather_model_v3.joblib</Badge>
+        <Badge neutral>Artifact: {artifactFile}</Badge>
       </PageHead>
 
       {/* Hero Stat Chips */}
@@ -197,38 +152,38 @@ export function ModelPerformancePage() {
         <StatChip
           icon={<ChipIcon />}
           label="Production Model"
-          value="LightGBM Multi-Output"
+          value={`${model_name} Multi-Output`}
           sub="7-Day Joint Regressor"
         />
         <StatChip
           icon={<TargetIcon />}
           label="Diagnostic MAE"
-          value={`±${overallMae.toFixed(2)}°C`}
-          sub="Training-overlap evaluation (all horizons)"
+          value={formatMetric(overall?.MAE, 2, "°C")}
+          sub={metricScope}
         />
         <StatChip
           icon={<TargetIcon />}
           label="Diagnostic RMSE"
-          value={`${overallRmse.toFixed(2)}°C`}
-          sub="Training-overlap evaluation"
+          value={formatMetric(overall?.RMSE, 2, "°C")}
+          sub={metricScope}
         />
         <StatChip
           icon={<ChartIcon />}
           label="Diagnostic R²"
-          value={overallR2.toFixed(4)}
-          sub="Training-overlap evaluation"
+          value={formatMetric(overall?.R2, 4, "")}
+          sub={metricScope}
         />
         <StatChip
           icon={<ArrowUpIcon />}
           label="Diagnostic Skill Score"
-          value="+19.1% vs Persistence"
-          sub="Relative MAE reduction (training-overlap)"
+          value={formatSkill(selected?.skill_vs_persistence)}
+          sub="Relative MAE change vs persistence"
         />
         <StatChip
           icon={<CheckIcon />}
           label="Conformal Coverage"
-          value={info.data.coverage_90 ? `${coveragePercent}%` : "Pending"}
-          sub={info.data.coverage_90 ? `Target 90% (q = ±${conformalQ}°C)` : "Not yet calibrated for current artifact"}
+          value={coverage == null ? "Pending" : formatMetric(coverage * 100, 1, "%")}
+          sub={q == null ? "Calibration pending for this artifact" : `Interval half-width ${formatMetric(q, 2, "°C")}`}
         />
       </div>
 
@@ -237,7 +192,7 @@ export function ModelPerformancePage() {
       {/* Horizon-by-Horizon Performance Breakdown */}
       <Card
         title="Horizon-by-Horizon Performance Breakdown (Day 1 through Day 7)"
-        subtitle="Diagnostic error growth across forecast lead times. These scores are from training-overlapping evaluation and are not independently validated."
+        subtitle={`${metricScope} by forecast lead time`}
         icon={<CalendarIcon />}
       >
         {/* 7-Day Horizon Cards */}
@@ -286,14 +241,13 @@ export function ModelPerformancePage() {
                   margin: "2px 0 4px",
                 }}
               >
-                ±{h.MAE.toFixed(2)}
-                <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-muted)" }}>°C</span>
+                {formatMetric(h.MAE, 2, "°C")}
               </div>
               <div style={{ fontSize: "11.5px", color: "var(--text-secondary)", fontVariantNumeric: "tabular-nums" }}>
-                RMSE: <strong>{h.RMSE.toFixed(2)}°C</strong>
+                RMSE: <strong>{formatMetric(h.RMSE, 2, "°C")}</strong>
               </div>
               <div style={{ fontSize: "11px", color: "var(--text-muted)", fontVariantNumeric: "tabular-nums" }}>
-                R²: {h.R2.toFixed(3)}
+                R²: {formatMetric(h.R2, 3)}
               </div>
               <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid var(--border-subtle)", width: "100%" }}>
                 <span
@@ -308,7 +262,7 @@ export function ModelPerformancePage() {
                     display: "inline-block",
                   }}
                 >
-                  +{h.skill.toFixed(1)}% vs Persist
+                  {h.skill == null ? "Skill unavailable" : `${formatSkill(h.skill)} vs persistence`}
                 </span>
               </div>
             </div>
@@ -321,9 +275,6 @@ export function ModelPerformancePage() {
             <span style={{ fontSize: "12.5px", fontWeight: 600, color: "var(--text-secondary)" }}>
               Forecast Horizon Error Progression (MAE & RMSE in °C)
             </span>
-            <span style={{ fontSize: "11.5px", color: "var(--text-muted)" }}>
-              Day 1 Error: ±0.93°C → Day 7 Error: ±1.29°C (+25.0% Skill Retention)
-            </span>
           </div>
 
           <div style={{ width: "100%", height: 220 }}>
@@ -332,7 +283,7 @@ export function ModelPerformancePage() {
                 <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
                 <XAxis dataKey="label" tick={{ fontSize: 11, fill: "#64748b" }} />
                 <YAxis
-                  domain={[0.8, 2.0]}
+                  domain={[0, "auto"]}
                   tick={{ fontSize: 11, fill: "#64748b" }}
                   unit="°C"
                   tickFormatter={(v: number) => v.toFixed(1)}
@@ -379,13 +330,14 @@ export function ModelPerformancePage() {
       {/* Model Comparison Visuals: Recharts BarChart & Comparison Table */}
       <Card
         title="Model Architecture Benchmark Comparison"
-        subtitle="Diagnostic comparison of LightGBM against benchmarks. All metrics are from training-overlapping evaluation; relative rankings have not been independently confirmed."
+        subtitle={`${metricScope} of the scores supplied by the API`}
         icon={<TargetIcon />}
         action={
           <div style={{ display: "inline-flex", background: "var(--bg-surface-subtle)", padding: 3, borderRadius: "var(--radius-md)" }}>
             <button
               type="button"
               className={metricTab === "MAE" ? "btn-primary" : "btn-outline"}
+              aria-pressed={metricTab === "MAE"}
               onClick={() => setMetricTab("MAE")}
               style={{
                 fontSize: "12px",
@@ -400,6 +352,7 @@ export function ModelPerformancePage() {
             <button
               type="button"
               className={metricTab === "RMSE" ? "btn-primary" : "btn-outline"}
+              aria-pressed={metricTab === "RMSE"}
               onClick={() => setMetricTab("RMSE")}
               style={{
                 fontSize: "12px",
@@ -414,6 +367,7 @@ export function ModelPerformancePage() {
             <button
               type="button"
               className={metricTab === "R2" ? "btn-primary" : "btn-outline"}
+              aria-pressed={metricTab === "R2"}
               onClick={() => setMetricTab("R2")}
               style={{
                 fontSize: "12px",
@@ -440,7 +394,7 @@ export function ModelPerformancePage() {
                 tick={{ fontSize: 11.5, fill: "#475569", fontWeight: 500 }}
               />
               <YAxis
-                domain={metricTab === "R2" ? [0.93, 1.0] : [0, "auto"]}
+                domain={metricTab === "R2" ? ["auto", "auto"] : [0, "auto"]}
                 tick={{ fontSize: 11, fill: "#64748b" }}
                 unit={metricTab === "R2" ? "" : "°C"}
                 tickFormatter={(v: number) => v.toFixed(metricTab === "R2" ? 3 : 2)}
@@ -494,16 +448,16 @@ export function ModelPerformancePage() {
                     </div>
                   </td>
                   <td>{m.type}</td>
-                  <td className="num strong">{m.MAE.toFixed(4)}</td>
-                  <td className="num">{m.RMSE.toFixed(4)}</td>
-                  <td className="num">{m.R2.toFixed(4)}</td>
+                  <td className="num strong">{formatMetric(m.MAE, 4)}</td>
+                  <td className="num">{formatMetric(m.RMSE, 4)}</td>
+                  <td className="num">{formatMetric(m.R2, 4)}</td>
                   <td>
                     <span style={{ fontWeight: 600, color: m.isProduction ? "var(--success)" : "var(--text-secondary)" }}>
                       {m.skill}
                     </span>
                   </td>
                   <td>
-                    <Badge variant={m.statusVariant}>{m.status}</Badge>
+                    <Badge neutral>{m.status}</Badge>
                   </td>
                 </tr>
               ))}

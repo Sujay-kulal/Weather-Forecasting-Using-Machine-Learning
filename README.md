@@ -1,152 +1,86 @@
 # Weather Forecasting Using Machine Learning
 
-ML-powered 7-day average temperature forecasting for 33 Indian states/UTs using a LightGBM multi-output model trained on historical weather data (2015–present). Features a React frontend with interactive India map, historical weather charts, and prediction history.
+A React and FastAPI application that uses a saved LightGBM model to forecast seven daily average temperatures for 33 Indian states and union territories. PostgreSQL stores past weather and forecast runs. The India map shows state-level ML temperatures and Open-Meteo current city conditions.
 
----
+## Start with Docker Compose
 
-## Architecture
+Copy `.env.example` to `.env` and set the database password and admin token. Use the service name `db` in the Compose `DATABASE_URL` and match its credentials to the `POSTGRES_*` values.
 
-```
-┌─────────────────────┐     ┌──────────────────────────────────┐
-│  React/TypeScript   │     │  FastAPI Backend                 │
-│  Vite + Leaflet     │────▶│  LightGBM v3 Pipeline            │
-│  Vercel (prod)      │ API │  PostgreSQL (Neon prod)           │
-│  :8080 (Docker)     │     │  Render (prod) / :8000 (dev)     │
-└─────────────────────┘     └──────────────────────────────────┘
+```sh
+docker compose up --build -d --wait
+docker compose exec backend python backend/update_weather.py --days-back 14
+curl --fail http://127.0.0.1:8080/api/ready
 ```
 
-- **Model**: LightGBM multi-output pipeline (`model/weather_model_v3.joblib`) — 20 engineered features, 7-day Temp_Avg forecast
-- **Backend**: FastAPI + SQLAlchemy 2.0 + psycopg (v3) + APScheduler
-- **Frontend**: React 18 + TypeScript + Vite + Leaflet maps + Recharts
-- **Database**: PostgreSQL (Neon on production, local/Docker for development)
-- **Deployment**: Docker Compose (local), Render (backend), Vercel (frontend)
+Open the dashboard at [localhost:8080](http://127.0.0.1:8080) and the FastAPI docs at [localhost:8001/docs](http://127.0.0.1:8001/docs). Set `FRONTEND_PORT` or `BACKEND_PORT` in `.env` if a default port is occupied. Compose runs the migration service before the API becomes ready. PostgreSQL is reachable on the Compose network through `db:5432`. The ingestion command fills the database with completed past days. For older dates, run a bounded backfill.
 
-> The India Map page also displays live Open-Meteo city weather observations; those are **not** ML forecasts.
-
----
-
-## Getting Started with Docker
-
-### 1. Environment Setup
-
-Copy `.env.example` to `.env` and fill in your passwords and secrets:
-
-```bash
-cp .env.example .env
+```sh
+docker compose exec backend python backend/backfill.py --start-date YYYY-MM-DD --end-date YYYY-MM-DD
 ```
 
-Ensure all required variables (`POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`, `DATABASE_URL`, `ADMIN_TOKEN`) are set.
+Open-Meteo past-day values and historical reanalysis are gridded weather data. The statewide dataset uses a representative coordinate for each entry. Ingestion and the source CSV contain 34 entries, including the `Other` placeholder. The model and forecast controls cover the 33 named regions.
 
-The Compose stack runs a one-shot migration service after PostgreSQL is ready
-and before the API starts. Normal API startup does not create or alter tables.
+## Develop locally
 
-### 2. Start the Stack
+Use Python 3.11, PostgreSQL 16 or later, and Node.js 20 or later. Create a local database and copy `backend/.env.example` to `backend/.env`. Set the local PostgreSQL URL. Run these commands from the repository root.
 
-Start all containers in detached mode:
-
-```bash
-docker compose up --build -d
+```sh
+python -m pip install -r backend/requirements-dev.txt
+python backend/migrate_db.py --apply --allow-host localhost,127.0.0.1
+python backend/update_weather.py --days-back 14
+python -m uvicorn --app-dir backend app.main:app --reload
 ```
 
-Services started:
-- `db`: PostgreSQL 16 on `127.0.0.1:5432`
-- `migrate`: one-shot schema migration against the Compose database
-- `backend`: FastAPI with LightGBM model on port `8000` (mapped to `127.0.0.1:8001` on host)
-- `frontend`: Nginx serving the React SPA and proxying `/api/` to backend on `127.0.0.1:8080`
+In a second terminal, run:
 
-### 3. Populate the Database (Initial Backfill)
-
-When starting with a fresh database volume, populate historical weather data from 2015 to the latest available date by running `backfill.py` inside the backend container:
-
-```bash
-docker compose exec backend python backend/backfill.py
+```sh
+cd frontend
+npm ci
+npm run dev
 ```
 
-This ingests historical weather records for all states with retries, delay throttling, and idempotent upserts.
+Vite serves the app on port 5173 and proxies `/api` to port 8000. To load the historical CSV, obtain the dataset with `python fetch_data.py`, then run `python backend/import_data.py`. The CSV stays in local `data/archive_c/`. Rerunning the import preserves existing weather records.
 
-### 4. Health Check
+## Forecast and evidence
 
-Verify that the system is running:
+For the first forecast date **D**, the model uses seven consecutive completed days, **D−8 through D−2**. Calendar features come from **D−1**. Output days run from **D through D+6**. The forecast form defaults to two days after the last available statewide record. The India map uses the newest completed day among supported states and includes only states with a complete matching window.
 
-```bash
-curl http://localhost:8080/api/health
+The model predicts daily average temperature. Highs, lows, humidity, rainfall, conditions and similar indicators shown with a forecast are rule-based estimates. The history page reads stored weather records. The city layer reads current conditions directly from Open-Meteo.
+
+The saved v3 artifact's recorded training-data cutoff is **2026-10-22**. Its archived scores cover dates that overlap training. Under the existing embargo rule, independent evaluation begins with the origin **2026-10-31**. A 30-origin evaluation needs verified target observations through **2026-12-06**.
+
+```sh
+python backend/evaluate_deployed_artifact.py --mode independent --test-window 30
 ```
 
----
+The evaluator reads PostgreSQL in a read-only transaction. Use `--eval-data` with a verified weather file to control the evaluation dataset. Results go under `results/`. `train_model.py` writes research outputs under `results/experiments/`. `retrain_v3.py` requires a new output directory and writes a separate candidate. Both scripts are outside normal application startup.
 
-## Model Contract
+## Tests
 
-- The saved model is a LightGBM multi-output pipeline that returns seven
-  consecutive `Temp_Avg` values, beginning on the requested forecast date.
-- It consumes 20 engineered features built from state-level weather history.
-  District and location-level ML forecasts are not supported by the current
-  training data.
-- The forecast page defaults to one day after the latest observation. The
-  `/forecast/all` map endpoint defaults to two days after the latest
-  observation to ensure the model's lag alignment includes that observation.
-- The current v3 artifact's stored evaluation and interval metadata are marked
-  historical and unvalidated for that artifact. Prediction interval bounds
-  are not returned until a calibration is explicitly validated for the current
-  artifact.
-
-### Geographic Scope
-
-The trained model and bundled historical dataset are state/UT-level. District and location fields are reserved for future datasets; city-level ML forecasting requires city-level historical training data and a retrained model. Do not present the live city-weather layer as a city forecast.
-
----
-
-## Evaluation
-
-`train_honest_eval.py` reads PostgreSQL in a read-only transaction and writes aggregate metrics plus
-per-target held-out predictions under `results/`. It uses date-based training,
-calibration, and test windows separated by an eight-day forecast-origin gap for the seven-day target
-and does not replace the served model or update its metadata.
-
-`retrain_v3.py` is a separate, explicit training operation. It replaces the
-v3 model artifact and clears active metrics and interval claims until the new
-artifact is evaluated. Do not run it as part of ordinary setup.
-
----
-
-## Project Structure
-
-```
-├── backend/                 # FastAPI application
-│   ├── app/
-│   │   ├── main.py          # FastAPI app, CORS, routers, startup
-│   │   ├── database.py      # SQLAlchemy engine/session (PostgreSQL only)
-│   │   ├── models.py        # ORM models (weather_data, predictions, etc.)
-│   │   ├── schemas.py       # Pydantic request/response schemas
-│   │   ├── routes/          # API route handlers
-│   │   └── services/        # Business logic (features, model, caching)
-│   ├── tests/               # Backend test suite
-│   ├── migrations/          # SQL migration scripts
-│   ├── import_data.py       # CSV → PostgreSQL import (idempotent)
-│   ├── update_weather.py    # Open-Meteo live ingestion
-│   ├── backfill.py          # Historical data backfill
-│   └── requirements.txt     # Python dependencies
-├── frontend/                # React SPA
-│   ├── src/
-│   │   ├── pages/           # Forecast, History, Map, etc.
-│   │   ├── components/      # Reusable UI components
-│   │   ├── services/        # API client
-│   │   └── types/           # TypeScript type definitions
-│   └── package.json
-├── model/                   # Trained model artifacts
-│   ├── weather_model_v3.joblib
-│   └── model_info.json      # Model metadata, features, metrics
-├── docs/                    # Project documentation
-│   └── audit/               # Audit and review reports
-├── deliverables/            # Presentation and submission materials
-├── scripts/                 # Utility and diagnostic scripts
-├── docker-compose.yml       # Local development stack
-├── Dockerfile               # Backend container
-└── README.md                # This file
+```sh
+python -m pytest backend/tests -q
+python scripts/verify_ast_preservation.py
+docker compose --env-file .env.example config --quiet
+cd frontend
+npm ci
+npm test
+npm run build
 ```
 
----
+For the PostgreSQL integration suite, set `WEATHER_TEST_DATABASE_URL` to a disposable localhost PostgreSQL database whose name ends in `_test`, then run `python -m pytest backend/integration -q` from the root. The browser suite needs a migrated database populated with real recent weather, the frontend build, and a Chromium browser. From `frontend/`, run `npx playwright install chromium` and `npm run test:browser`. Set `WEATHER_BROWSER_CHANNEL=chrome` to use an installed Chrome instead. The suite starts its own API and preview servers on ports 58000 and 55173.
 
-## Further Documentation
+## Deploy with Render, Neon and Vercel
 
-- Backend setup, API endpoints, and data ingestion: [`backend/README.md`](backend/README.md)
-- Frontend development and pages: [`frontend/README.md`](frontend/README.md)
+Run the schema migration against an authorized **direct** Neon endpoint before starting the Render service. The ingestion lock is session-scoped and also requires a direct endpoint. Set `DATABASE_URL` with SSL enabled, a distinct `ADMIN_TOKEN`, and the exact frontend origin in `CORS_ORIGINS` on Render. The root [Render Blueprint](render.yaml) builds the backend using the repository root as its context and checks `/ready`. Enable the ingestion scheduler explicitly if the hosting service keeps the API running continuously.
+
+On Vercel, set the project root to `frontend`, use the Vite preset, and set `VITE_API_BASE_URL` to the assigned Render API origin. Check the live frontend and API after deployment. See [Neon connection pooling](https://neon.com/docs/connect/connection-pooling) and the [Render Blueprint reference](https://render.com/docs/blueprint-spec).
+
+## Repository layout
+
+- `backend/app/` serves the API, model, ingestion and PostgreSQL access. `backend/migrations/`, `backend/tests/` and `backend/integration/` contain schema and verification code.
+- `frontend/src/` contains the six modules and shared UI, hooks, API client and types. `frontend/public/` holds the map data and `frontend/tests/` holds component and browser checks.
+- `model/` contains the deployed joblib file, its metadata and archived diagnostic evidence.
+- `scripts/` contains verification utilities. `docs/audit/` records point-in-time evidence. `notebooks/`, `screenshot/` and `deliverables/` retain research and submission material.
+- Root scripts remain entry points for dataset acquisition and experimental training.
+
+Read the [backend guide](backend/README.md) and [frontend guide](frontend/README.md) for API and development details.

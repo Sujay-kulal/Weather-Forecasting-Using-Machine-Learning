@@ -14,9 +14,9 @@ from app.services.temperature import normalize_temperature
 
 # ----------------------------- requests -----------------------------
 class PredictionRequest(BaseModel):
-    state: str = Field(..., min_length=1, description="Indian state name, e.g. 'Karnataka'")
-    district: Optional[str] = Field("", description="District name, e.g. 'Udupi'")
-    location: Optional[str] = Field("", description="Location name, e.g. 'Kundapura'")
+    state: str = Field(..., min_length=1, max_length=100, description="Indian state name, e.g. 'Karnataka'")
+    district: Optional[str] = Field("", max_length=100, description="Reserved for location requests")
+    location: Optional[str] = Field("", max_length=100, description="Reserved for location requests")
     forecast_date: date_type = Field(..., description="Day to forecast (YYYY-MM-DD). "
                                                       "Must have 7 days of history before it.")
 
@@ -26,8 +26,8 @@ class DayForecast(BaseModel):
     day: int = Field(..., description="Horizon day index 1 to 7")
     date: date_type = Field(..., description="Forecast date (YYYY-MM-DD)")
     temp_avg: float = Field(..., description="Predicted average temperature in deg C")
-    temp_min: float = Field(..., description="Predicted low temperature in deg C")
-    temp_max: float = Field(..., description="Predicted high temperature in deg C")
+    temp_min: float = Field(..., description="Rule-based low temperature estimate in deg C")
+    temp_max: float = Field(..., description="Rule-based high temperature estimate in deg C")
     feels_like: float = Field(..., description="Apparent / 'feels like' temperature in deg C")
     humidity: float = Field(..., description="Estimated relative humidity in %")
     rainfall: float = Field(..., description="Expected precipitation in mm")
@@ -54,7 +54,7 @@ class PredictionResponse(BaseModel):
     model: str = Field(..., description="Model name that produced the prediction")
     typical_error_mae: Optional[float] = Field(None, description="Test-set MAE of the model")
     last_known: Optional[dict] = Field(None, description="Most recent measurement used")
-    daily_forecasts: Optional[List[DayForecast]] = Field(None, description="Comprehensive 7-day multi-parameter forecasts")
+    daily_forecasts: Optional[List[DayForecast]] = Field(None, description="ML daily averages with rule-based weather estimates")
     weather_summary: Optional[str] = Field(None, description="Overall summary of the 7-day forecast")
 
     @field_validator("predicted_temp_avg", mode="before")
@@ -99,6 +99,7 @@ class WeatherResponse(BaseModel):
 
 class StatesResponse(BaseModel):
     states: List[str]
+    model_states: List[str] = Field(default_factory=list)
 
 class DistrictsResponse(BaseModel):
     districts: List[str]
@@ -142,6 +143,8 @@ class PredictionsResponse(BaseModel):
     total: int
     limit: int
     offset: int
+    stored_count: int
+    model_versions: List[str] = Field(default_factory=list)
 
 
 class LiveModelMetrics(BaseModel):
@@ -170,6 +173,9 @@ class ModelInfoResponse(BaseModel):
     calibration_period: Optional[List[str]] = None
     metrics_status: Optional[str] = None
     validated_for_artifact: Optional[bool] = None
+    trained_through: Optional[date_type] = None
+    evaluation_note: Optional[str] = None
+    interval_status: Optional[str] = None
     evaluation: Optional[dict] = None
 
 

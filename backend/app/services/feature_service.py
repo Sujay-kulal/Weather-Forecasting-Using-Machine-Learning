@@ -21,7 +21,6 @@ import numpy as np
 import pandas as pd
 
 REQUIRED_HISTORY = 7  # roll7 needs 7 records ending at D-2
-MAX_STALENESS_DAYS = 2  # allow small gaps (training panel had one 1-day gap)
 
 
 def month_to_season(month: int) -> str:
@@ -36,7 +35,7 @@ def month_to_season(month: int) -> str:
 
 
 class InsufficientHistoryError(Exception):
-    """Not enough (or not recent enough) history to build the 13 model features."""
+    """The observations cannot supply the 20 model features."""
 
 
 def build_features(history: list, state: str, asof_date, *, today: Optional[date] = None) -> pd.DataFrame:
@@ -44,7 +43,7 @@ def build_features(history: list, state: str, asof_date, *, today: Optional[date
     history : the 7 most recent WeatherData rows STRICTLY BEFORE (D - 1),
               ordered most-recent-first -> history[0] = measurement at D-2.
     asof_date : the training-row date t = D-1 (drives month_sin/cos and Season).
-    Returns a one-row DataFrame with the model's 18 feature columns.
+    Returns a one-row DataFrame with 18 numeric and two categorical columns.
     """
     if len(history) < REQUIRED_HISTORY:
         raise InsufficientHistoryError(

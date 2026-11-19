@@ -148,7 +148,7 @@ describe("Tier 3: Cross-Feature Combinations", () => {
       const rainHtml = renderComponent(
         <IndiaMap overlayMetric="rainfall" forecastDay={1} />
       );
-      assertContains(rainHtml, "Rainfall Legend (mm)");
+      assertContains(rainHtml, "Precipitation Legend (mm)");
       assertContains(rainHtml, "Choropleth: Regional Aggregated Observations");
 
       // 4. Wind overlay

@@ -283,7 +283,7 @@ export interface CityWeather {
   temperature: number;
   humidity: number;
   windSpeed: number;
-  weatherCode: number;
+  precipitation: number;
   description: string;
   emoji: string;
   isDay: boolean;
@@ -298,19 +298,22 @@ interface OpenMeteoGeocodingResult {
   admin2?: string;
 }
 
-function toCityWeather(city: CityDef, current: Record<string, number | undefined>): CityWeather {
-  const weatherCode = current.weather_code ?? 0;
-  const weather = wmoWeatherCode(weatherCode);
-  return {
-    city,
-    temperature: current.temperature_2m ?? 0,
-    humidity: current.relative_humidity_2m ?? 0,
-    windSpeed: current.wind_speed_10m ?? 0,
-    weatherCode,
-    description: weather.description,
-    emoji: weather.emoji,
-    isDay: (current.is_day ?? 1) === 1,
-  };
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function toCityWeather(city: CityDef, current: Record<string, unknown> | undefined): CityWeather[] {
+  if (!current) return [];
+  const {
+    temperature_2m: temperature, relative_humidity_2m: humidity,
+    wind_speed_10m: windSpeed, precipitation, weather_code: code, is_day: daylight,
+  } = current;
+  if (!isFiniteNumber(temperature) || !isFiniteNumber(humidity)
+      || !isFiniteNumber(windSpeed) || !isFiniteNumber(precipitation)) return [];
+  return [{
+    city, temperature, humidity, windSpeed, precipitation, isDay: daylight === 1,
+    ...wmoWeatherCode(isFiniteNumber(code) ? code : -1),
+  }];
 }
 
 /** Searches the India portion of Open-Meteo's city index and gets live weather. */
@@ -331,27 +334,27 @@ export async function searchIndianCityWeather(query: string): Promise<CityWeathe
     "https://api.open-meteo.com/v1/forecast" +
       `?latitude=${places.map((place) => place.latitude).join(",")}` +
       `&longitude=${places.map((place) => place.longitude).join(",")}` +
-      "&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,is_day" +
+      "&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,is_day,precipitation" +
       "&timezone=Asia%2FKolkata"
   );
   if (!weatherResponse.ok) throw new Error("Live weather is temporarily unavailable");
 
   const weatherData = await weatherResponse.json() as
-    | { current?: Record<string, number | undefined> }
-    | Array<{ current?: Record<string, number | undefined> }>;
+    | { current?: Record<string, unknown> }
+    | Array<{ current?: Record<string, unknown> }>;
   const forecasts = Array.isArray(weatherData) ? weatherData : [weatherData];
 
   return places.flatMap((place, index) => {
     const current = forecasts[index]?.current;
     if (!current) return [];
-    return [toCityWeather({
+    return toCityWeather({
       name: place.name,
       state: place.admin1 ?? place.admin2 ?? "India",
       district: place.admin2,
       location: place.name,
       lat: place.latitude,
       lng: place.longitude,
-    }, current)];
+    }, current);
   });
 }
 
@@ -385,7 +388,7 @@ export async function fetchAllCityWeather(): Promise<{
       `https://api.open-meteo.com/v1/forecast` +
       `?latitude=${lats}` +
       `&longitude=${lngs}` +
-      `&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,is_day` +
+      `&current=temperature_2m,relative_humidity_2m,weather_code,wind_speed_10m,is_day,precipitation` +
       `&timezone=Asia/Kolkata`;
 
     const response = await fetch(url);
@@ -393,12 +396,9 @@ export async function fetchAllCityWeather(): Promise<{
     const data = await response.json();
 
     // Open-Meteo returns an array when multiple coordinates are given
-    const results: any[] = Array.isArray(data) ? data : [data];
-
-    return results.map((r, i) => {
-      const city = chunk[i];
-      return toCityWeather(city, r.current ?? {});
-    });
+    const results = Array.isArray(data) ? data : [data];
+    if (results.length !== chunk.length) throw new Error("Incomplete city weather response");
+    return chunk.flatMap((city, index) => toCityWeather(city, results[index]?.current));
   });
 
   const chunkResults = await Promise.allSettled(chunkPromises);

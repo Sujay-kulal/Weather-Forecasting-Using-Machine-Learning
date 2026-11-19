@@ -11,6 +11,7 @@ export interface HealthResponse {
 
 export interface StatesResponse {
   states: string[];
+  model_states?: string[];
 }
 
 export interface DistrictsResponse {
@@ -145,6 +146,8 @@ export interface PredictionsResponse {
   total: number;
   limit: number;
   offset: number;
+  stored_count?: number;
+  model_versions?: string[];
 }
 
 export interface HorizonMetric {
@@ -159,6 +162,8 @@ export interface ModelMetrics {
   R2: number;
   overall?: HorizonMetric;
   by_horizon?: Record<string, HorizonMetric>;
+  skill_vs_persistence?: number | null;
+  skill_vs_persistence_by_horizon?: Record<string, number | null>;
 }
 
 export interface ModelInfoResponse {

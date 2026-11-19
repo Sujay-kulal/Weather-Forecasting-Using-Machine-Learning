@@ -10,7 +10,7 @@ import {
   ThermometerIcon,
 } from "../components/icons";
 import { Badge, Card, EmptyNote, ErrorBanner, PageHead, Skeleton, StatChip } from "../components/ui";
-import { getForecastAll, getRecentWeather } from "../services/api";
+import { getRecentWeather } from "../services/api";
 import type { WeatherRecord } from "../types/api";
 
 export interface IndiaMapPageProps {
@@ -41,7 +41,7 @@ export function IndiaMapPage({
 
   // State Telemetry data
   const [recentRecords, setRecentRecords] = useState<WeatherRecord[]>([]);
-  const [forecastTemp, setForecastTemp] = useState<number | null>(null);
+  const [forecastValues, setForecastValues] = useState<Record<string, number>>({});
   const [telemetryLoading, setTelemetryLoading] = useState<boolean>(false);
   const [telemetryError, setTelemetryError] = useState<string | null>(null);
 
@@ -53,67 +53,24 @@ export function IndiaMapPage({
     }
   }
 
-  // Fetch telemetry whenever selectedState or forecastDay changes
   useEffect(() => {
+    setRecentRecords([]);
+    setTelemetryError(null);
     if (!selectedState) {
-      setRecentRecords([]);
-      setForecastTemp(null);
-      setTelemetryError(null);
       setTelemetryLoading(false);
       return;
     }
 
     let cancelled = false;
     setTelemetryLoading(true);
-    setTelemetryError(null);
+    void getRecentWeather(normalizeStateName(selectedState), 7)
+      .then(({ records }) => { if (!cancelled) setRecentRecords(records); })
+      .catch((err: Error) => { if (!cancelled) setTelemetryError(err.message); })
+      .finally(() => { if (!cancelled) setTelemetryLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedState]);
 
-    const normState = normalizeStateName(selectedState);
-
-    async function loadTelemetry() {
-      // 1. Fetch recent observations from database
-      try {
-        const recentRes = await getRecentWeather(normState, 7);
-        if (!cancelled) {
-          setRecentRecords(recentRes.records ?? []);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.warn("Could not load recent records for state:", normState, err);
-          // Try without normalized state
-          try {
-            const fallbackRecent = await getRecentWeather(selectedState, 7);
-            if (!cancelled) setRecentRecords(fallbackRecent.records ?? []);
-          } catch {
-            if (!cancelled) setRecentRecords([]);
-          }
-        }
-      }
-
-      // 2. Fetch Day forecast temperature for this state
-      try {
-        const allForecasts = await getForecastAll(forecastDay);
-        if (!cancelled) {
-          const val = allForecasts[normState] ?? allForecasts[selectedState];
-          setForecastTemp(val !== undefined ? val : null);
-        }
-      } catch (err) {
-        if (!cancelled) {
-          console.warn("Could not load day forecast for state:", selectedState, err);
-          setForecastTemp(null);
-        }
-      } finally {
-        if (!cancelled) {
-          setTelemetryLoading(false);
-        }
-      }
-    }
-
-    void loadTelemetry();
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedState, forecastDay]);
-
+  const forecastTemp = forecastValues[normalizeStateName(selectedState)] ?? null;
   const latestRecord = recentRecords.length > 0 ? recentRecords[recentRecords.length - 1] : null;
   const activeMetricConf = METRIC_CONFIGS[overlayMetric];
 
@@ -122,29 +79,29 @@ export function IndiaMapPage({
       {/* Enterprise Page Header */}
       <PageHead
         title="India Meteorological Intelligence Map"
-        desc="Interactive geospatial weather analytics, state-level LightGBM multi-output forecasts, and live city observations across India."
-        badge={<Badge variant="info">36 States & UTs Monitored</Badge>}
+        desc="State polygons show LightGBM forecasts in the temperature layer. City markers show current conditions from Open-Meteo."
+        badge={<Badge variant="info">State forecasts and city weather</Badge>}
       />
 
       {/* Top KPI Cards */}
       <div className="stat-chips">
         <StatChip
           icon={<MapIcon />}
-          label="Monitored Regions"
-          value="36 States / UTs"
-          sub="Full national coverage"
+          label="Regions with ML Forecasts"
+          value={Object.keys(forecastValues).length}
+          sub="Forecasts available for this date"
         />
         <StatChip
           icon={<CloudSunIcon />}
           label="Live Feeds"
-          value="150+ Cities"
+          value="Current city weather"
           sub="Open-Meteo telemetry"
         />
         <StatChip
           icon={<SlidersIcon />}
           label="Active Overlay"
           value={`${activeMetricConf.label} (${activeMetricConf.unit})`}
-          sub={`Forecast Horizon: Day ${forecastDay}`}
+          sub={overlayMetric === "temperature" ? `State forecast day ${forecastDay}` : "Current city conditions"}
         />
         <StatChip
           icon={<ChipIcon />}
@@ -165,6 +122,7 @@ export function IndiaMapPage({
             onOverlayMetricChange={setOverlayMetric}
             forecastDay={forecastDay}
             onForecastDayChange={setForecastDay}
+            onForecastsChange={setForecastValues}
             height="650px"
           />
         </div>

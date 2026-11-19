@@ -1,4 +1,8 @@
 """Persistence helpers for idempotent prediction audit records."""
+from datetime import datetime, time, timezone
+from zoneinfo import ZoneInfo
+
+from sqlalchemy import or_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.orm import Session
@@ -8,6 +12,10 @@ from app.models import Prediction
 
 PREDICTION_KEY = ("state", "district", "location", "forecast_date", "model_version")
 PREDICTION_CONSTRAINT = "uq_prediction_state_location_date_model_version"
+
+
+def target_start_utc(forecast_date):
+    return datetime.combine(forecast_date, time.min, tzinfo=ZoneInfo("Asia/Kolkata")).astimezone(timezone.utc)
 
 
 def upsert_prediction(
@@ -32,15 +40,19 @@ def upsert_prediction(
     dialect = db.get_bind().dialect.name
     if dialect == "postgresql":
         statement = pg_insert(Prediction).values(**values)
+        target_start = target_start_utc(forecast_date)
         statement = statement.on_conflict_do_update(
             constraint=PREDICTION_CONSTRAINT,
             set_={"predicted_temp_avg": statement.excluded.predicted_temp_avg},
+            where=or_(Prediction.created_at >= target_start, statement.excluded.created_at < target_start),
         )
     elif dialect == "sqlite":
         statement = sqlite_insert(Prediction).values(**values)
+        target_start = target_start_utc(forecast_date).replace(tzinfo=None)
         statement = statement.on_conflict_do_update(
             index_elements=[getattr(Prediction, column) for column in PREDICTION_KEY],
             set_={"predicted_temp_avg": statement.excluded.predicted_temp_avg},
+            where=or_(Prediction.created_at >= target_start, statement.excluded.created_at < target_start),
         )
     else:
         raise RuntimeError(f"Unsupported prediction-store dialect: {dialect}")

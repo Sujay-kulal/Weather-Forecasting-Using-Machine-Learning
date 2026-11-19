@@ -27,6 +27,7 @@ export interface IndiaMapProps {
   onOverlayMetricChange?: (metric: OverlayMetric) => void;
   forecastDay?: number;
   onForecastDayChange?: (day: number) => void;
+  onForecastsChange?: (forecasts: Record<string, number>) => void;
   height?: string | number;
 }
 
@@ -59,16 +60,6 @@ export function getHumidityColor(humidity: number | undefined): string {
   if (humidity < 75) return "#06b6d4";
   if (humidity < 85) return "#3b82f6";
   return "#6366f1";
-}
-
-export function getRainfallEstimate(weatherCode: number): number {
-  if ([51, 53].includes(weatherCode)) return 1.2;
-  if ([55, 56, 57].includes(weatherCode)) return 3.5;
-  if ([61, 80].includes(weatherCode)) return 4.0;
-  if ([63, 81].includes(weatherCode)) return 9.5;
-  if ([65, 82].includes(weatherCode)) return 18.0;
-  if ([95, 96, 99].includes(weatherCode)) return 28.0;
-  return 0.0;
 }
 
 export function getRainfallColor(rainfall: number | undefined): string {
@@ -142,7 +133,7 @@ export const METRIC_CONFIGS: Record<
     ],
   },
   rainfall: {
-    label: "Rainfall",
+    label: "Precipitation",
     unit: "mm",
     icon: "🌧️",
     bands: [
@@ -176,7 +167,7 @@ function createCityIcon(weather: CityWeather, metric: OverlayMetric): L.DivIcon 
     displayVal = `${weather.humidity.toFixed(0)}%`;
     metricColor = getHumidityColor(weather.humidity);
   } else if (metric === "rainfall") {
-    const rain = getRainfallEstimate(weather.weatherCode);
+    const rain = weather.precipitation;
     displayVal = `${rain.toFixed(1)}mm`;
     metricColor = getRainfallColor(rain);
   } else if (metric === "wind") {
@@ -267,6 +258,7 @@ export function IndiaMap({
   onOverlayMetricChange,
   forecastDay = 1,
   onForecastDayChange,
+  onForecastsChange,
   height,
 }: IndiaMapProps) {
   const [geoData, setGeoData] = useState<any>(null);
@@ -279,6 +271,7 @@ export function IndiaMap({
   const [citySearchLoading, setCitySearchLoading] = useState(false);
   const [citySearchMessage, setCitySearchMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [boundaryError, setBoundaryError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string>("");
   const [flyTarget, setFlyTarget] = useState<[number, number] | null>(null);
 
@@ -292,19 +285,22 @@ export function IndiaMap({
         return res.json();
       })
       .then((data) => setGeoData(data))
-      .catch((err) => setError(err.message));
+      .catch((err) => setBoundaryError(err.message));
   }, []);
 
   // Fetch forecasts for all states for the chosen horizon day
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setForecasts({});
+    onForecastsChange?.({});
 
     async function loadForecasts() {
       try {
         const data = await getForecastAll(forecastDay);
         if (!cancelled) {
           setForecasts(data);
+          onForecastsChange?.(data);
           setError(null);
         }
       } catch (err) {
@@ -321,7 +317,7 @@ export function IndiaMap({
     return () => {
       cancelled = true;
     };
-  }, [forecastDay]);
+  }, [forecastDay, onForecastsChange]);
 
   // Fetch live city weather from Open-Meteo
   useEffect(() => {
@@ -356,7 +352,7 @@ export function IndiaMap({
         map[stateName] = { humidity: 0, rainfall: 0, wind: 0, count: 0 };
       }
       map[stateName].humidity += cw.humidity;
-      map[stateName].rainfall += getRainfallEstimate(cw.weatherCode);
+      map[stateName].rainfall += cw.precipitation;
       map[stateName].wind += cw.windSpeed;
       map[stateName].count += 1;
     }
@@ -433,7 +429,7 @@ export function IndiaMap({
       return {
         valueDisplay: hum !== undefined ? `${hum.toFixed(0)} %` : "No data",
         color: getHumidityColor(hum),
-        label: "Regional Avg Humidity",
+        label: "Live city humidity average",
       };
     }
     if (overlayMetric === "rainfall") {
@@ -441,7 +437,7 @@ export function IndiaMap({
       return {
         valueDisplay: rain !== undefined ? `${rain.toFixed(1)} mm` : "No data",
         color: getRainfallColor(rain),
-        label: "Regional Avg Rainfall",
+        label: "Live city precipitation average",
       };
     }
     // wind
@@ -449,7 +445,7 @@ export function IndiaMap({
     return {
       valueDisplay: wind !== undefined ? `${wind.toFixed(0)} km/h` : "No data",
       color: getWindColor(wind),
-      label: "Regional Avg Wind Speed",
+      label: "Live city wind average",
     };
   }
 
@@ -474,17 +470,13 @@ export function IndiaMap({
     const stateName = normalizeStateName(rawName);
     const details = getFeatureMetricDetails(stateName);
 
-    layer.bindTooltip(
-      `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 13px; line-height: 1.5; min-width: 150px;">
-        <div style="font-weight: 800; color: #0f172a; font-size: 14px; margin-bottom: 2px;">${stateName}</div>
-        <div style="font-size: 11px; color: #64748b; margin-bottom: 4px;">${details.label}</div>
-        <div style="display: flex; align-items: center; gap: 6px;">
-          <span style="font-weight: 800; font-size: 16px; color: ${details.color};">${details.valueDisplay}</span>
-        </div>
-        <div style="font-size: 11px; color: #2563eb; margin-top: 4px; font-weight: 600;">Click to inspect state telemetry →</div>
-      </div>`,
-      { sticky: true, direction: "auto", className: "map-tooltip" }
-    );
+    const tooltip = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = stateName;
+    const metric = document.createElement("div");
+    metric.textContent = `${details.label} · ${details.valueDisplay}`;
+    tooltip.append(title, metric);
+    layer.bindTooltip(tooltip, { sticky: true, direction: "auto", className: "map-tooltip" });
 
     layer.on({
       mouseover: (e) => {
@@ -539,7 +531,7 @@ export function IndiaMap({
         </div>
       )}
 
-      {error && <ErrorBanner message={error} />}
+      {(boundaryError || error) && <ErrorBanner message={boundaryError || error || ""} />}
 
       {/* Top Map Toolbar */}
       <div className="map-toolbar-bar">
@@ -763,7 +755,7 @@ function CityMarkers({
   return (
     <FeatureGroup>
       {cities.map((cw) => {
-        const rainEst = getRainfallEstimate(cw.weatherCode);
+        const precipitation = cw.precipitation;
         return (
           <Marker
             key={`${cw.city.name}|${cw.city.state}`}
@@ -805,7 +797,7 @@ function CityMarkers({
                       : metric === "humidity"
                       ? `${cw.humidity.toFixed(0)}%`
                       : metric === "rainfall"
-                      ? `${rainEst.toFixed(1)} mm`
+                      ? `${precipitation.toFixed(1)} mm`
                       : `${cw.windSpeed.toFixed(0)} km/h`}
                   </div>
                   <div style={{ fontSize: 11.5, color: "#38bdf8", fontWeight: 600, marginTop: 4 }}>
@@ -827,8 +819,8 @@ function CityMarkers({
                     <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{cw.windSpeed.toFixed(0)} km/h</div>
                   </div>
                   <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 6, padding: "5px 7px" }}>
-                    <div style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", color: "#64748b" }}>Rain Est.</div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{rainEst.toFixed(1)} mm</div>
+                    <div style={{ fontSize: 9.5, fontWeight: 700, textTransform: "uppercase", color: "#64748b" }}>Precipitation</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{precipitation.toFixed(1)} mm</div>
                   </div>
                 </div>
 
@@ -844,7 +836,7 @@ function CityMarkers({
                 )}
 
                 <div style={{ marginTop: 6, fontSize: 10, color: "#94a3b8", textAlign: "center" }}>
-                  Live Open-Meteo observation · {cw.isDay ? "☀️ Daytime" : "🌙 Nighttime"}
+                  Open-Meteo current conditions · {cw.isDay ? "☀️ Daytime" : "🌙 Nighttime"}
                 </div>
               </div>
             </Popup>

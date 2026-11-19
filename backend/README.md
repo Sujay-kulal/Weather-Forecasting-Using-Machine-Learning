@@ -9,7 +9,7 @@ Frontend  →  POST /predict {state, forecast_date}
                    ↓
              FastAPI (this backend)
                    ↓
-     PostgreSQL: 7 historical records before D-1   (weather_data)
+     PostgreSQL: 7 completed calendar days before D-1   (weather_data)
                    ↓
      Feature Builder: exact 20 training features   (app/services/feature_service.py)
                    ↓
@@ -54,15 +54,13 @@ pip install -r requirements-dev.txt
 
 ## 4. Apply Migrations
 
-Apply SQL migrations before deploying:
+From the backend directory, apply the idempotent schema migration to the intended database.
 
-```bash
-psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f migrations/002_prediction_metrics.sql
+```sh
+python migrate_db.py --apply --allow-host localhost,127.0.0.1
 ```
 
-The migration adds nullable `model_version` and `actual_temp` columns and a
-model-version uniqueness constraint. Existing prediction rows are not updated;
-their new fields remain null initially.
+For a hosted database, substitute the authorized database host. Use a direct Neon endpoint for migrations and the ingestion advisory lock. `migrations/002_prediction_metrics.sql` is the archived metrics-only SQL migration. The script covers the current schema, including location columns and uniqueness constraints.
 
 ## 5. Import the Dataset (safe to re-run)
 
@@ -99,18 +97,21 @@ uvicorn app.main:app --reload
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/health` | App + PostgreSQL + model status |
-| GET | `/states` | States available in the database |
+| GET | `/ready` | HTTP 503 until the model and application tables are available |
+| GET | `/states` | Stored states and the subset with statewide model coverage |
 | GET | `/districts/{state}` | Districts for a state |
 | GET | `/locations/{state}/{district}` | Locations within a district |
 | GET | `/locations/search?q=&limit=` | Location autocomplete search |
-| GET | `/weather/{state}?limit=&offset=` | Historical weather (paginated) |
+| GET | `/weather/{state}?limit=&offset=&start_date=&end_date=` | Historical weather (paginated) |
+| GET | `/weather/{state}/{district}` | District-wide series when present |
+| GET | `/weather/{state}/{district}/{location}` | Exact location series with date filters and pagination |
 | GET | `/weather/{state}/recent?days=` | Recent measurements |
 | POST | `/weather/lookup` | Weather lookup by location |
 | POST | `/predict` | 7-day Temp_Avg forecast |
-| GET | `/predictions?limit=&offset=&state=&model_version=` | Filtered prediction history |
+| GET | `/predictions?limit=&offset=&state=&model_version=&q=` | Filtered prediction history |
 | GET | `/model-info` | Model features, periods, metrics, validation status |
 | GET | `/forecast/all?date=&day=1..7` | Selected forecast horizon for all model-supported states |
-| GET | `/metrics/live` | Rolling 30-day model and persistence MAE |
+| GET | `/metrics/live` | Rolling day-one MAE for runs issued before the target day and matching outcomes. Persistence uses D−2. |
 | POST | `/admin/ingest` | Trigger manual weather ingestion (requires ADMIN_TOKEN) |
 
 ## 9. Example `/predict` Request
@@ -131,15 +132,13 @@ the backend rebuilds that training row with `t = D-1`:
 * `lag2_humidity`, `lag2_rainfall` = values at D-3
 * `temp_range` = (lag1_temp_max − lag1_temp_min)
 * `roll3_temp_avg` = mean of D-4..D-2, `roll7_temp_avg` = mean of D-8..D-2
-* `rainfall_roll3`, `rainfall_roll7` = rolling rainfall means
+* `rainfall_roll3`, `rainfall_roll7` = rolling rainfall sums
 * `month_sin/cos`, `day_of_year_sin/cos` = cyclical encoding of D-1
 * `Season` = Winter (Dec–Feb), Summer (Mar–May), Monsoon (Jun–Sep), Post-Monsoon (Oct–Nov)
-* `State` = requested state (label-encoded inside the saved pipeline)
+* `State` = requested state (one-hot encoded inside the saved pipeline)
 
 Only records with `date < D-1` are read — day D's actual weather can never
-influence its own prediction. Requests with an unknown state (404), without
-7 prior records (422), stale history (422), or an invalid date (422) are
-rejected, never answered with fabricated values.
+influence its own prediction. Unsupported model states and invalid or incomplete forecast histories return HTTP 422. Supported states without a stored statewide series return HTTP 404. The seven inputs must be finite completed observations ending on D−2. Historic requests can be stored for comparison. The live metric uses forecasts issued before the target date and retains them when a historical request repeats the same run.
 
 ## Project Structure
 
