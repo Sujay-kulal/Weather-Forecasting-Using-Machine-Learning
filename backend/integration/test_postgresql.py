@@ -1,9 +1,16 @@
 """PostgreSQL checks. Run with a disposable localhost database ending in _test."""
 
+import json
 import os
 import sys
+from collections import Counter
 from datetime import timedelta
+from io import BytesIO
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
+from urllib.error import URLError
+from urllib.parse import parse_qs, urlsplit
 from uuid import uuid4
 
 import pandas as pd
@@ -11,6 +18,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.orm import Session
+from sqlalchemy.pool import NullPool
 from sqlalchemy.schema import CreateSchema, DropSchema
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -119,6 +127,7 @@ def test_ingestion_lock_survives_commit_and_releases_on_error(pg_engine, monkeyp
     monkeypatch.setattr(ingestion_service, "engine", pg_engine)
 
     def fail_after_commit(days_back, session):
+        assert session.scalar(text("SELECT 1")) == 1
         session.commit()
         with pg_engine.connect() as contender:
             assert contender.scalar(statement, params) is False
@@ -130,6 +139,161 @@ def test_ingestion_lock_survives_commit_and_releases_on_error(pg_engine, monkeyp
     with pg_engine.connect() as contender:
         assert contender.scalar(statement, params) is True
         assert contender.scalar(unlock, params) is True
+
+
+@pytest.fixture
+def direct_ingestion_on_postgres(pg_engine, monkeypatch):
+    """Test the Neon endpoint selection while executing the lock on real local PostgreSQL."""
+    migrate(pg_engine)
+    with pg_engine.connect() as conn:
+        schema = conn.scalar(text("SELECT current_schema()"))
+
+    serving_url = pg_engine.url.set(host="ep-integration-pooler.example.neon.tech")
+    serving_engine = Mock(url=serving_url)
+
+    def open_local_direct_engine(url, *, poolclass, connect_args, hide_parameters):
+        assert url == serving_url.set(host="ep-integration.example.neon.tech")
+        assert poolclass is NullPool
+        assert hide_parameters is True
+        return create_engine(
+            pg_engine.url, poolclass=poolclass, hide_parameters=hide_parameters,
+            connect_args={**connect_args, "options": f"-csearch_path={schema}"},
+        )
+
+    monkeypatch.setattr(ingestion_service, "engine", serving_engine)
+    monkeypatch.setattr(ingestion_service, "create_engine", open_local_direct_engine)
+    monkeypatch.setattr(database, "engine", pg_engine)
+    monkeypatch.setenv("ENABLE_INGESTION_SCHEDULER", "false")
+    yield
+    serving_engine.connect.assert_not_called()
+
+
+def test_admin_ingestion_retries_and_preserves_weather_and_predictions(pg_engine, direct_ingestion_on_postgres, monkeypatch):
+    today = india_today()
+    prior_day = today - timedelta(days=2)
+    latest_day = today - timedelta(days=1)
+    historical_day = today - timedelta(days=90)
+    with Session(pg_engine) as session:
+        session.add_all([
+            WeatherData(state="Goa", district="", location="", date=day,
+                        temp_min=20, temp_max=30, temp_avg=23, humidity=63, rainfall=0)
+            for day in (historical_day, prior_day)
+        ])
+        prediction = Prediction(state="Goa", district="", location="", forecast_date=latest_day,
+                                predicted_temp_avg=[22.0] * 7, model_version="weather_model_v3")
+        session.add(prediction)
+        session.flush()
+        prediction_id = prediction.id
+        session.commit()
+
+    source = ingestion_service.update_weather
+    coords = {"Goa": (15.2993, 74.124), "Karnataka": (15.3173, 75.7139)}
+    monkeypatch.setattr(source, "STATE_COORDS", coords)
+    monkeypatch.setattr(source, "time", SimpleNamespace(sleep=lambda _: None))
+    monkeypatch.setattr(source, "get_india_today", lambda: today)
+    monkeypatch.setenv("ADMIN_TOKEN", "local-test-token")
+
+    calls = Counter()
+    recovering = False
+    payload = json.dumps({"daily": {
+        "time": [day.isoformat() for day in (prior_day, latest_day, today)],
+        "temperature_2m_min": [21, 21, 21], "temperature_2m_max": [33, 33, 33],
+        "temperature_2m_mean": [27, 27, 27], "relative_humidity_2m_mean": [60, 62, 65],
+        "precipitation_sum": [0, 0, 0],
+    }}).encode()
+
+    def provider(request, *, timeout):
+        query = parse_qs(urlsplit(request.full_url).query)
+        assert query["past_days"] == ["7"]
+        assert query["forecast_days"] == ["0"]
+        state = "Goa" if float(query["latitude"][0]) == coords["Goa"][0] else "Karnataka"
+        calls[state] += 1
+        if state == "Goa" and calls[state] == 1:
+            raise URLError("transient provider failure")
+        if state == "Karnataka" and not recovering:
+            if calls[state] == 1:
+                # Goa's commit is visible, yet another worker still cannot take the lock.
+                with Session(pg_engine) as observer:
+                    row = observer.scalar(select(WeatherData).where(WeatherData.state == "Goa", WeatherData.date == latest_day))
+                    assert row.temp_avg == 27
+                assert ingestion_service.run_ingestion_with_lock()["reason"] == "advisory_lock_held"
+            raise URLError("regional provider failure")
+        return BytesIO(payload)
+
+    monkeypatch.setattr(source.urllib.request, "urlopen", provider)
+    headers = {"X-Admin-Token": "local-test-token"}
+    with TestClient(app) as client:
+        response = client.post("/admin/ingest?days_back=7", headers=headers)
+        assert response.status_code == 200
+        first = response.json()
+        assert first["status"] == "partial_success"
+        assert first["records_inserted"] == 1
+        assert first["failed_states"] == ["Karnataka"]
+        assert calls == {"Goa": 2, "Karnataka": 5}
+
+        recovering = True
+        response = client.post("/admin/ingest?days_back=7", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+        assert response.json()["records_inserted"] == 2
+        response = client.post("/admin/ingest?days_back=7", headers=headers)
+        assert response.status_code == 200
+        assert response.json()["status"] == "success"
+        assert response.json()["records_inserted"] == 0
+
+    with Session(pg_engine) as session:
+        assert {(row.state, row.date): row.temp_avg for row in session.scalars(select(WeatherData))} == {
+            ("Goa", historical_day): 23, ("Goa", prior_day): 23, ("Goa", latest_day): 27,
+            ("Karnataka", prior_day): 27, ("Karnataka", latest_day): 27,
+        }
+        prediction = session.scalars(select(Prediction)).one()
+        assert prediction.id == prediction_id
+        assert prediction.predicted_temp_avg == [22.0] * 7
+        assert prediction.actual_temp is None
+
+
+def test_direct_ingestion_does_not_reconnect_after_losing_lock(pg_engine, direct_ingestion_on_postgres, monkeypatch):
+    source = ingestion_service.update_weather
+    coords = {"Goa": (15.3, 74.1), "Karnataka": (15.4, 75.7), "Kerala": (10.9, 76.3)}
+    monkeypatch.setattr(source, "STATE_COORDS", coords)
+    monkeypatch.setattr(source, "time", SimpleNamespace(sleep=lambda _: None))
+    today = india_today()
+    payload = {"daily": {
+        "time": [(today - timedelta(days=1)).isoformat()],
+        "temperature_2m_min": [20], "temperature_2m_max": [30], "temperature_2m_mean": [25],
+        "relative_humidity_2m_mean": [60], "precipitation_sum": [0],
+    }}
+    terminated = False
+    attempted = []
+    key = ingestion_service.ADVISORY_LOCK_ID
+
+    def fetch(state, *args, **kwargs):
+        nonlocal terminated
+        attempted.append(state)
+        if state == "Karnataka" and not terminated:
+            with pg_engine.connect() as observer:
+                terminated = observer.scalar(text("""
+                    SELECT pg_terminate_backend(pid, 5000)
+                    FROM pg_locks
+                    WHERE locktype = 'advisory' AND granted AND objsubid = 1
+                      AND classid = :high AND objid = :low
+                      AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+                """), {"high": key >> 32, "low": key & 0xffffffff})
+                assert terminated is True
+        return payload
+
+    monkeypatch.setattr(source, "fetch_forecast_for_state", fetch)
+    with pytest.raises(RuntimeError, match="lost its locked database session"):
+        ingestion_service.run_ingestion_with_lock(today=today)
+    assert attempted == ["Goa", "Karnataka"]
+    with Session(pg_engine) as observer:
+        assert set(observer.scalars(select(WeatherData.state))) == {"Goa"}
+
+    summary = ingestion_service.run_ingestion_with_lock(today=today)
+    assert summary["status"] == "success"
+    assert summary["records_inserted"] == 2
+    with Session(pg_engine) as observer:
+        assert set(observer.scalars(select(WeatherData.state))) == set(coords)
 
 
 def test_postgres_csv_import_counts_rows_inserted_and_skipped(pg_engine):

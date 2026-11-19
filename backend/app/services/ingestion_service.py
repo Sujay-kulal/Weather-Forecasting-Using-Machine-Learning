@@ -6,8 +6,10 @@ import logging
 from datetime import datetime, timezone, date
 from typing import Optional
 
-from sqlalchemy import text
-from sqlalchemy.engine import Engine
+from sqlalchemy import create_engine, text
+from sqlalchemy.engine import Engine, URL
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.pool import NullPool
 from app.database import SessionLocal, engine
 from app.services.prediction_cache import clear_forecast_cache
 import update_weather
@@ -24,6 +26,25 @@ class IngestionConfigurationError(RuntimeError):
     """The configured PostgreSQL endpoint cannot hold session advisory locks."""
 
 
+def _ingestion_engine() -> Engine:
+    url = getattr(engine, "url", None)
+    if isinstance(url, URL) and {"host", "hostaddr", "service"}.intersection(url.query):
+        raise IngestionConfigurationError("Weather ingestion requires one direct PostgreSQL hostname.")
+    hostname = getattr(url, "host", None)
+    if not isinstance(hostname, str) or "-pooler." not in hostname.lower():
+        return engine
+
+    endpoint, domain = hostname.lower().split(".", 1)
+    if not endpoint.startswith("ep-") or not endpoint.endswith("-pooler") or not domain.endswith(".neon.tech"):
+        raise IngestionConfigurationError("Weather ingestion requires a direct PostgreSQL endpoint.")
+
+    # Neon uses the same role, database and TLS options on both endpoint names.
+    direct_url = url.set(host=f"{endpoint.removesuffix('-pooler')}.{domain}")
+    return create_engine(
+        direct_url, poolclass=NullPool, connect_args={"connect_timeout": 5}, hide_parameters=True
+    )
+
+
 def get_last_ingested_at() -> Optional[datetime]:
     global _last_ingested_at
     return _last_ingested_at
@@ -34,40 +55,43 @@ def run_ingestion_with_lock(days_back: int = 7, today: Optional[date] = None) ->
     only one ingestion job runs across workers/processes.
     """
     global _last_ingested_at
-    hostname = getattr(getattr(engine, "url", None), "host", None)
-    if isinstance(hostname, str) and "-pooler." in hostname.lower():
-        raise IngestionConfigurationError("Weather ingestion requires the direct Neon PostgreSQL endpoint.")
+    target_engine = _ingestion_engine()
 
     conn = None
     try:
-        if hasattr(engine, "connect"):
-            conn = engine.connect()
+        if hasattr(target_engine, "connect"):
+            conn = target_engine.connect()
             session = SessionLocal(bind=conn)
         else:
             session = SessionLocal()
     except Exception as init_exc:
-        logger.warning("Failed to bind session to dedicated connection: %s", init_exc)
+        logger.warning("Failed to bind the ingestion database session (%s).", type(init_exc).__name__)
         if conn is not None:
             try:
                 conn.close()
             except Exception:
                 pass
             conn = None
+        if target_engine is not engine:
+            raise RuntimeError("Could not open the direct ingestion database session.") from None
         session = SessionLocal()
         try:
             bind = session.get_bind()
             if isinstance(bind, Engine):
                 conn = bind.connect()
                 session.bind = conn
-        except Exception:
+        except SQLAlchemyError:
             session.close()
-            raise
+            raise RuntimeError("Could not open the ingestion database session.") from None
 
     locked = False
 
     try:
         # Attempt non-blocking acquisition of the advisory lock
-        res = session.execute(text(f"SELECT pg_try_advisory_lock({ADVISORY_LOCK_ID})")).scalar()
+        try:
+            res = session.execute(text(f"SELECT pg_try_advisory_lock({ADVISORY_LOCK_ID})")).scalar()
+        except SQLAlchemyError:
+            raise RuntimeError("Could not acquire the weather ingestion lock.") from None
         if not res:
             logger.warning("Ingestion job skipped: advisory lock currently held by another job.")
             return update_weather.IngestionSummary({
@@ -75,6 +99,7 @@ def run_ingestion_with_lock(days_back: int = 7, today: Optional[date] = None) ->
                 "reason": "advisory_lock_held",
                 "records_upserted": 0,
                 "records_inserted_or_updated": 0,
+                "records_inserted": 0,
                 "total_states": len(update_weather.STATE_COORDS),
                 "successful_states": [],
                 "failed_states": [],
@@ -86,6 +111,11 @@ def run_ingestion_with_lock(days_back: int = 7, today: Optional[date] = None) ->
             })
 
         locked = True
+        # The session lock survives a commit. Avoid an idle transaction during provider I/O.
+        try:
+            session.commit()
+        except SQLAlchemyError:
+            raise RuntimeError("Could not start weather ingestion.") from None
         logger.info(f"Acquired advisory lock ({ADVISORY_LOCK_ID}). Starting ingestion (days_back={days_back})...")
 
         # Run upsert ingestion
@@ -129,36 +159,31 @@ def run_ingestion_with_lock(days_back: int = 7, today: Optional[date] = None) ->
         return summary
 
     except Exception as exc:
-        logger.exception("Error during weather ingestion job: %s", exc)
+        logger.error("Weather ingestion did not complete (%s).", type(exc).__name__)
         raise
     finally:
-        if locked:
+        # An invalidated connection no longer owns the lock, and can reconnect implicitly.
+        if locked and (conn is None or conn.invalidated is not True):
             try:
-                # Clear any aborted transaction state before releasing advisory lock
-                try:
-                    session.rollback()
-                except Exception as rb_exc:
-                    logger.debug("Pre-unlock rollback error: %s", rb_exc)
-
+                # If rollback fails, discard the connection without attempting another statement.
+                session.rollback()
                 unlocked = session.execute(text(f"SELECT pg_advisory_unlock({ADVISORY_LOCK_ID})")).scalar()
                 if unlocked:
                     logger.info(f"Released advisory lock ({ADVISORY_LOCK_ID}).")
                 else:
                     logger.warning(f"Advisory lock ({ADVISORY_LOCK_ID}) was not held when unlock was attempted.")
             except Exception as e:
-                logger.error(f"Failed to release advisory lock: {e}")
+                logger.error("Failed to release the ingestion lock (%s).", type(e).__name__)
                 # If releasing the lock on the connection fails, invalidate it so
                 # the connection is terminated and PostgreSQL frees the lock,
                 # rather than returning a connection with a dangling lock to the pool.
                 if conn is not None:
                     try:
                         conn.invalidate()
-                        conn = None
                     except Exception as inv_exc:
-                        logger.warning("Error invalidating locked connection: %s", inv_exc)
-        session.close()
-        if conn is not None:
-            try:
+                        logger.warning("Could not invalidate the ingestion connection (%s).", type(inv_exc).__name__)
+        try:
+            session.close()
+        finally:
+            if conn is not None:
                 conn.close()
-            except Exception as e:
-                logger.warning(f"Error closing pinned advisory lock connection: {e}")

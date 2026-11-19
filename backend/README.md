@@ -60,7 +60,7 @@ From the backend directory, apply the idempotent schema migration to the intende
 python migrate_db.py --apply --allow-host localhost,127.0.0.1
 ```
 
-For a hosted database, substitute the authorized database host. Use a direct Neon endpoint for migrations and the ingestion advisory lock. `migrations/002_prediction_metrics.sql` is the archived metrics-only SQL migration. The script covers the current schema, including location columns and uniqueness constraints.
+For a hosted database, substitute the authorized database host. Use a direct Neon URL for migrations. Weather ingestion automatically derives a direct connection from a standard pooled Neon URL while normal API queries keep the pooled endpoint. `migrations/002_prediction_metrics.sql` is the archived metrics-only SQL migration. The script covers the current schema, including location columns and uniqueness constraints.
 
 ## 5. Import the Dataset (safe to re-run)
 

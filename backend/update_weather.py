@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from app.database import SessionLocal
 from app.models import WeatherData
 from sqlalchemy.dialects.postgresql import insert as pg_insert
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import DBAPIError, SQLAlchemyError
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s: %(message)s")
 logger = logging.getLogger("update_weather")
@@ -204,8 +204,7 @@ def parse_completed_days(data: dict, state: str, before: date) -> list[dict]:
 
 def update_weather(days_back: int = 7, session=None, today: Optional[date] = None) -> IngestionSummary:
     """
-    Ingest recent weather data using the Open-Meteo Forecast API (past_days)
-    and perform an idempotent UPSERT into weather_data with per-state failure isolation.
+    Insert missing completed Open-Meteo days with per-state failure isolation.
     """
     if days_back < 0:
         raise ValueError(f"days_back cannot be negative, got {days_back}")
@@ -218,7 +217,8 @@ def update_weather(days_back: int = 7, session=None, today: Optional[date] = Non
     total_states = len(STATE_COORDS)
     cutoff_today = today or get_india_today()
     logger.info(f"Starting weather update (days_back={days_back}, cutoff_today={cutoff_today}) for {total_states} states...")
-    added_or_updated_total = 0
+    processed_total = 0
+    inserted_total = 0
     successful_states = []
     failed_states = []
     failed_state_errors = {}
@@ -234,21 +234,25 @@ def update_weather(days_back: int = 7, session=None, today: Optional[date] = Non
                 if not buffer:
                     raise ValueError(f"No complete historical days returned for '{state}'.")
 
-                stmt = pg_insert(WeatherData).values(buffer)
-                session.execute(stmt.on_conflict_do_update(
+                stmt = pg_insert(WeatherData).values(buffer).on_conflict_do_nothing(
                     constraint="uq_weather_state_dist_loc_date",
-                    set_={key: getattr(stmt.excluded, key) for key in WEATHER_FIELDS},
-                ))
+                )
+                inserted = session.execute(stmt.execution_options(preserve_rowcount=True)).rowcount
                 session.commit()
-                added_or_updated_total += len(buffer)
-                logger.info("[%s] Upserted %d records.", state, len(buffer))
+                processed_total += len(buffer)
+                inserted_total += inserted
+                logger.info("[%s] Inserted %s of %d completed records.", state, inserted, len(buffer))
                 successful_states.append(state)
 
             except Exception as exc:
+                if isinstance(exc, DBAPIError) and exc.connection_invalidated:
+                    raise RuntimeError("Weather ingestion lost its locked database session.") from None
                 try:
                     session.rollback()
                 except Exception as rb_exc:
-                    logger.warning(f"[{state}] Session rollback encountered error: {rb_exc}")
+                    if isinstance(rb_exc, DBAPIError) and rb_exc.connection_invalidated:
+                        raise RuntimeError("Weather ingestion lost its locked database session.") from None
+                    logger.warning("[%s] Session rollback failed (%s).", state, type(rb_exc).__name__)
 
                 message = "Could not write weather data." if isinstance(exc, SQLAlchemyError) else str(exc)
                 error_detail = f"{type(exc).__name__}: {message}"
@@ -273,15 +277,17 @@ def update_weather(days_back: int = 7, session=None, today: Optional[date] = Non
             "failed_states": failed_states,
             "successful_count": len(successful_states),
             "failed_count": len(failed_states),
-            "records_upserted": added_or_updated_total,
-            "records_inserted_or_updated": added_or_updated_total,
+            # Retain the legacy provider-record counts for API callers.
+            "records_upserted": processed_total,
+            "records_inserted_or_updated": processed_total,
+            "records_inserted": inserted_total,
             "failed_state_errors": failed_state_errors,
             "errors": failed_state_errors,
         })
         logger.info(
             f"Weather update completed with status '{status}': "
             f"{len(successful_states)} succeeded, {len(failed_states)} failed, "
-            f"{added_or_updated_total} records upserted."
+            f"{inserted_total} new records from {processed_total} completed records."
         )
         return summary
     finally:

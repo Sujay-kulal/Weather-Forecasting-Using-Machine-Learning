@@ -36,10 +36,9 @@ async def lifespan(app: FastAPI):
         init_db()
     except Exception as exc:
         logger.warning(
-            "Database initialization deferred or failed during startup (%s): %s. "
+            "Database initialization deferred or failed during startup (%s). "
             "Server will start in degraded mode.",
             type(exc).__name__,
-            exc,
         )
 
     if not check_connection():
