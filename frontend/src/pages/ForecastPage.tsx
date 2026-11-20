@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import {
+  Bar,
   CartesianGrid,
   ComposedChart,
   Legend,
@@ -49,13 +50,13 @@ function rainChance(day: DayForecast) {
   return day.ml_rainfall_mm == null ? "Unavailable" : "Unavailable (validation criterion unmet)";
 }
 
-const rainStatus = {
-  available: "Rainfall amounts and available probabilities use the evaluated rainfall model.",
-  amount_withheld: "Rainfall amounts are withheld because the model missed the release target.",
-  research_preview: "Research preview · Rainfall amounts missed the release target on independent testing.",
-  model_unavailable: "The rainfall model is unavailable.",
-  inference_error: "The rainfall model could not calculate this forecast.",
-  invalid_history: "Rainfall inference requires seven consecutive days of valid statewide measurements.",
+const rainStatus: Record<string, { text: string; variant: "success" | "warning" | "danger" | "info" }> = {
+  available: { text: "Rainfall amounts and probabilities use the evaluated ML rainfall model.", variant: "success" },
+  amount_withheld: { text: "Rainfall amounts are withheld — the model missed the independent release target.", variant: "warning" },
+  research_preview: { text: "Research preview — rainfall amounts missed the release target on independent testing. Values shown for evaluation only.", variant: "warning" },
+  model_unavailable: { text: "The ML rainfall model is unavailable.", variant: "danger" },
+  inference_error: { text: "The ML rainfall model could not calculate this forecast.", variant: "danger" },
+  invalid_history: { text: "Rainfall inference requires seven consecutive days of valid statewide measurements.", variant: "info" },
 };
 
 function shiftDate(iso: string, days: number): string {
@@ -335,7 +336,27 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
           )}
           {!submitting && result && currentDay && (
             <div>
-              <p role="status">{rainStatus[result.rainfall_ml_status ?? "model_unavailable"]}</p>
+              {/* ML Rainfall Status Banner */}
+              {(() => {
+                const status = rainStatus[result.rainfall_ml_status ?? "model_unavailable"];
+                const colors: Record<string, { bg: string; border: string; icon: string }> = {
+                  success: { bg: "#f0fdf4", border: "#86efac", icon: "✅" },
+                  warning: { bg: "#fffbeb", border: "#fcd34d", icon: "⚠️" },
+                  danger:  { bg: "#fef2f2", border: "#fca5a5", icon: "❌" },
+                  info:    { bg: "#eff6ff", border: "#93c5fd", icon: "ℹ️" },
+                };
+                const c = colors[status.variant];
+                return (
+                  <div role="status" style={{
+                    display: "flex", alignItems: "center", gap: 10, padding: "10px 14px",
+                    borderRadius: "var(--radius-sm)", border: `1px solid ${c.border}`,
+                    background: c.bg, fontSize: 13, lineHeight: 1.5, marginBottom: 12,
+                  }}>
+                    <span style={{ fontSize: 16, flexShrink: 0 }}>{c.icon}</span>
+                    <span><strong>Rainfall ML:</strong> {status.text}</span>
+                  </div>
+                );
+              })()}
               {/* High-Impact Enterprise Hero */}
               <div className="forecast-hero-box">
                 <div className="forecast-hero-left">
@@ -352,9 +373,26 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                     <span className="unit">°C</span>
                   </div>
 
-                  <div className="forecast-hero-sub">
-                    ML rainfall {rainfallAmount(currentDay)} · ML chance of more than 0.1 mm {rainChance(currentDay)}
+                  {/* ML Rainfall Display */}
+                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap", margin: "6px 0" }}>
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 6, padding: "4px 10px",
+                      borderRadius: "var(--radius-sm)", background: "var(--bg-surface-subtle)",
+                      border: "1px solid var(--border-subtle)", fontSize: 13,
+                    }}>
+                      <span style={{ fontSize: 15 }}>🌧️</span>
+                      <span><strong>ML rainfall:</strong> {rainfallAmount(currentDay)}</span>
+                    </div>
+                    <div style={{
+                      display: "flex", alignItems: "center", gap: 6, padding: "4px 10px",
+                      borderRadius: "var(--radius-sm)", background: "var(--bg-surface-subtle)",
+                      border: "1px solid var(--border-subtle)", fontSize: 13,
+                    }}>
+                      <span style={{ fontSize: 15 }}>💧</span>
+                      <span><strong>Rain chance (&gt;0.1 mm):</strong> {rainChance(currentDay)}</span>
+                    </div>
                   </div>
+
                   <div className="forecast-hero-sub">
                     High {currentDay.temp_max.toFixed(1)}°C · Low {currentDay.temp_min.toFixed(1)}°C · Feels like {currentDay.feels_like.toFixed(1)}°C ({currentDay.comfort})
                   </div>
@@ -440,8 +478,8 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                           <span className="lo">{df.temp_min.toFixed(0)}°</span>
                         </div>
                         <div className="horizon-day-metrics">
-                          <span>ML rain · {rainfallAmount(df)}</span>
-                          <span> · Humidity estimate {df.humidity.toFixed(0)}%</span>
+                          <span>🌧️ {rainfallAmount(df)}</span>
+                          <span> · 💧 {rainChance(df)}</span>
                         </div>
                       </button>
                     );
@@ -452,13 +490,32 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
               {/* Detailed Meteorological Parameters for Selected Day */}
               <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: 8 }}>
-                  Day {currentDay.day} rule-based estimates ({prettyDate(currentDay.date)})
+                  Day {currentDay.day} ML predictions & rule-based estimates ({prettyDate(currentDay.date)})
                 </div>
                 <div className="stat-chips">
                   <StatChip
                     icon={<ThermometerIcon />}
+                    label="ML Average Temp"
+                    value={`${currentDay.temp_avg.toFixed(1)} °C`}
+                    sub="LightGBM multi-horizon"
+                  />
+                  <StatChip
+                    icon={<RainIcon />}
+                    label="ML Rainfall Amount"
+                    value={rainfallAmount(currentDay)}
+                    sub={result.rainfall_ml_status === "research_preview" ? "Research preview" : result.rainfall_ml_status === "available" ? "Released" : "Status: " + (result.rainfall_ml_status ?? "unavailable")}
+                  />
+                  <StatChip
+                    icon={<DropletIcon />}
+                    label="ML Rain Probability"
+                    value={rainChance(currentDay)}
+                    sub=">0.1 mm threshold, calibrated"
+                  />
+                  <StatChip
+                    icon={<ThermometerIcon />}
                     label="Diurnal Range"
                     value={`${currentDay.temp_min.toFixed(1)}° – ${currentDay.temp_max.toFixed(1)} °C`}
+                    sub="Rule-based estimate"
                   />
                   <StatChip
                     icon={<DropletIcon />}
@@ -608,12 +665,18 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
           />
         )}
 
-        {recentRecords.length > 0 && (
+        {recentRecords.length > 0 && (() => {
+          const chartData = buildChartData(recentRecords, result);
+          return (
           <div>
-            <div style={{ height: 320, width: "100%", margin: "10px 0" }}>
+            {/* Temperature Chart */}
+            <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: 4, marginTop: 8 }}>
+              Temperature (°C)
+            </div>
+            <div style={{ height: 280, width: "100%", margin: "4px 0" }}>
               <ResponsiveContainer width="100%" height="100%">
                 <ComposedChart
-                  data={buildChartData(recentRecords, result)}
+                  data={chartData}
                   margin={{ top: 10, right: 24, bottom: 5, left: 0 }}
                 >
                   <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
@@ -664,12 +727,62 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                     <Line
                       type="monotone"
                       dataKey="predicted"
-                      name="Predicted 7-Day Avg"
+                      name="ML Predicted Avg"
                       stroke="#7c3aed"
                       strokeWidth={2.2}
                       strokeDasharray="4 4"
                       dot={{ r: 4, fill: "#7c3aed", stroke: "#ffffff", strokeWidth: 2 }}
                       connectNulls
+                    />
+                  )}
+                </ComposedChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Rainfall Chart */}
+            <div style={{ fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em", color: "var(--text-secondary)", marginBottom: 4, marginTop: 16 }}>
+              Rainfall (mm)
+            </div>
+            <div style={{ height: 200, width: "100%", margin: "4px 0" }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart
+                  data={chartData}
+                  margin={{ top: 10, right: 24, bottom: 5, left: 0 }}
+                >
+                  <CartesianGrid stroke="#e2e8f0" strokeDasharray="3 3" vertical={false} />
+                  <XAxis
+                    dataKey="date"
+                    tick={{ fontSize: 11, fill: "#64748b" }}
+                    tickFormatter={shortDate}
+                  />
+                  <YAxis
+                    tick={{ fontSize: 11, fill: "#64748b" }}
+                    domain={[0, "auto"]}
+                    tickFormatter={(v: number) => v.toFixed(0)}
+                    unit=" mm"
+                  />
+                  <Tooltip
+                    labelFormatter={prettyDate}
+                    formatter={(v: any, name: any) => {
+                      if (name === "ML Rain Prob") return [`${Number(v).toFixed(0)}%`, name];
+                      return [`${Number(v).toFixed(1)} mm`, name];
+                    }}
+                  />
+                  <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
+                  <Bar
+                    dataKey="rainfall"
+                    name="Observed Rainfall"
+                    fill="#60a5fa"
+                    opacity={0.7}
+                    radius={[2, 2, 0, 0]}
+                  />
+                  {result && (
+                    <Bar
+                      dataKey="ml_rainfall"
+                      name="ML Predicted Rainfall"
+                      fill="#a78bfa"
+                      opacity={0.8}
+                      radius={[2, 2, 0, 0]}
                     />
                   )}
                 </ComposedChart>
@@ -691,10 +804,11 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
               <span>
                 {recentRecords.length} stored daily records{result ? ` and ${result.predicted_temp_avg.length} model predictions` : ""}.
               </span>
-              <span>Solid lines: PostgreSQL records · Dashed purple line: Multi-output LightGBM</span>
+              <span>Solid lines: PostgreSQL records · Dashed purple: ML temperature · Blue bars: observed rain · Purple bars: ML rain</span>
             </div>
           </div>
-        )}
+          );
+        })()}
       </Card>
     </div>
   );
@@ -706,23 +820,30 @@ interface ChartRow {
   temp_min: number | null;
   temp_avg: number | null;
   predicted: number | null;
+  rainfall: number | null;
+  ml_rainfall: number | null;
+  ml_rain_prob: number | null;
 }
 
 function buildChartData(
-  records: { date: string; temp_max: number; temp_min: number; temp_avg: number }[],
+  records: { date: string; temp_max: number; temp_min: number; temp_avg: number; rainfall: number }[],
   result: PredictionResponse | null
 ): ChartRow[] {
   const rows = new Map<string, ChartRow>();
-  for (const record of records) rows.set(record.date, { ...record, predicted: null });
+  for (const record of records) rows.set(record.date, { ...record, predicted: null, ml_rainfall: null, ml_rain_prob: null });
   result?.predicted_temp_avg.forEach((predicted, index) => {
     const date = shiftDate(result.forecast_date, index);
     const observed = rows.get(date);
+    const df = result.daily_forecasts?.[index];
     rows.set(date, {
       date,
       temp_max: observed?.temp_max ?? null,
       temp_min: observed?.temp_min ?? null,
       temp_avg: observed?.temp_avg ?? null,
+      rainfall: observed?.rainfall ?? null,
       predicted,
+      ml_rainfall: df?.ml_rainfall_mm ?? null,
+      ml_rain_prob: df?.ml_rain_probability != null ? Math.round(df.ml_rain_probability * 100) : null,
     });
   });
   return [...rows.values()].sort((first, second) => first.date.localeCompare(second.date));
