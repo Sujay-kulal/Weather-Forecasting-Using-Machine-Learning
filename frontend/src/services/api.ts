@@ -122,9 +122,11 @@ export function predict(
   state: string,
   forecastDate: string,
   district?: string,
-  location?: string
+  location?: string,
+  previewRainfallCandidate = false
 ): Promise<PredictionResponse> {
-  const body: Record<string, string> = { state, forecast_date: forecastDate };
+  const body: Record<string, string | boolean> = { state, forecast_date: forecastDate };
+  if (previewRainfallCandidate) body.preview_rainfall_candidate = true;
   if (district) body.district = district;
   if (location) body.location = location;
 

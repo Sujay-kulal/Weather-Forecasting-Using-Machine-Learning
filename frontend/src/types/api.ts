@@ -95,6 +95,8 @@ export interface LastKnown {
 }
 
 export interface DayForecast {
+  ml_rainfall_mm?: number | null;
+  ml_rain_probability?: number | null;
   day: number;
   date: string;
   temp_avg: number;
@@ -112,6 +114,7 @@ export interface DayForecast {
 }
 
 export interface PredictionResponse {
+  rainfall_ml_status?: "available" | "research_preview" | "amount_withheld" | "model_unavailable" | "inference_error";
   state: string;
   district?: string;
   location?: string;

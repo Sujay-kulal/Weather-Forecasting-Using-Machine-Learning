@@ -38,7 +38,23 @@ import {
   TargetIcon,
   ThermometerIcon,
 } from "../components/icons";
-import type { PredictionResponse } from "../types/api";
+import type { DayForecast, PredictionResponse } from "../types/api";
+
+function rainfallAmount(day: DayForecast) {
+  return day.ml_rainfall_mm == null ? "Unavailable" : `${day.ml_rainfall_mm.toFixed(2)} mm`;
+}
+
+function rainChance(day: DayForecast) {
+  return day.ml_rain_probability == null ? "Unavailable" : `${(100 * day.ml_rain_probability).toFixed(0)}%`;
+}
+
+const rainStatus = {
+  available: "Rainfall amounts and available probabilities use the evaluated rainfall model.",
+  amount_withheld: "Rainfall amounts are withheld because the model missed the release target.",
+  research_preview: "Research preview · Rainfall amounts missed the release target on independent testing.",
+  model_unavailable: "The rainfall model is unavailable.",
+  inference_error: "The rainfall model could not calculate this forecast.",
+};
 
 function shiftDate(iso: string, days: number): string {
   const [y, m, d] = iso.split("-").map(Number);
@@ -135,7 +151,7 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
     setResult(null);
     setSelectedDayIndex(0);
     try {
-      const prediction = await predict(state, date);
+      const prediction = await predict(state, date, undefined, undefined, true);
       setResult(prediction);
     } catch (err) {
       setPredictError((err as ApiError).message);
@@ -157,7 +173,7 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
     <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
       <PageHead
         title="Weather Forecast Dashboard"
-        desc="Seven days of average temperatures from LightGBM for 33 Indian states and union territories."
+        desc="Seven-day temperature and rainfall forecasts for 33 Indian states and union territories."
         badge={
           state ? (
             <Badge variant="info">
@@ -265,7 +281,7 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                 border: "1px solid var(--border-subtle)",
               }}
             >
-              <strong>Operational Scope:</strong> Average temperatures use LightGBM. Highs, lows, humidity, rain and conditions are rule-based estimates.
+              <strong>Operational Scope:</strong> Forecasts include ML average temperatures and a research preview of ML rainfall amounts. Highs, lows, humidity, conditions and advisories are rule-based estimates.
             </div>
           </form>
         </div>
@@ -288,7 +304,7 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
             <div style={{ padding: "20px 0" }}>
               <div className="spinner-row">
                 <span className="spinner" />
-                <span>Computing feature lags & multi-output LightGBM inference...</span>
+                <span>Computing temperature and rainfall forecasts…</span>
               </div>
               <Skeleton rows={6} />
             </div>
@@ -317,21 +333,26 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
           )}
           {!submitting && result && currentDay && (
             <div>
+              <p role="status">{rainStatus[result.rainfall_ml_status ?? "model_unavailable"]}</p>
               {/* High-Impact Enterprise Hero */}
               <div className="forecast-hero-box">
                 <div className="forecast-hero-left">
                   <div className="forecast-hero-condition">
                     <span style={{ fontSize: 18 }}>{getConditionEmoji(currentDay.condition, currentDay.condition_icon)}</span>
-                    <span className="condition-tag">{currentDay.condition}</span>
+                    <span className="condition-tag">Rule-based · {currentDay.condition}</span>
                     <span>·</span>
                     <span>Horizon Day {currentDay.day} of 7</span>
                   </div>
 
+                  <div className="forecast-hero-sub">ML average temperature</div>
                   <div className="forecast-hero-temp">
                     {currentDay.temp_avg.toFixed(1)}
                     <span className="unit">°C</span>
                   </div>
 
+                  <div className="forecast-hero-sub">
+                    ML rainfall {rainfallAmount(currentDay)} · ML chance of more than 0.1 mm {rainChance(currentDay)}
+                  </div>
                   <div className="forecast-hero-sub">
                     High {currentDay.temp_max.toFixed(1)}°C · Low {currentDay.temp_min.toFixed(1)}°C · Feels like {currentDay.feels_like.toFixed(1)}°C ({currentDay.comfort})
                   </div>
@@ -370,7 +391,6 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
               {/* Advisory Callout */}
               {(result.weather_summary || currentDay.summary) && (
                 <div className="advisory-callout">
-                  <strong>Rule-based outlook </strong>
                   {result.weather_summary ?? currentDay.summary}
                 </div>
               )}
@@ -418,7 +438,8 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                           <span className="lo">{df.temp_min.toFixed(0)}°</span>
                         </div>
                         <div className="horizon-day-metrics">
-                          <span>💧 {df.humidity.toFixed(0)}%</span> · <span>🌧️ {df.rain_probability}%</span>
+                          <span>ML rain · {rainfallAmount(df)}</span>
+                          <span> · Humidity estimate {df.humidity.toFixed(0)}%</span>
                         </div>
                       </button>
                     );
@@ -444,7 +465,7 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                   />
                   <StatChip
                     icon={<RainIcon />}
-                    label="Expected Precipitation"
+                    label="Rule-based precipitation"
                     value={`${currentDay.rainfall.toFixed(1)} mm (${currentDay.rain_probability}%)`}
                   />
                   <StatChip
@@ -512,13 +533,15 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                 <tr>
                   <th>Horizon</th>
                   <th>Date</th>
-                  <th>Condition</th>
-                  <th className="num">Predicted Avg</th>
+                  <th>Rule-based condition</th>
+                  <th className="num">ML average temperature</th>
+                  <th className="num">ML rainfall{result.rainfall_ml_status === "research_preview" ? " (research preview)" : ""}</th>
+                  <th className="num">ML rain chance (&gt;0.1 mm)</th>
                   <th className="num">Range (Min–Max)</th>
                   <th className="num">Humidity</th>
-                  <th className="num">Rain Probability</th>
+                  <th className="num">Rule-based rain estimate</th>
                   <th className="num">Feels Like</th>
-                  <th>Advisory</th>
+                  <th>Rule-based advisory</th>
                 </tr>
               </thead>
               <tbody>
@@ -541,6 +564,8 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                       </span>
                     </td>
                     <td className="num strong">{d.temp_avg.toFixed(1)} °C</td>
+                    <td className="num">{rainfallAmount(d)}</td>
+                    <td className="num">{rainChance(d)}</td>
                     <td className="num">{d.temp_min.toFixed(1)}° – {d.temp_max.toFixed(1)}°</td>
                     <td className="num">{d.humidity.toFixed(0)} %</td>
                     <td className="num">{d.rain_probability}% ({d.rainfall.toFixed(1)} mm)</td>

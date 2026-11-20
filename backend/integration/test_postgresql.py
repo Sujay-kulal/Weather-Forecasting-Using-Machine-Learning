@@ -329,3 +329,43 @@ def test_live_metrics_use_issued_forecast_and_same_lag_for_persistence(pg_engine
         metrics = rolling_live_metrics(db, today=today, prospective_only=True)["models"]
         assert metrics == [{"model_version": "weather_model_v3", "sample_count": 1,
                             "model_mae": 1.0, "persistence_mae": 2.0, "skill_vs_persistence": 0.5}]
+
+
+def test_rainfall_forecast_from_recorded_history(pg_engine, monkeypatch):
+    from datetime import date
+    from app.services import rainfall
+
+    migrate(pg_engine)
+    fixture = Path(__file__).resolve().parents[1] / "tests/fixtures/rainfall_karnataka.csv"
+    source = pd.read_csv(fixture, parse_dates=["date"])
+    source["date"] = source.date.dt.date
+    with Session(pg_engine) as db:
+        import_weather_dataframe(source, db)
+
+    def isolated_session():
+        with Session(pg_engine) as db:
+            yield db
+
+    monkeypatch.setitem(app.dependency_overrides, database.get_db, isolated_session)
+    client = TestClient(app)
+    target = date(2026, 8, 26)
+    params = {"state": "Karnataka", "forecast_date": target.isoformat()}
+    default = client.post("/predict", json=params).json()
+    assert default["rainfall_ml_status"] == "amount_withheld"
+    assert all(day["ml_rainfall_mm"] is None for day in default["daily_forecasts"])
+    preview = client.post("/predict", json=dict(params, preview_rainfall_candidate=True)).json()
+    assert preview["rainfall_ml_status"] == "research_preview"
+    assert preview["predicted_temp_avg"] == default["predicted_temp_avg"]
+    origin = target - timedelta(days=1)
+    history = list(source[source.date.between(origin - timedelta(days=7), origin - timedelta(days=1))].itertuples())
+    expected = rainfall.predict_history(history, params["state"], origin, rainfall.loaded_bundle(), preview=True)
+    for i, (day, (amount, probability)) in enumerate(zip(preview["daily_forecasts"], expected, strict=True)):
+        assert day["date"] == (target + timedelta(days=i)).isoformat()
+        assert day["ml_rainfall_mm"] == amount and day["ml_rain_probability"] == probability
+    for name, status in [("predict_history", "inference_error"), ("loaded_bundle", "model_unavailable")]:
+        with monkeypatch.context() as patch:
+            patch.setattr(rainfall, name, Mock(side_effect=ValueError("test failure")))
+            result = client.post("/predict", json=dict(params, preview_rainfall_candidate=True)).json()
+            assert result["rainfall_ml_status"] == status
+            assert result["predicted_temp_avg"] == default["predicted_temp_avg"]
+            assert all(d["ml_rainfall_mm"] is None and d["ml_rain_probability"] is None for d in result["daily_forecasts"])

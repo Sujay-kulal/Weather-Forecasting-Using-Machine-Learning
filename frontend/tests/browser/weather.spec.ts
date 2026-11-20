@@ -28,6 +28,14 @@ test("serves forecasts and saved history across all six modules", async ({ page 
   await expect(page.locator(".horizon-day-card")).toHaveCount(7);
   await page.locator(".horizon-day-card").nth(6).press("Enter");
   await expect(page.getByText(/Day 7 rule-based estimates/)).toBeVisible();
+  await expect(page.getByRole("status").filter({ hasText: "Research preview" })).toBeVisible();
+  expect(result.rainfall_ml_status).toBe("research_preview");
+  for (const day of result.daily_forecasts) {
+    const row = page.getByRole("row").filter({ has: page.getByRole("button", { name: new RegExp(`^Day ${day.day}\\b`) }) });
+    await expect(row).toContainText(`${day.ml_rainfall_mm.toFixed(2)} mm`);
+    if (day.ml_rain_probability == null) await expect(row).toContainText("Unavailable");
+    else await expect(row).toContainText(`${(day.ml_rain_probability * 100).toFixed(0)}%`);
+  }
 
   await openModule(page, "Prediction History");
   await expect(page.getByRole("heading", { name: /Prediction History/ })).toBeVisible();
@@ -69,4 +77,30 @@ test("serves forecasts and saved history across all six modules", async ({ page 
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(info.project.use.viewport!.width);
   }
   expect(clientErrors).toEqual([]);
+});
+
+test("keeps temperature visible when rainfall is unavailable", async ({ page }) => {
+  await page.goto("/");
+  await page.locator("#forecast-state-select").selectOption("Karnataka");
+  await expect(page.locator("#forecast-target-date")).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
+  for (const [status, message] of [
+    ["model_unavailable", "The rainfall model is unavailable."],
+    ["inference_error", "The rainfall model could not calculate this forecast."],
+  ]) {
+    await page.route("**/api/predict", async (route) => {
+      const response = await route.fetch();
+      const data = await response.json();
+      data.rainfall_ml_status = status;
+      for (const day of data.daily_forecasts) {
+        day.ml_rainfall_mm = null;
+        day.ml_rain_probability = null;
+      }
+      await route.fulfill({ response, json: data });
+    }, { times: 1 });
+    await page.getByRole("button", { name: "Generate 7-Day Forecast" }).click();
+    await expect(page.getByRole("status").filter({ hasText: message })).toBeVisible();
+    await expect(page.locator(".forecast-hero-temp")).toHaveText(/\d.*°C/);
+    await expect(page.locator(".horizon-day-card")).toHaveCount(7);
+    await expect(page.getByRole("cell", { name: "Unavailable", exact: true })).toHaveCount(14);
+  }
 });
