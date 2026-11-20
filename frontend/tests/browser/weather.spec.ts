@@ -49,6 +49,11 @@ test("serves forecasts and saved history across all six modules", async ({ page 
     await expect(badge).toHaveCSS("color", "rgb(15, 23, 42)");
     await expect(badge).toHaveCSS("background-color", "rgb(241, 245, 249)");
   }
+  if (info.project.name === "mobile") {
+    const card = await page.locator(".forecast-result-card").boundingBox();
+    expect(card).not.toBeNull();
+    expect(card!.x + card!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  }
 
   await openModule(page, "Prediction History");
   await expect(page.getByRole("heading", { name: /Prediction History/ })).toBeVisible();

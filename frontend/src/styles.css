@@ -1605,6 +1605,10 @@ tbody td:first-child {
   }
 
   /* Horizon Strip */
+  .forecast-result-card {
+    min-width: 0;
+  }
+
   .horizon-strip {
     display: flex;
     overflow-x: auto;
