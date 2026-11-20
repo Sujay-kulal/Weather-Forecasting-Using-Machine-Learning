@@ -45,7 +45,7 @@ Vite serves the app on port 5173 and proxies `/api` to port 8000. To load the hi
 
 For the first forecast date **D**, the model uses seven consecutive completed days, **D−8 through D−2**. Calendar features come from **D−1**. Output days run from **D through D+6**. The forecast form defaults to two days after the last available statewide record. The India map uses the newest completed day among supported states and includes only states with a complete matching window.
 
-The v3 model predicts daily average temperature. A separate LightGBM rainfall model supplies calibrated probabilities for eligible horizons. The forecast page requests a labelled research preview of all seven expected daily amounts. The candidate narrowly missed its independent RMSE release target. Highs, lows, humidity, conditions and the legacy precipitation indicators are rule-based estimates. The history page reads stored weather records. The city layer reads current conditions directly from Open-Meteo.
+The v3 model predicts daily average temperature. A separate LightGBM rainfall model supplies calibrated probabilities for eligible horizons. Rainfall amounts missed the independent RMSE release target, so the forecast page withholds them by default. Select **Include experimental rainfall amounts** before generating a forecast to see all seven amounts in a labelled research preview. Highs, lows, humidity, conditions and the legacy precipitation indicators are rule-based estimates. The history page reads stored weather records. The city layer reads current conditions directly from Open-Meteo.
 
 The rainfall evaluation records the source coverage, date partitions, model comparison, per-day errors and API example. [Rainfall evaluation](docs/RAINFALL_EVALUATION.md)
 

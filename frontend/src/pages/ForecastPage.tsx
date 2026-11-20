@@ -41,19 +41,21 @@ import {
 } from "../components/icons";
 import type { DayForecast, PredictionResponse } from "../types/api";
 
-function rainfallAmount(day: DayForecast) {
+function rainfallAmount(day: DayForecast, status: PredictionResponse["rainfall_ml_status"]) {
+  if (status === "amount_withheld") return "Withheld";
   return day.ml_rainfall_mm == null ? "Unavailable" : `${day.ml_rainfall_mm.toFixed(2)} mm`;
 }
 
-function rainChance(day: DayForecast) {
+function rainChance(day: DayForecast, status: PredictionResponse["rainfall_ml_status"]) {
   if (day.ml_rain_probability != null) return `${(100 * day.ml_rain_probability).toFixed(0)}%`;
-  return day.ml_rainfall_mm == null ? "Unavailable" : "Unavailable (validation criterion unmet)";
+  return status === "amount_withheld" || status === "research_preview" || status === "available"
+    ? "Withheld" : "Unavailable";
 }
 
 const rainStatus: Record<string, { text: string; variant: "success" | "warning" | "danger" | "info" }> = {
   available: { text: "Rainfall amounts and probabilities use the evaluated ML rainfall model.", variant: "success" },
-  amount_withheld: { text: "Rainfall amounts are withheld — the model missed the independent release target.", variant: "warning" },
-  research_preview: { text: "Research preview — rainfall amounts missed the release target on independent testing. Values shown for evaluation only.", variant: "warning" },
+  amount_withheld: { text: "Rain chances are shown for days that passed validation. Rainfall amounts are available in the research preview.", variant: "info" },
+  research_preview: { text: "Research preview. Rainfall amounts missed the accuracy target in independent testing. Rain chances are shown only for days that passed validation.", variant: "warning" },
   model_unavailable: { text: "The ML rainfall model is unavailable.", variant: "danger" },
   inference_error: { text: "The ML rainfall model could not calculate this forecast.", variant: "danger" },
   invalid_history: { text: "Rainfall inference requires seven consecutive days of valid statewide measurements.", variant: "info" },
@@ -115,6 +117,7 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
   const [state, setState] = useState(selectedState || "");
   const [date, setDate] = useState("");
   const [dateTouched, setDateTouched] = useState(false);
+  const [previewRainfall, setPreviewRainfall] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<PredictionResponse | null>(null);
   const [predictError, setPredictError] = useState<string | null>(null);
@@ -154,7 +157,7 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
     setResult(null);
     setSelectedDayIndex(0);
     try {
-      const prediction = await predict(state, date, undefined, undefined, true);
+      const prediction = await predict(state, date, undefined, undefined, previewRainfall);
       setResult(prediction);
     } catch (err) {
       setPredictError((err as ApiError).message);
@@ -263,6 +266,16 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
               </span>
             </label>
 
+            <label className="rainfall-preview-option">
+              <input type="checkbox" checked={previewRainfall} disabled={submitting}
+                onChange={(event) => {
+                  setPreviewRainfall(event.target.checked);
+                  setResult(null);
+                  setPredictError(null);
+                }} />
+              Include experimental rainfall amounts
+            </label>
+
             <button
               className="btn-primary"
               type="submit"
@@ -284,7 +297,7 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                 border: "1px solid var(--border-subtle)",
               }}
             >
-              <strong>Operational Scope:</strong> Forecasts include ML average temperatures and a research preview of ML rainfall amounts. Highs, lows, humidity, conditions and advisories are rule-based estimates.
+              <strong>Operational Scope:</strong> Forecasts include ML average temperatures and validated rain chances. Highs, lows, humidity, conditions and advisories are rule-based estimates.
             </div>
           </form>
         </div>
@@ -374,22 +387,14 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                   </div>
 
                   {/* ML Rainfall Display */}
-                  <div style={{ display: "flex", gap: 16, flexWrap: "wrap", margin: "6px 0" }}>
-                    <div style={{
-                      display: "flex", alignItems: "center", gap: 6, padding: "4px 10px",
-                      borderRadius: "var(--radius-sm)", background: "var(--bg-surface-subtle)",
-                      border: "1px solid var(--border-subtle)", fontSize: 13,
-                    }}>
-                      <span style={{ fontSize: 15 }}>🌧️</span>
-                      <span><strong>ML rainfall:</strong> {rainfallAmount(currentDay)}</span>
+                  <div className="forecast-rain-badges">
+                    <div className="forecast-rain-badge">
+                      <span aria-hidden="true">🌧️</span>
+                      <span><strong>ML rainfall:</strong> {rainfallAmount(currentDay, result.rainfall_ml_status)}</span>
                     </div>
-                    <div style={{
-                      display: "flex", alignItems: "center", gap: 6, padding: "4px 10px",
-                      borderRadius: "var(--radius-sm)", background: "var(--bg-surface-subtle)",
-                      border: "1px solid var(--border-subtle)", fontSize: 13,
-                    }}>
-                      <span style={{ fontSize: 15 }}>💧</span>
-                      <span><strong>Rain chance (&gt;0.1 mm):</strong> {rainChance(currentDay)}</span>
+                    <div className="forecast-rain-badge">
+                      <span aria-hidden="true">💧</span>
+                      <span><strong>Rain chance (&gt;0.1 mm):</strong> {rainChance(currentDay, result.rainfall_ml_status)}</span>
                     </div>
                   </div>
 
@@ -478,8 +483,8 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                           <span className="lo">{df.temp_min.toFixed(0)}°</span>
                         </div>
                         <div className="horizon-day-metrics">
-                          <span>🌧️ {rainfallAmount(df)}</span>
-                          <span> · 💧 {rainChance(df)}</span>
+                          <span>🌧️ {rainfallAmount(df, result.rainfall_ml_status)}</span>
+                          <span> · 💧 {rainChance(df, result.rainfall_ml_status)}</span>
                         </div>
                       </button>
                     );
@@ -502,13 +507,13 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                   <StatChip
                     icon={<RainIcon />}
                     label="ML Rainfall Amount"
-                    value={rainfallAmount(currentDay)}
-                    sub={result.rainfall_ml_status === "research_preview" ? "Research preview" : result.rainfall_ml_status === "available" ? "Released" : "Status: " + (result.rainfall_ml_status ?? "unavailable")}
+                    value={rainfallAmount(currentDay, result.rainfall_ml_status)}
+                    sub={result.rainfall_ml_status === "research_preview" ? "Research preview" : result.rainfall_ml_status === "available" ? "Released" : undefined}
                   />
                   <StatChip
                     icon={<DropletIcon />}
                     label="ML Rain Probability"
-                    value={rainChance(currentDay)}
+                    value={rainChance(currentDay, result.rainfall_ml_status)}
                     sub=">0.1 mm threshold, calibrated"
                   />
                   <StatChip
@@ -623,8 +628,8 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                       </span>
                     </td>
                     <td className="num strong">{d.temp_avg.toFixed(1)} °C</td>
-                    <td className="num">{rainfallAmount(d)}</td>
-                    <td className="num">{rainChance(d)}</td>
+                    <td className="num">{rainfallAmount(d, result.rainfall_ml_status)}</td>
+                    <td className="num">{rainChance(d, result.rainfall_ml_status)}</td>
                     <td className="num">{d.temp_min.toFixed(1)}° – {d.temp_max.toFixed(1)}°</td>
                     <td className="num">{d.humidity.toFixed(0)} %</td>
                     <td className="num">{d.rain_probability}% ({d.rainfall.toFixed(1)} mm)</td>
@@ -776,10 +781,10 @@ export function ForecastPage({ selectedState, onSelectState }: ForecastPageProps
                     opacity={0.7}
                     radius={[2, 2, 0, 0]}
                   />
-                  {result && (
+                  {dailyForecasts.some(day => day.ml_rainfall_mm != null) && (
                     <Bar
                       dataKey="ml_rainfall"
-                      name="ML Predicted Rainfall"
+                      name={result?.rainfall_ml_status === "research_preview" ? "ML Rainfall (research preview)" : "ML Predicted Rainfall"}
                       fill="#a78bfa"
                       opacity={0.8}
                       radius={[2, 2, 0, 0]}

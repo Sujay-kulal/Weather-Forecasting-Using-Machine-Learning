@@ -27,14 +27,27 @@ test("serves forecasts and saved history across all six modules", async ({ page 
   expect(result.predicted_temp_avg.every(Number.isFinite)).toBe(true);
   await expect(page.locator(".horizon-day-card")).toHaveCount(7);
   await page.locator(".horizon-day-card").nth(6).press("Enter");
-  await expect(page.getByText(/Day 7 rule-based estimates/)).toBeVisible();
-  await expect(page.getByRole("status").filter({ hasText: "Research preview" })).toBeVisible();
-  expect(result.rainfall_ml_status).toBe("research_preview");
+  await expect(page.getByText(/Day 7 ML predictions & rule-based estimates/)).toBeVisible();
+  expect(result.rainfall_ml_status).toBe("amount_withheld");
   for (const day of result.daily_forecasts) {
     const row = page.getByRole("row").filter({ has: page.getByRole("button", { name: new RegExp(`^Day ${day.day}\\b`) }) });
-    await expect(row).toContainText(`${day.ml_rainfall_mm.toFixed(2)} mm`);
-    if (day.ml_rain_probability == null) await expect(row).toContainText("Unavailable");
-    else await expect(row).toContainText(`${(day.ml_rain_probability * 100).toFixed(0)}%`);
+    expect(day.ml_rainfall_mm).toBeNull();
+    await expect(row.getByRole("cell", { name: "Withheld", exact: true })).toHaveCount(day.ml_rain_probability == null ? 2 : 1);
+    if (day.ml_rain_probability != null) await expect(row).toContainText(`${(day.ml_rain_probability * 100).toFixed(0)}%`);
+  }
+
+  await page.getByLabel("Include experimental rainfall amounts").check();
+  const previewResponse = page.waitForResponse(response => response.url().endsWith("/api/predict"));
+  await page.getByRole("button", { name: "Generate 7-Day Forecast" }).click();
+  const preview = await (await previewResponse).json();
+  expect(preview.rainfall_ml_status).toBe("research_preview");
+  await expect(page.getByRole("status").filter({ hasText: "Research preview" })).toBeVisible();
+  const badges = page.locator(".forecast-rain-badge");
+  await expect(badges.first()).toContainText(`${preview.daily_forecasts[0].ml_rainfall_mm.toFixed(2)} mm`);
+  await expect(badges.last()).toContainText(`${(result.daily_forecasts[0].ml_rain_probability * 100).toFixed(0)}%`);
+  for (const badge of await badges.all()) {
+    await expect(badge).toHaveCSS("color", "rgb(15, 23, 42)");
+    await expect(badge).toHaveCSS("background-color", "rgb(241, 245, 249)");
   }
 
   await openModule(page, "Prediction History");
@@ -84,8 +97,8 @@ test("keeps temperature visible when rainfall is unavailable", async ({ page }) 
   await page.locator("#forecast-state-select").selectOption("Karnataka");
   await expect(page.locator("#forecast-target-date")).toHaveValue(/^\d{4}-\d{2}-\d{2}$/);
   for (const [status, message] of [
-    ["model_unavailable", "The rainfall model is unavailable."],
-    ["inference_error", "The rainfall model could not calculate this forecast."],
+    ["model_unavailable", "The ML rainfall model is unavailable."],
+    ["inference_error", "The ML rainfall model could not calculate this forecast."],
     ["invalid_history", "Rainfall inference requires seven consecutive days of valid statewide measurements."],
   ]) {
     await page.route("**/api/predict", async (route) => {
