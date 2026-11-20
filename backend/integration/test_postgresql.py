@@ -369,3 +369,20 @@ def test_rainfall_forecast_from_recorded_history(pg_engine, monkeypatch):
             assert result["rainfall_ml_status"] == status
             assert result["predicted_temp_avg"] == default["predicted_temp_avg"]
             assert all(d["ml_rainfall_mm"] is None and d["ml_rain_probability"] is None for d in result["daily_forecasts"])
+    with Session(pg_engine) as db:
+        obs = db.scalar(select(WeatherData).where(WeatherData.state == "Karnataka",
+                                                  WeatherData.date == origin - timedelta(days=1)))
+        obs.rainfall = -1
+        db.commit()
+    negative = client.post("/predict", json=dict(params, preview_rainfall_candidate=True))
+    assert negative.status_code == 422 and "Negative historical rainfall" in negative.text
+    with Session(pg_engine) as db:
+        obs = db.scalar(select(WeatherData).where(WeatherData.state == "Karnataka",
+                                                  WeatherData.date == origin - timedelta(days=1)))
+        obs.rainfall = history[-1].rainfall
+        obs.humidity = 101
+        db.commit()
+    invalid = client.post("/predict", json=dict(params, preview_rainfall_candidate=True)).json()
+    assert invalid["rainfall_ml_status"] == "invalid_history"
+    assert all(d["ml_rainfall_mm"] is None and d["ml_rain_probability"] is None for d in invalid["daily_forecasts"])
+    assert client.post("/predict", json=dict(params, forecast_date="9999-12-31")).status_code == 422

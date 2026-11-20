@@ -38,8 +38,6 @@ PERIODS = {
 CONFIG = dict(n_estimators=140, learning_rate=0.04, num_leaves=23, min_child_samples=60,
               random_state=42, n_jobs=4, deterministic=True, force_col_wise=True, verbosity=-1)
 HEAVY_MM = 25.0  # study threshold for a daily total
-MIN_SKILL = 0.01
-MAX_CALIBRATION_ERROR = 0.08
 
 
 def snapshot(states):
@@ -82,7 +80,7 @@ def clean_snapshot(raw, states):
     return clean, audit
 
 
-def panel_for_period(clean, states, bounds):
+def panel_for_period(clean, states, bounds, *, extended=False):
     start, end = map(date.fromisoformat, bounds)
     subset = clean.loc[clean.date.between(start, end)]
     panel = []
@@ -92,9 +90,10 @@ def panel_for_period(clean, states, bounds):
             history_dates = [origin - timedelta(days=i) for i in range(1, 8)]
             target_dates = [origin + timedelta(days=i) for i in range(1, 8)]
             if all(d in records for d in history_dates + target_dates):
-                features = rain.feature_values([records[d] for d in history_dates], state, origin, states)
+                features = rain.feature_values([records[d] for d in history_dates], state, origin, states, extended=extended)
                 panel.append([origin, state, *features, *(records[d].rainfall for d in target_dates)])
-    result = pd.DataFrame(panel, columns=["origin", "state", *rain.FEATURES, *rain.TARGETS])
+    inputs = rain.FEATURES + (rain.EXTRA_FEATURES if extended else [])
+    result = pd.DataFrame(panel, columns=["origin", "state", *inputs, *rain.TARGETS])
     if set(result.state) != set(states):
         raise ValueError("A period lacks complete examples for some supported states.")
     return result
@@ -173,11 +172,6 @@ def period_summary(panel):
                 target_dates=[str(first + timedelta(days=1)), str(last + timedelta(days=7))])
 
 
-def probability_gate(results, selected):
-    return [m["brier"] < b["brier"] and m["ece"] <= MAX_CALIBRATION_ERROR
-            for m, b in zip(results[selected]["by_horizon"], results["seasonal"]["by_horizon"])]
-
-
 def paired_rmse_gain(panel, forecasts, candidate, baseline):
     """Resample 14-day origin blocks together across states and all seven horizons."""
     actual = panel[rain.TARGETS].to_numpy()
@@ -224,8 +218,7 @@ def run(output):
     predictions[selected] = rain.infer(frozen, test[rain.FEATURES])
     final = evaluate(test, predictions)
     best_baseline = min(("zero", "persistence", "seasonal"), key=lambda k: final[k]["overall"]["rmse"])
-    passed = final[selected]["overall"]["rmse"] <= final[best_baseline]["overall"]["rmse"] * (1 - MIN_SKILL)
-    publish = [v and t for v, t in zip(probability_gate(validation, selected), probability_gate(final, selected))]
+    passed, publish = rain.release_flags(validation, final, selected)
     metadata = dict(architecture=selected, artifact=rain.ARTIFACT, sha256=hashlib.sha256(payload).hexdigest(),
                     unit="mm", features=rain.FEATURES, targets=rain.TARGETS, states=states,
                     independently_evaluated=True, independent_evaluation_passed=passed, publish_probability=publish,

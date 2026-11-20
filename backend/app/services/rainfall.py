@@ -13,11 +13,14 @@ from typing import NamedTuple
 import lightgbm as lgb
 import numpy as np
 import pandas as pd
+from scipy.special import expit, logit
 
 MODEL_DIR = Path(__file__).resolve().parents[3] / "model"
 ARTIFACT = "rainfall_v1.json.gz"
 METADATA = "rainfall_v1_info.json"
 RAIN_THRESHOLD = 0.1
+MIN_SKILL = .01
+MAX_CALIBRATION_ERROR = .08
 MEASUREMENTS = ["rainfall", "humidity", "temp_avg", "temp_max", "temp_min"]
 FEATURES = [
     "rain_lag1", "rain_lag2", "rain_lag3", "rain_lag7", "rain_sum3", "rain_sum7",
@@ -25,6 +28,12 @@ FEATURES = [
     "temp_range_lag1", "day_sin", "day_cos", "state_code",
 ]
 TARGETS = [f"rainfall_day_{i}" for i in range(1, 8)]
+EXTRA_FEATURES = ["rain_lag5", "rain_std7", "heavy_count7", "wet_streak7",
+                  "humidity_change3", "temp_avg_change3", "temp_min_lag1"]
+
+
+class InvalidRainfallHistory(ValueError):
+    """A dated observation cannot supply physically valid rainfall inputs."""
 
 
 class RainfallBundle(NamedTuple):
@@ -41,37 +50,53 @@ def valid_observation(row):
             and -90 <= row.temp_min <= row.temp_avg <= row.temp_max <= 65)
 
 
-def feature_values(history, state, origin, states):
+def feature_values(history, state, origin, states, *, extended=False):
     """Origin = D-1. Require one genuine statewide observation on each prior day."""
     if len(history) != 7 or state not in states:
-        raise ValueError("Seven prior statewide observations and a supported state are required.")
+        raise InvalidRainfallHistory("Seven prior statewide observations and a supported state are required.")
     rows = sorted(history, key=lambda row: row.date, reverse=True)
     for lag, row in enumerate(rows, 1):
         if (row.date != origin - timedelta(days=lag) or row.state != state
                 or getattr(row, "district", "") or getattr(row, "location", "")
                 or not valid_observation(row)):
-            raise ValueError("Invalid or incomplete statewide rainfall history.")
+            raise InvalidRainfallHistory("Invalid or incomplete statewide rainfall history.")
     rain = [row.rainfall for row in rows]
     dry_streak = next((i for i, value in enumerate(rain) if value > RAIN_THRESHOLD), 7)
     phase = 2 * math.pi * (origin.timetuple().tm_yday - 1) / 365.25
-    return [rain[0], rain[1], rain[2], rain[6], sum(rain[:3]), sum(rain),
+    values = [rain[0], rain[1], rain[2], rain[6], sum(rain[:3]), sum(rain),
             sum(r > RAIN_THRESHOLD for r in rain), dry_streak, rows[0].humidity,
             rows[1].humidity, rows[0].temp_avg, rows[0].temp_max - rows[0].temp_min,
             math.sin(phase), math.cos(phase), states.index(state)]
+    if extended:
+        wet_streak = next((i for i, value in enumerate(rain) if value <= RAIN_THRESHOLD), 7)
+        values.extend([rain[4], np.std(rain), sum(r >= 25 for r in rain), wet_streak,
+                       rows[0].humidity - rows[2].humidity, rows[0].temp_avg - rows[2].temp_avg,
+                       rows[0].temp_min])
+    return values
 
 
 def calibrated_probability(raw, calibration):
+    raw = np.asarray(raw)
+    if not np.isfinite(raw).all() or ((raw < 0) | (raw > 1)).any():
+        raise ValueError("Invalid raw rain occurrence probability.")
+    if calibration.get("method") == "platt":
+        odds = logit(np.clip(raw, 1e-8, 1 - 1e-8))
+        return expit(calibration["slope"] * odds + calibration["intercept"])
     return np.interp(raw, calibration["x"], calibration["y"])
 
 
 def infer(models, features):
     """Run the same frozen predictors for independent evaluation and API serving."""
     amounts, probabilities = [], []
+    if not np.isfinite(features.to_numpy(dtype=float)).all():
+        raise ValueError("Invalid rainfall feature values.")
     for horizon in models:
-        raw = horizon["occurrence"].predict(features, num_threads=1)
+        raw = horizon["occurrence"].predict(features, num_threads=1, validate_features=True)
         probability = calibrated_probability(raw, horizon["calibration"])
-        amount = horizon["amount"].predict(features, num_threads=1)
+        amount = horizon["amount"].predict(features, num_threads=1, validate_features=True)
         if horizon["architecture"] == "two_stage":
+            if not np.isfinite(amount).all() or (amount < 0).any():
+                raise ValueError("Invalid conditional rainfall amount.")
             amount = probability * amount + (1 - probability) * horizon["trace_mean"]
         amounts.append(amount)
         probabilities.append(probability)
@@ -80,6 +105,23 @@ def infer(models, features):
             or (amounts < 0).any() or not np.isfinite(probabilities).all()
             or ((probabilities < 0) | (probabilities > 1)).any()):
         raise ValueError("Invalid rainfall predictions.")
+    return amounts, probabilities
+
+
+def probability_gate(results, selected):
+    horizons = results[selected]["by_horizon"]
+    climate = results["seasonal"]["by_horizon"]
+    if len(horizons) != 7 or len(climate) != 7:
+        raise ValueError("Release decisions require seven evaluated horizons.")
+    return [m["brier"] < b["brier"] and m["ece"] <= MAX_CALIBRATION_ERROR
+            for m, b in zip(horizons, climate)]
+
+
+def release_flags(validation, final, selected):
+    best_reference = min(final[name]["overall"]["rmse"] for name in ("zero", "seasonal", "persistence"))
+    amounts = final[selected]["overall"]["rmse"] <= (1 - MIN_SKILL) * best_reference
+    probabilities = [v and t for v, t in zip(probability_gate(validation, selected),
+                                              probability_gate(final, selected))]
     return amounts, probabilities
 
 
@@ -99,15 +141,29 @@ def read_bundle(directory):
             or len(bundle["models"]) != 7 or len(metadata["publish_probability"]) != 7
             or any(type(value) is not bool for value in metadata["publish_probability"])):
         raise ValueError("Rainfall model contract or evaluation mismatch.")
+    selected = metadata["architecture"]
+    released, publish = release_flags(metadata["validation"], metadata["test"], selected)
+    if released != metadata["independent_evaluation_passed"] or publish != metadata["publish_probability"]:
+        raise ValueError("Rainfall release flags disagree with recorded evaluation.")
     for day, horizon in enumerate(bundle["models"], 1):
         if (horizon["target"] != TARGETS[day - 1]
                 or horizon["architecture"] not in {"direct", "two_stage"}
                 or horizon["architecture"] != metadata["architecture"]):
             raise ValueError("Rainfall horizon contract mismatch.")
+        calibration = horizon["calibration"]
+        x, y = (np.asarray(calibration[k], dtype=float) for k in ("x", "y"))
+        if (set(calibration) != {"x", "y"} or x.ndim != 1 or not len(x) or x.shape != y.shape
+                or not np.isfinite([x, y]).all() or (np.diff(x) <= 0).any() or (np.diff(y) < 0).any()
+                or x.min() < 0 or x.max() > 1 or y.min() < 0 or y.max() > 1):
+            raise ValueError("Invalid rainfall isotonic calibration contract.")
         for name in ("occurrence", "amount"):
             booster = lgb.Booster(model_str=horizon[name])
             if booster.feature_name() != FEATURES:
                 raise ValueError("Rainfall estimator feature order mismatch.")
+            objective = booster.dump_model(num_iteration=1)["objective"].split()[0]
+            expected = "binary" if name == "occurrence" else {"direct": "tweedie", "two_stage": "gamma"}[selected]
+            if objective != expected:
+                raise ValueError("Rainfall estimator objective mismatch.")
             horizon[name] = booster
     return RainfallBundle(bundle["models"], bundle["states"], metadata["publish_probability"],
                           metadata["independent_evaluation_passed"])

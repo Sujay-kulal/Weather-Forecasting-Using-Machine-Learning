@@ -48,7 +48,7 @@ test("serves forecasts and saved history across all six modules", async ({ page 
 
   await openModule(page, "Weather History");
   await expect(page.getByRole("heading", { name: "Weather History Archive" })).toBeVisible();
-  const archiveState = page.locator("select").first();
+  const archiveState = page.getByRole("combobox", { name: "State", exact: true });
   await archiveState.selectOption("Karnataka");
   await expect(page.getByRole("row").nth(1)).toBeVisible();
 
@@ -86,6 +86,7 @@ test("keeps temperature visible when rainfall is unavailable", async ({ page }) 
   for (const [status, message] of [
     ["model_unavailable", "The rainfall model is unavailable."],
     ["inference_error", "The rainfall model could not calculate this forecast."],
+    ["invalid_history", "Rainfall inference requires seven consecutive days of valid statewide measurements."],
   ]) {
     await page.route("**/api/predict", async (route) => {
       const response = await route.fetch();

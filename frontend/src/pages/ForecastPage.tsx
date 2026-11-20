@@ -45,7 +45,8 @@ function rainfallAmount(day: DayForecast) {
 }
 
 function rainChance(day: DayForecast) {
-  return day.ml_rain_probability == null ? "Unavailable" : `${(100 * day.ml_rain_probability).toFixed(0)}%`;
+  if (day.ml_rain_probability != null) return `${(100 * day.ml_rain_probability).toFixed(0)}%`;
+  return day.ml_rainfall_mm == null ? "Unavailable" : "Unavailable (validation criterion unmet)";
 }
 
 const rainStatus = {
@@ -54,6 +55,7 @@ const rainStatus = {
   research_preview: "Research preview · Rainfall amounts missed the release target on independent testing.",
   model_unavailable: "The rainfall model is unavailable.",
   inference_error: "The rainfall model could not calculate this forecast.",
+  invalid_history: "Rainfall inference requires seven consecutive days of valid statewide measurements.",
 };
 
 function shiftDate(iso: string, days: number): string {

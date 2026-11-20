@@ -113,6 +113,8 @@ def build_features(history: list, state: str, asof_date, *, today: Optional[date
                     f"Historical observation for '{state}' on {getattr(r, 'date', 'unknown')} "
                     f"contains invalid or missing value for '{attr}'."
                 )
+        if r.rainfall < 0:
+            raise InsufficientHistoryError(f"Negative historical rainfall for '{state}' on {r.date}.")
 
     day_of_year = asof.timetuple().tm_yday
 

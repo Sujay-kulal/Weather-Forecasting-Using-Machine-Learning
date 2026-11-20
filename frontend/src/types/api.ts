@@ -114,7 +114,7 @@ export interface DayForecast {
 }
 
 export interface PredictionResponse {
-  rainfall_ml_status?: "available" | "research_preview" | "amount_withheld" | "model_unavailable" | "inference_error";
+  rainfall_ml_status?: "available" | "research_preview" | "amount_withheld" | "model_unavailable" | "inference_error" | "invalid_history";
   state: string;
   district?: string;
   location?: string;

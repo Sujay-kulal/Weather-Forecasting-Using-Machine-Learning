@@ -58,6 +58,8 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
     if request.forecast_date < date_type.min + timedelta(days=REQUIRED_HISTORY + 1):
         raise HTTPException(422, detail="Forecast date is too early to build the required history.")
     asof = request.forecast_date - timedelta(days=1)
+    if request.forecast_date > date_type.max - timedelta(days=6):
+        raise HTTPException(422, detail="All seven forecast dates must be representable.")
     today = getattr(req.app.state, "today", None) or open_meteo_service.india_today()
     history = db.execute(
         select(WeatherData)
@@ -129,6 +131,8 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
                 rainfall_status = "research_preview"
             else:
                 rainfall_status = "amount_withheld"
+        except rainfall.InvalidRainfallHistory:
+            rainfall_status = "invalid_history"
         except Exception:
             logger.exception("Rainfall inference failed for %s", canonical)
             rainfall_status = "inference_error"

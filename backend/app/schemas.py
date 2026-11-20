@@ -48,7 +48,7 @@ class DayForecast(BaseModel):
 
 
 class PredictionResponse(BaseModel):
-    rainfall_ml_status: Literal["available", "research_preview", "amount_withheld", "model_unavailable", "inference_error"] = "model_unavailable"
+    rainfall_ml_status: Literal["available", "research_preview", "amount_withheld", "model_unavailable", "inference_error", "invalid_history"] = "model_unavailable"
     state: str
     district: str = ""
     location: str = ""

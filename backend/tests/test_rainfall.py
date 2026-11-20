@@ -132,3 +132,66 @@ def test_artifact_fails_closed(tmp_path, corruption):
     (tmp_path / rain.METADATA).write_text(json.dumps(meta))
     with pytest.raises(ValueError):
         rain.read_bundle(tmp_path)
+
+
+@pytest.mark.parametrize("value", [-1., 1.01, np.inf, -np.inf, np.nan])
+def test_calibration_rejects_invalid_raw_output(value):
+    for curve in ({"x": [.1, .9], "y": [.2, .8]}, {"method": "platt", "slope": 1., "intercept": .1}):
+        with pytest.raises(ValueError, match="raw rain occurrence"):
+            rain.calibrated_probability(np.array([value]), curve)
+
+
+@pytest.mark.parametrize("fault", ["amount_flag", "probability_flag", "calibration", "estimator"])
+def test_bundle_verifies_release_evidence_and_roles(tmp_path, fault):
+    payload = (rain.MODEL_DIR / rain.ARTIFACT).read_bytes()
+    meta = json.loads((rain.MODEL_DIR / rain.METADATA).read_text())
+    if fault == "amount_flag":
+        meta["independent_evaluation_passed"] = True
+    elif fault == "probability_flag":
+        meta["publish_probability"][-1] = True
+    else:
+        doc = json.loads(gzip.decompress(payload))
+        model = doc["models"][0]
+        if fault == "calibration":
+            model["calibration"]["x"].reverse()
+        else:
+            model["occurrence"] = model["amount"]
+        payload = gzip.compress(json.dumps(doc).encode())
+        meta["sha256"] = hashlib.sha256(payload).hexdigest()
+    (tmp_path / rain.ARTIFACT).write_bytes(payload)
+    (tmp_path / rain.METADATA).write_text(json.dumps(meta))
+    with pytest.raises(ValueError):
+        rain.read_bundle(tmp_path)
+
+
+def test_extended_inputs_use_only_actual_issue_history(observations):
+    from experiment_rainfall import EXTENDED, FOLDS
+    bounds = ("2026-08-13", "2026-09-06")
+    def row(frame):
+        return panel_for_period(frame, [STATE], bounds, extended=True).set_index("origin").loc[ORIGIN]
+    reference = row(observations)
+    history_rows = history(observations)
+    np.testing.assert_array_equal(reference[EXTENDED], rain.feature_values(
+        history_rows, STATE, ORIGIN, [STATE], extended=True))
+    assert reference.rain_lag5 == history_rows[-5].rainfall
+    assert reference.rain_std7 == pytest.approx(np.std([r.rainfall for r in history_rows]))
+    assert reference.wet_streak7 == 7 and reference.heavy_count7 == 0
+    assert reference.humidity_change3 == history_rows[-1].humidity - history_rows[-3].humidity
+    changed = observations.copy()
+    future = changed.date >= ORIGIN
+    changed.loc[future, rain.MEASUREMENTS] = changed.loc[future, rain.MEASUREMENTS].iloc[::-1].to_numpy()
+    assert row(changed)[EXTENDED].equals(reference[EXTENDED])
+    for fold in FOLDS:
+        assert fold["train"][1] < fold["calibration"][0] <= fold["calibration"][1] < fold["validation"][0]
+        assert fold["validation"][1] < "2025-11-01"
+
+
+def test_selection_rejects_tradeoff_and_preserves_v1():
+    from experiment_rainfall import choose
+    reference = dict(rmse=5., mae=2., heavy={"mae": 30.}, brier=.2)
+    ref = "v1_recipe_direct_isotonic"
+    first = {ref: reference, "weighted": dict(reference, rmse=4., mae=2.2)}
+    second = {ref: reference, "weighted": dict(reference, rmse=4.)}
+    assert choose([first, second]) == ref
+    first["weighted"]["mae"] = 2.
+    assert choose([first, second]) == "weighted"
