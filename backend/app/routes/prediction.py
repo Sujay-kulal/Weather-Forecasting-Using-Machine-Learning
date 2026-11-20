@@ -24,6 +24,7 @@ from app.services.metrics_service import rolling_live_metrics
 from app.services.prediction_store import upsert_prediction
 from app.services.resolve_location import resolve_location
 from app.services.temperature import round_temperature
+from app.services import rainfall
 from app.services.feature_service import REQUIRED_HISTORY
 from app.services.prediction_cache import prediction_cache as prediction_cache
 
@@ -57,6 +58,8 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
     if request.forecast_date < date_type.min + timedelta(days=REQUIRED_HISTORY + 1):
         raise HTTPException(422, detail="Forecast date is too early to build the required history.")
     asof = request.forecast_date - timedelta(days=1)
+    if request.forecast_date > date_type.max - timedelta(days=6):
+        raise HTTPException(422, detail="All seven forecast dates must be representable.")
     today = getattr(req.app.state, "today", None) or open_meteo_service.india_today()
     history = db.execute(
         select(WeatherData)
@@ -108,6 +111,32 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
         predicted_temp_avg=predicted,
     )
 
+    try:
+        rainfall_bundle = rainfall.loaded_bundle()
+    except Exception:
+        logger.exception("Rainfall artifact could not be loaded")
+        rainfall_status = "model_unavailable"
+    else:
+        try:
+            estimates = rainfall.predict_history(
+                history, canonical, asof, rainfall_bundle, preview=request.preview_rainfall_candidate,
+            )
+            daily_forecasts = [
+                day.model_copy(update={"ml_rainfall_mm": amount, "ml_rain_probability": probability})
+                for day, (amount, probability) in zip(daily_forecasts, estimates, strict=True)
+            ]
+            if rainfall_bundle.amount_released:
+                rainfall_status = "available"
+            elif request.preview_rainfall_candidate:
+                rainfall_status = "research_preview"
+            else:
+                rainfall_status = "amount_withheld"
+        except rainfall.InvalidRainfallHistory:
+            rainfall_status = "invalid_history"
+        except Exception:
+            logger.exception("Rainfall inference failed for %s", canonical)
+            rainfall_status = "inference_error"
+
     last_record = history[0]
     last_known = {
         "date": str(last_record.date),
@@ -119,6 +148,7 @@ def predict(request: PredictionRequest, req: Request, db: Session = Depends(get_
     }
 
     return PredictionResponse(
+        rainfall_ml_status=rainfall_status,
         state=canonical,
         district="",
         location="",

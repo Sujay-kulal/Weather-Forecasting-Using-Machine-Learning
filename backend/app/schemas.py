@@ -5,7 +5,7 @@ These drive the automatic Swagger documentation at /docs.
 """
 from datetime import date as date_type
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -14,6 +14,7 @@ from app.services.temperature import normalize_temperature
 
 # ----------------------------- requests -----------------------------
 class PredictionRequest(BaseModel):
+    preview_rainfall_candidate: bool = Field(False, description="Include research estimates if the rainfall amount model missed its release criterion.")
     state: str = Field(..., min_length=1, max_length=100, description="Indian state name, e.g. 'Karnataka'")
     district: Optional[str] = Field("", max_length=100, description="Reserved for location requests")
     location: Optional[str] = Field("", max_length=100, description="Reserved for location requests")
@@ -30,13 +31,15 @@ class DayForecast(BaseModel):
     temp_max: float = Field(..., description="Rule-based high temperature estimate in deg C")
     feels_like: float = Field(..., description="Apparent / 'feels like' temperature in deg C")
     humidity: float = Field(..., description="Estimated relative humidity in %")
-    rainfall: float = Field(..., description="Expected precipitation in mm")
-    rain_probability: int = Field(..., description="Chance of rain in % (0-100)")
-    condition: str = Field(..., description="Weather condition status, e.g. 'Clear & Sunny'")
+    rainfall: float = Field(..., description="Legacy rule-based precipitation estimate in mm")
+    rain_probability: int = Field(..., description="Legacy rule-based chance of rain in percent")
+    ml_rainfall_mm: float | None = Field(None, ge=0, description="Expected daily precipitation in mm. Check rainfall_ml_status for research previews.")
+    ml_rain_probability: float | None = Field(None, ge=0, le=1, description="Validated calibrated probability of more than 0.1 mm (0–1)")
+    condition: str = Field(..., description="Rule-based weather condition")
     condition_icon: str = Field(..., description="Icon identifier, e.g. 'sun', 'cloud-sun', 'rain'")
     comfort: str = Field(..., description="Comfort category, e.g. 'Pleasant & Comfortable'")
     dew_point: float = Field(..., description="Estimated dew point in deg C")
-    summary: str = Field(..., description="Brief day summary and advisory")
+    summary: str = Field(..., description="Rule-based daily outlook using legacy weather estimates")
 
     @field_validator("temp_avg", "temp_min", "temp_max", "feels_like", "dew_point", mode="before")
     @classmethod
@@ -45,6 +48,7 @@ class DayForecast(BaseModel):
 
 
 class PredictionResponse(BaseModel):
+    rainfall_ml_status: Literal["available", "research_preview", "amount_withheld", "model_unavailable", "inference_error", "invalid_history"] = "model_unavailable"
     state: str
     district: str = ""
     location: str = ""
@@ -54,8 +58,8 @@ class PredictionResponse(BaseModel):
     model: str = Field(..., description="Model name that produced the prediction")
     typical_error_mae: Optional[float] = Field(None, description="Test-set MAE of the model")
     last_known: Optional[dict] = Field(None, description="Most recent measurement used")
-    daily_forecasts: Optional[List[DayForecast]] = Field(None, description="ML daily averages with rule-based weather estimates")
-    weather_summary: Optional[str] = Field(None, description="Overall summary of the 7-day forecast")
+    daily_forecasts: Optional[List[DayForecast]] = Field(None, description="ML temperature, separately labelled ML rainfall and rule-based weather estimates")
+    weather_summary: Optional[str] = Field(None, description="ML temperature average with rule-based highs, lows and precipitation outlook")
 
     @field_validator("predicted_temp_avg", mode="before")
     @classmethod

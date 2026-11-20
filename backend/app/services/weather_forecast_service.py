@@ -114,7 +114,7 @@ def generate_day_summary(
         parts.append("low humidity")
 
     advisory = ", ".join(parts)
-    return f"{condition} expected. High of {temp_max:.1f}°C, low of {temp_min:.1f}°C with {advisory}."
+    return f"Rule-based outlook suggests {condition.lower()}. High of {temp_max:.1f}°C, low of {temp_min:.1f}°C with {advisory}."
 
 
 def build_daily_forecasts(
@@ -224,8 +224,8 @@ def build_daily_forecasts(
         rain_note = "Predominantly dry and clear atmospheric conditions"
 
     weather_summary = (
-        f"7-day outlook: Mean temperature of {avg_7d:.1f}°C with overnight lows of "
-        f"{min_7d:.1f}°C and afternoon highs up to {max_7d:.1f}°C. {rain_note}."
+        f"ML mean temperature for the week is {avg_7d:.1f}°C. Rule-based estimates give overnight lows of "
+        f"{min_7d:.1f}°C and afternoon highs up to {max_7d:.1f}°C. Rule-based rain outlook — {rain_note}."
     )
 
     return daily_forecasts, weather_summary

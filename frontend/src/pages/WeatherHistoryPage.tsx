@@ -412,7 +412,7 @@ export function WeatherHistoryPage() {
       {/* 1. Page Header */}
       <PageHead
         title="Weather History Archive"
-        desc="Explore 46,834 locked meteorological observations stored across Indian states, districts, and stations in PostgreSQL."
+        desc="Explore daily weather observations stored in PostgreSQL by state, district, station and date."
         badge={<Badge variant="info">PostgreSQL archive</Badge>}
       />
 
