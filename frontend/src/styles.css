@@ -989,6 +989,31 @@ tbody td:first-child {
 }
 
 /* Hero Forecast Banner */
+.rainfall-preview-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.forecast-rain-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 6px 0;
+}
+
+.forecast-rain-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface-subtle);
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
 .forecast-hero-box {
   background: #0f172a;
   border-radius: var(--radius-md);

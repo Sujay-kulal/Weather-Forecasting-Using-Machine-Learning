@@ -1,6 +1,6 @@
 # Seven-day rainfall evaluation
 
-The forecast page displays seven daily expected rainfall amounts as a research preview. Direct LightGBM regression earned the lowest validation RMSE. On the independent test it improved RMSE by 0.083 mm (0.85%) over state-and-month climatology. That gain missed the pre-test 1% release criterion. A paired 14-day block bootstrap gives an approximate 95% interval of −0.120 to +0.285 mm for the gain. Calibrated probabilities of more than 0.1 mm qualified for publication on days 1–6.
+The forecast page offers seven daily expected rainfall amounts as an optional research preview. Direct LightGBM regression earned the lowest validation RMSE. On the independent test it improved RMSE by 0.083 mm (0.85%) over state-and-month climatology. That gain missed the pre-test 1% release criterion. A paired 14-day block bootstrap gives an approximate 95% interval of −0.120 to +0.285 mm for the gain. Calibrated probabilities of more than 0.1 mm qualified for publication on days 1–6.
 
 ## Historical observations
 
@@ -72,7 +72,7 @@ Heavy is a study threshold. Counts include repeated verification dates at differ
 
 The bundle contains native LightGBM model strings and isotonic breakpoints in compressed JSON. The loader checks its SHA-256, feature and target order, estimator feature names, state mapping and evaluation metadata. Its SHA-256 is `21d153092d466d6ebac6058dd5a6f37f6ff84c423af6d441ebfa32641c153ed7`. [Rainfall artifact](../model/rainfall_v1.json.gz) · [Model metadata and metrics](../model/rainfall_v1_info.json)
 
-A standard `POST /predict` returns `amount_withheld` with a null `ml_rainfall_mm` and eligible `ml_rain_probability` values in [0, 1]. The forecast page requests `preview_rainfall_candidate: true` and labels the resulting `research_preview`. Both paths keep the same dates and temperature predictions. The legacy `rainfall`, `rain_probability`, conditions and advisories remain rule-based. A failed artifact load or inference returns a distinct rainfall status and null ML fields. Shared insufficient history still produces the existing HTTP 422 error.
+A standard `POST /predict` returns `amount_withheld` with a null `ml_rainfall_mm` and eligible `ml_rain_probability` values in [0, 1]. The forecast page uses the standard request by default. Selecting **Include experimental rainfall amounts** sends `preview_rainfall_candidate: true` and labels the resulting `research_preview`. Both paths keep the same dates and temperature predictions. The legacy `rainfall`, `rain_probability`, conditions and advisories remain rule-based. A failed artifact load or inference returns a distinct rainfall status and null ML fields. Shared insufficient history still produces the existing HTTP 422 error.
 
 A real request for Karnataka starting November 12, 2026 returned 0.4342 mm and probability 0.1451 for day 1. Day 7 returned 1.4585 mm with a null probability. The API ran both saved models over a disposable PostgreSQL copy of the real observations. Its prediction audit write went to that copy. [Full request and seven-day response](rainfall_prediction_example.json)
 
