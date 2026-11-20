@@ -274,9 +274,9 @@ export function PredictionHistoryPage() {
             </label>
           </div>
 
-          <div style={{ display: "flex", alignItems: "flex-end", gap: 10 }}>
+          <div style={{ display: "flex", alignItems: "flex-end", gap: 12, flexShrink: 0 }}>
             {/* Page size selector */}
-            <label className="field inline" style={{ width: 110 }}>
+            <label className="field inline" style={{ minWidth: 125 }}>
               <span style={{ fontSize: "12px", fontWeight: 600, color: "var(--text-secondary)" }}>
                 Rows per page
               </span>
