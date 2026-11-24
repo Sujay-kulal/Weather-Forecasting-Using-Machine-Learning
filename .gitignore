@@ -46,3 +46,13 @@ frontend/tests/.built/
 frontend/test-results/
 frontend/playwright-report/
 
+# Presentation files at root
+*.pptx
+# Scratch and planning
+.planning/
+# Notebooks (research only)
+# output/ generated reports
+output/
+deliverables/
+
+
