@@ -369,14 +369,36 @@ See [Neon connection pooling](https://neon.com/docs/connect/connection-pooling) 
 
 ## 15. Team Members and Project Guide
 
-| Role | Name |
+### Project Guide
+
+| | |
 |---|---|
-| **Project Guide** | *(Name of your faculty guide)* |
-| **Developer** | Sujay Kulal |
-| **Institution** | Moodlakatte Institute of Technology, Kundapura (MITK) |
+| **Name** | Dr. Manjunath Ramanna Lamani |
+| **Designation** | Professor and Head |
 | **Department** | Computer Science and Engineering |
+| **Institution** | Moodlakatte Institute of Technology, Kundapura |
 | **University** | Visvesvaraya Technological University (VTU), Belagavi |
-| **Academic Year** | 2025–2026 |
+
+### Team Members
+
+| Name | USN |
+|---|---|
+| Sujay M | 4MK23CS113 |
+| Adithya | 4MK23CS003 |
+| ST Sathwik Kumar | 4MK23CS084 |
+| Shreyas HK | 4MK23CS103 |
+
+### Project Details
+
+| | |
+|---|---|
+| **Project Title** | Weather Forecasting Using Machine Learning |
+| **Phase** | Project Phase II |
+| **Scheme** | VTU 2022 Scheme |
+| **Academic Year** | 2026–2027 |
+| **Department** | Computer Science and Engineering |
+| **Institution** | Moodlakatte Institute of Technology, Kundapura (MITK) |
+| **University** | Visvesvaraya Technological University (VTU), Belagavi |
 
 ---
 
