@@ -28,3 +28,8 @@ docs/
 notebooks/
 deliverables/
 .pytest_cache/
+.planning/
+output/
+*.pptx
+audit/
+
